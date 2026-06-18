@@ -115,6 +115,8 @@ def create_app(
         if req.captcha_api_url and req.captcha_api_key:
             sobre.meta["captcha_api_url"] = req.captcha_api_url
             sobre.meta["captcha_api_key"] = req.captcha_api_key
+        if req.cookies:
+            sobre.meta["cookies"] = req.cookies
         _queue().enqueue(sobre)
 
         log.info("job encolado", extra={"job_id": job_id, "mode": mode.value, "rol": req.rol.value})

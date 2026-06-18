@@ -70,6 +70,7 @@ class JobRequest(BaseModel):
     proxy: str | None = None              # proxy puntual para este job (override del pool)
     captcha_api_url: str | None = None    # servicio resolvedor de CAPTCHA (estilo 2captcha)
     captcha_api_key: str | None = None
+    cookies: str | None = None            # cookies de sesión "k=v; k2=v2" (gate por login/ubicación)
 
 
 class RevertRequest(BaseModel):

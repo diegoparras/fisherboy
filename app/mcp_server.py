@@ -47,6 +47,7 @@ def build_server():
         proxy: str | None = None,
         captcha_api_url: str | None = None,
         captcha_api_key: str | None = None,
+        cookies: str | None = None,
     ) -> dict:
         """Encola un job de scraping. Devuelve job_id y status.
 
@@ -105,6 +106,8 @@ def build_server():
         if req.captcha_api_url and req.captcha_api_key:
             sobre.meta["captcha_api_url"] = req.captcha_api_url
             sobre.meta["captcha_api_key"] = req.captcha_api_key
+        if req.cookies:
+            sobre.meta["cookies"] = req.cookies
         queue.enqueue(sobre)
         return {"job_id": job_id, "status": JobStatus.PENDIENTE.value}
 

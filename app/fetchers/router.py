@@ -135,6 +135,7 @@ class TierRouter:
         tier_hint: int | None = None,
         proxy_override: str | None = None,
         solver_override=None,
+        cookies_override: dict | None = None,
     ) -> FetchResult:
         domain = _domain(url)
         cached = self.cache.get(domain)
@@ -153,6 +154,8 @@ class TierRouter:
                 ctx = self._build_ctx(proxy)
                 if solver_override is not None:
                     ctx.solver = solver_override
+                if cookies_override:
+                    ctx.cookies = cookies_override
                 try:
                     result = fetcher.fetch(url, ctx)
                     self.proxies.report_success(proxy)

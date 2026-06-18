@@ -46,6 +46,7 @@ class TLSFetcher:
                 impersonate=ctx.extra.get("impersonate", _IMPERSONATE),
                 proxies=proxies,
                 headers=headers,
+                cookies=ctx.cookies or None,
                 timeout=ctx.timeout_s,
                 max_redirects=ctx.max_redirects,
                 allow_redirects=True,

@@ -47,6 +47,8 @@ class StaticFetcher:
         resolve_and_validate(url, allow_private=ctx.allow_private)  # falla cerrado pre-red
 
         headers = {"User-Agent": ctx.user_agent, "Accept-Encoding": "gzip, deflate", **ctx.headers}
+        if ctx.cookies:
+            headers["Cookie"] = "; ".join(f"{k}={v}" for k, v in ctx.cookies.items())
         current = url
         client_kwargs = dict(
             follow_redirects=False,

@@ -79,8 +79,9 @@ def build_default_deps(settings, *, redis_client=None) -> PipelineDeps:
 
     router = build_router(settings, redis_client=redis_client)
 
-    def _fetch(url: str, tier_hint: int | None = None, proxy=None, solver=None) -> FetchResult:
-        return router.fetch(url, tier_hint=tier_hint, proxy_override=proxy, solver_override=solver)
+    def _fetch(url: str, tier_hint=None, proxy=None, solver=None, cookies=None) -> FetchResult:
+        return router.fetch(url, tier_hint=tier_hint, proxy_override=proxy,
+                            solver_override=solver, cookies_override=cookies)
 
     def _extract(html: str, url: str | None) -> str:
         return html_to_markdown_rich(html, url=url)[0]
@@ -95,11 +96,11 @@ def build_default_deps(settings, *, redis_client=None) -> PipelineDeps:
     robots = RobotsChecker(_robots_text, user_agent="Fisherboy")
 
     def _crawl(seed: str, *, tier_hint=None, max_pages=10, max_depth=1,
-               proxy=None, solver=None) -> list[FetchResult]:
+               proxy=None, solver=None, cookies=None) -> list[FetchResult]:
         pages = _crawl_bfs(
             seed,
-            fetch=lambda u: router.fetch(u, tier_hint=tier_hint,
-                                         proxy_override=proxy, solver_override=solver),
+            fetch=lambda u: router.fetch(u, tier_hint=tier_hint, proxy_override=proxy,
+                                         solver_override=solver, cookies_override=cookies),
             robots_allowed=robots.allowed if settings.respect_robots else None,
             max_pages=max_pages,
             max_depth=max_depth,
@@ -201,6 +202,16 @@ def _job_overrides(sobre: Sobre) -> dict:
     if cu and ck:
         from .net.captcha import ExternalSolver
         kw["solver"] = ExternalSolver(cu, ck)
+    raw_cookies = sobre.meta.get("cookies")
+    if raw_cookies:
+        jar = {}
+        for part in raw_cookies.split(";"):
+            if "=" in part:
+                k, _, v = part.strip().partition("=")
+                if k:
+                    jar[k] = v
+        if jar:
+            kw["cookies"] = jar
     return kw
 
 
