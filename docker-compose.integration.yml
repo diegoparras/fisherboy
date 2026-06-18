@@ -1,0 +1,44 @@
+# Integración con Escriba: Fisherboy como sidekick (sin UI) en la red de Escriba.
+#   docker compose -f docker-compose.integration.yml up -d
+#
+# Asume que Escriba y Anonimal ya corren en la red externa `escriba_internal`.
+# Fisherboy NO expone puerto público acá: se lo llama por REST/MCP desde la red interna.
+# Ver ADR-011.
+
+services:
+  fisherboy-api:
+    build: .
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    environment:
+      APP_MODE: sidekick
+      REDIS_URL: redis://fisherboy-redis:6379/0
+      ANONIMAL_URL: http://anonimal:8080          # mismo Anonimal que usa Escriba
+      ESCRIBA_URL: http://escriba-api:8000         # para el sub-pipeline documental
+      # ESCRIBA_TOKEN: <token de servicio>         # Fase B (cuando Escriba lo acepte)
+    depends_on: [fisherboy-redis]
+    networks: [fisherboy, escriba_internal]
+    restart: unless-stopped
+
+  fisherboy-worker:
+    build: .
+    command: python -m app.worker
+    env_file: .env
+    environment:
+      APP_MODE: sidekick
+      REDIS_URL: redis://fisherboy-redis:6379/0
+      ANONIMAL_URL: http://anonimal:8080
+      ESCRIBA_URL: http://escriba-api:8000
+    depends_on: [fisherboy-redis]
+    networks: [fisherboy, escriba_internal]
+    restart: unless-stopped
+
+  fisherboy-redis:
+    image: redis:7-alpine
+    command: redis-server --save "" --appendonly no
+    networks: [fisherboy]
+    restart: unless-stopped
+
+networks:
+  fisherboy:
+  escriba_internal:
+    external: true
