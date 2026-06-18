@@ -43,6 +43,7 @@ def build_server():
         tier_hint: int | None = None,
         crawl_depth: int = 0,
         max_pages: int = 1,
+        paginate: bool = False,
         extract_schema: dict | None = None,
         proxy: str | None = None,
         captcha_api_url: str | None = None,
@@ -66,6 +67,7 @@ def build_server():
             tier_hint=tier_hint,
             crawl_depth=crawl_depth,
             max_pages=max_pages,
+            paginate=paginate,
             extract_schema=extract_schema,
             proxy=proxy,
             captcha_api_url=captcha_api_url,
@@ -99,6 +101,8 @@ def build_server():
             sobre.meta["tier_hint"] = int(req.tier_hint)
         sobre.meta["crawl_depth"] = int(req.crawl_depth)
         sobre.meta["max_pages"] = int(req.max_pages)
+        if req.paginate:
+            sobre.meta["paginate"] = True
         if req.extract_schema is not None:
             sobre.meta["extract_schema"] = req.extract_schema
         if req.proxy:

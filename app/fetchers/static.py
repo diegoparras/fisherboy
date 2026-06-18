@@ -20,6 +20,10 @@ from .base import (
 
 # Umbral de cuerpo mínimo para 200 sospechosos de soft-block (tier 0 ve poco JS).
 _MIN_OK_BODY = 64
+_DEFAULT_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+)
 
 
 def _enforce_byte_cap(response: httpx.Response, max_bytes: int) -> bytes:
@@ -115,6 +119,47 @@ class StaticFetcher:
 # ---------------------------------------------------------------------------
 # Compat / conveniencia: API funcional de v1, ahora sobre el Fetcher.
 # ---------------------------------------------------------------------------
+def fetch_post(
+    url: str,
+    data: dict,
+    *,
+    timeout_s: float = 25.0,
+    max_bytes: int = 10 * 1024 * 1024,
+    allow_private: bool = False,
+    cookies: dict | None = None,
+    proxy: str | None = None,
+    user_agent: str = _DEFAULT_UA,
+) -> FetchResult:
+    """POST form-urlencoded SSRF-safe (postback ASP.NET / forms). Devuelve FetchResult."""
+    resolve_and_validate(url, allow_private=allow_private)
+    headers = {"User-Agent": user_agent, "Content-Type": "application/x-www-form-urlencoded"}
+    if cookies:
+        headers["Cookie"] = "; ".join(f"{k}={v}" for k, v in cookies.items())
+    client_kwargs = dict(follow_redirects=True, timeout=timeout_s, headers=headers)
+    if proxy:
+        client_kwargs["proxy"] = proxy
+    try:
+        with httpx.Client(**client_kwargs) as client:
+            with client.stream("POST", url, data=data) as resp:
+                final = str(resp.url)
+                resolve_and_validate(final, allow_private=allow_private)  # re-valida tras redirect
+                raw = _enforce_byte_cap(resp, max_bytes)
+                enc = resp.encoding or "utf-8"
+                try:
+                    text = raw.decode(enc, errors="replace")
+                except (LookupError, UnicodeDecodeError):
+                    text = raw.decode("utf-8", errors="replace")
+                return FetchResult(
+                    url=final, status_code=resp.status_code, content=raw, text=text,
+                    content_type=resp.headers.get("content-type", ""), tier=0,
+                    proxy_used=proxy, headers=dict(resp.headers),
+                )
+    except SSRFError:
+        raise
+    except httpx.HTTPError as e:
+        raise FetchError(f"Fallo de red en POST: {type(e).__name__}.") from e
+
+
 def fetch_static(
     url: str,
     *,

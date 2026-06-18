@@ -193,7 +193,20 @@
       </div>
 
       <details class="adv">
-        <summary>Avanzado · proxy y anti-CAPTCHA (cuando nada más sirve)</summary>
+        <summary>Avanzado · paginado, proxy, anti-CAPTCHA, cookies</summary>
+        <div class="row">
+          <div>
+            <label class="field-label" for="paginate">Barrer paginado</label>
+            <select id="paginate" name="paginate">
+              <option value="0" selected>no</option>
+              <option value="1">sí (postback / links / ?page=)</option>
+            </select>
+          </div>
+          <div>
+            <label class="field-label" for="max_pages">Páginas máx</label>
+            <input id="max_pages" name="max_pages" type="number" min="1" max="200" value="10" />
+          </div>
+        </div>
         <label class="field-label" for="proxy">Proxy (override de este job)</label>
         <input id="proxy" name="proxy" type="text" placeholder="http://user:pass@host:puerto · socks5://host:puerto" autocomplete="off" />
         <div class="row">
@@ -362,6 +375,10 @@ form.addEventListener("submit", async (ev) => {
     payload.captcha_api_key = form.captcha_api_key.value.trim();
   }
   if (form.cookies.value.trim()) payload.cookies = form.cookies.value.trim();
+  if (form.paginate.value === "1") {
+    payload.paginate = true;
+    payload.max_pages = parseInt(form.max_pages.value, 10) || 10;
+  }
 
   try {
     const r = await fetch("/api/jobs", {

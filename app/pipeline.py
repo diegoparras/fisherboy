@@ -50,6 +50,7 @@ class PipelineDeps:
     convert_document: Callable[[bytes, str], str] | None = None  # (bytes, filename) -> markdown
     reversible: object | None = None                    # ReversibleAnonymizer
     llm_complete: Callable[[str, str], str] | None = None       # (system, user) -> str
+    post: Callable[..., FetchResult] | None = None              # POST SSRF-safe (paginado ASP.NET)
     persist: Callable[[Sobre], bool] | None = None
     index_content: Callable[[Sobre], bool] | None = None        # embeddings → vector store
     metrics: object | None = None
@@ -86,6 +87,11 @@ def build_default_deps(settings, *, redis_client=None) -> PipelineDeps:
     def _extract(html: str, url: str | None) -> str:
         return html_to_markdown_rich(html, url=url)[0]
 
+    def _post(u: str, data: dict, proxy=None, cookies=None) -> FetchResult:
+        from .fetchers.static import fetch_post
+        return fetch_post(u, data, allow_private=settings.allow_private_targets,
+                          max_bytes=settings.fetch_max_bytes, cookies=cookies, proxy=proxy)
+
     # robots: trae el robots.txt con el mismo router (tier 0), tolerante a fallos.
     def _robots_text(robots_url: str) -> str | None:
         try:
@@ -112,6 +118,7 @@ def build_default_deps(settings, *, redis_client=None) -> PipelineDeps:
         extract=_extract,
         anonymize_opaco=anon.process_opaco,
         crawl=_crawl,
+        post=_post,
     )
 
     # Sub-pipeline documental: delega PDFs/docs a Escriba si ESCRIBA_URL está.
@@ -215,6 +222,39 @@ def _job_overrides(sobre: Sobre) -> dict:
     return kw
 
 
+def _sweep_pagination(sobre, deps, url, tier_hint, max_pages, overrides) -> list[FetchResult]:
+    """Barre el paginado de la URL semilla y junta los hipervínculos de cada página."""
+    from .crawl.discovery import extract_links
+    from .crawl.pagination import paginate
+
+    first = deps.fetch(url, tier_hint, **overrides)
+    get_text = lambda u: deps.fetch(u, tier_hint, **overrides).text  # noqa: E731
+
+    post_text = None
+    if deps.post is not None:
+        post_kw = {k: overrides[k] for k in ("proxy", "cookies") if k in overrides}
+        post_text = lambda u, data: deps.post(u, data, **post_kw).text  # noqa: E731
+
+    swept = paginate(first.text, first.url, get_text=get_text, post_text=post_text,
+                     max_pages=max(max_pages, 1))
+
+    results, links, seen = [], [], set()
+    for u, html in swept:
+        results.append(FetchResult(
+            url=u, status_code=200, content=html.encode("utf-8", "replace"),
+            text=html, content_type="text/html", tier=first.tier,
+        ))
+        for link in extract_links(html, u, same_domain=False):
+            if link not in seen:
+                seen.add(link)
+                links.append(link)
+
+    sobre.meta["hyperlinks"] = links[:1000]
+    sobre.meta["hyperlinks_total"] = len(links)
+    sobre.meta["paginas_barridas"] = len(results)
+    return results
+
+
 def _gather(sobre: Sobre, deps: PipelineDeps) -> list[FetchResult]:
     """Trae la(s) página(s): crawl si se pidió y hay crawler, si no un solo fetch."""
     url = str(sobre.source_url)
@@ -222,6 +262,11 @@ def _gather(sobre: Sobre, deps: PipelineDeps) -> list[FetchResult]:
     crawl_depth = int(sobre.meta.get("crawl_depth", 0) or 0)
     max_pages = int(sobre.meta.get("max_pages", 1) or 1)
     overrides = _job_overrides(sobre)
+
+    # Modo barrer paginado: recorre TODAS las páginas (postback ASP.NET / links / ?page=)
+    # y junta los hipervínculos de cada una.
+    if sobre.meta.get("paginate"):
+        return _sweep_pagination(sobre, deps, url, tier_hint, max_pages, overrides)
 
     if deps.crawl is not None and (crawl_depth > 0 or max_pages > 1):
         pages = deps.crawl(

@@ -43,6 +43,8 @@ class FetchContext:
         "Mozilla/5.0 (compatible; Fisherboy/1.0; +https://github.com/diegoparras/fisherboy)"
     )
     proxy: str | None = None          # URL del proxy para este intento (lo elige el pool)
+    method: str = "GET"               # GET | POST (POST para postback ASP.NET / forms)
+    data: dict | None = None          # cuerpo del POST (form-urlencoded)
     headers: dict = field(default_factory=dict)
     solver: object | None = None      # CaptchaSolver, inyectado en tiers con browser
     cookies: dict = field(default_factory=dict)  # sesión por dominio (SessionStore)

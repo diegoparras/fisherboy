@@ -108,6 +108,8 @@ def create_app(
             sobre.meta["tier_hint"] = int(req.tier_hint)
         sobre.meta["crawl_depth"] = int(req.crawl_depth)
         sobre.meta["max_pages"] = int(req.max_pages)
+        if req.paginate:
+            sobre.meta["paginate"] = True
         if req.extract_schema is not None:
             sobre.meta["extract_schema"] = req.extract_schema
         if req.proxy:
