@@ -356,7 +356,11 @@ def _capture_branch(sobre: Sobre, deps: PipelineDeps) -> Sobre:
 
     sobre.status = JobStatus.OK if endpoints else JobStatus.ERROR
     if not endpoints:
-        sobre.error = "No se capturó ningún endpoint JSON/XHR (¿la página no usa API?)."
+        sobre.error = (
+            "Solo se vieron endpoints de telemetría/tracking, no un API de datos. "
+            "Probable: la página está gateada (login/ubicación) o el dato necesita "
+            "interacción (buscar/filtrar). Probá con cookies de sesión o el tier browser."
+        )
     if deps.persist is not None:
         deps.persist(sobre)
     if deps.metrics is not None:

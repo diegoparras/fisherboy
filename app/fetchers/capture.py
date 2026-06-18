@@ -15,9 +15,58 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
+from urllib.parse import urlsplit
 
 from ..security.ssrf import resolve_and_validate
 from .base import FetchContext, FetchError
+
+# Endpoints de telemetría/tracking/analytics: NUNCA son el dato. Se descartan.
+_TELEMETRY = re.compile(
+    r"(melidata|/tracks?\b|o11y|otel|/v1/(metrics|traces|logs)|/collect\b|/beacon|"
+    r"analytics|google-?analytics|googletagmanager|/gtm|/gtag|doubleclick|segment\.|"
+    r"mixpanel|amplitude|sentry|datadog|newrelic|nr-data|hotjar|clarity\.ms|"
+    r"facebook\.com/tr|/pixel|/rum\b|/telemetry|cookielaw|onetrust|/csp-report)",
+    re.I,
+)
+
+
+def _is_telemetry(url: str) -> bool:
+    return bool(_TELEMETRY.search(url))
+
+
+def _reg_domain(host: str) -> str:
+    """Dominio registrable aproximado (últimos 2 labels)."""
+    parts = (host or "").lower().split(".")
+    return ".".join(parts[-2:]) if len(parts) >= 2 else (host or "")
+
+
+def _count_items(obj, budget: int = 5000) -> int:
+    """Cuenta nodos (items de listas + claves de dicts) hasta un tope. Más = más dato."""
+    stack, n = [obj], 0
+    while stack and n < budget:
+        cur = stack.pop()
+        if isinstance(cur, list):
+            n += len(cur)
+            stack.extend(cur[:200])
+        elif isinstance(cur, dict):
+            n += len(cur)
+            stack.extend(list(cur.values())[:200])
+    return n
+
+
+def _data_score(entry: dict, target_reg: str) -> int:
+    """Puntúa cuán probable es que el endpoint sea EL dato (no ruido)."""
+    if "json" not in entry:
+        return 0
+    score = entry.get("bytes", 0) + _count_items(entry["json"]) * 150
+    host = urlsplit(entry["url"]).hostname or ""
+    reg = _reg_domain(host)
+    if reg == target_reg:
+        score += 8000          # mismo sitio
+    if host.startswith("api.") or "/api/" in entry["url"] or "/rest/" in entry["url"]:
+        score += 4000          # parece una API de datos
+    return score
 
 
 def available() -> bool:
@@ -55,10 +104,10 @@ def capture_xhr(url: str, ctx: FetchContext, *, max_endpoints: int = 40,
             is_api = "json" in ct.lower() or rtype in ("xhr", "fetch")
             if not is_api or resp.url in seen_urls:
                 return
-            if not ("json" in ct.lower() or resp.url.lower().endswith((".json",))):
-                # XHR/fetch que no es JSON: lo saltamos (HTML fragment lo cubre el render)
-                if "json" not in ct.lower():
-                    return
+            if _is_telemetry(resp.url):     # descarta tracking/analytics/telemetría
+                return
+            if "json" not in ct.lower() and not resp.url.lower().endswith(".json"):
+                return
             body = resp.body()
             if len(body) < min_bytes:
                 return
@@ -101,6 +150,10 @@ def capture_xhr(url: str, ctx: FetchContext, *, max_endpoints: int = 40,
             raise FetchError(f"Fallo al capturar API: {type(e).__name__}.") from e
         browser.close()
 
-    # Más grande primero: el endpoint de datos suele ser el JSON más pesado.
-    captured.sort(key=lambda e: e.get("bytes", 0), reverse=True)
+    # Rankea por "cuán dato es" (no por tamaño crudo): mismo dominio / api.* / arrays
+    # grandes primero. La telemetría ya se filtró en _on_response.
+    target_reg = _reg_domain(urlsplit(url).hostname or "")
+    for e in captured:
+        e["data_score"] = _data_score(e, target_reg)
+    captured.sort(key=lambda e: e["data_score"], reverse=True)
     return captured[:max_endpoints]
