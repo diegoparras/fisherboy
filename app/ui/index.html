@@ -207,6 +207,11 @@
             <input id="max_pages" name="max_pages" type="number" min="1" max="200" value="10" />
           </div>
         </div>
+        <label class="field-label" for="capture_api">Capturar API/XHR oculto (SPAs, grids dinámicos)</label>
+        <select id="capture_api" name="capture_api">
+          <option value="0" selected>no</option>
+          <option value="1">sí · traé los endpoints JSON que consume la página</option>
+        </select>
         <label class="field-label" for="proxy">Proxy (override de este job)</label>
         <input id="proxy" name="proxy" type="text" placeholder="http://user:pass@host:puerto · socks5://host:puerto" autocomplete="off" />
         <div class="row">
@@ -379,6 +384,7 @@ form.addEventListener("submit", async (ev) => {
     payload.paginate = true;
     payload.max_pages = parseInt(form.max_pages.value, 10) || 10;
   }
+  if (form.capture_api.value === "1") payload.capture_api = true;
 
   try {
     const r = await fetch("/api/jobs", {

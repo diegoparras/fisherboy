@@ -110,6 +110,8 @@ def create_app(
         sobre.meta["max_pages"] = int(req.max_pages)
         if req.paginate:
             sobre.meta["paginate"] = True
+        if req.capture_api:
+            sobre.meta["capture_api"] = True
         if req.extract_schema is not None:
             sobre.meta["extract_schema"] = req.extract_schema
         if req.proxy:

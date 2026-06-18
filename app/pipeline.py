@@ -51,6 +51,7 @@ class PipelineDeps:
     reversible: object | None = None                    # ReversibleAnonymizer
     llm_complete: Callable[[str, str], str] | None = None       # (system, user) -> str
     post: Callable[..., FetchResult] | None = None              # POST SSRF-safe (paginado ASP.NET)
+    capture: Callable[..., list] | None = None                  # captura de XHR/JSON oculto (ADR-010)
     persist: Callable[[Sobre], bool] | None = None
     index_content: Callable[[Sobre], bool] | None = None        # embeddings → vector store
     metrics: object | None = None
@@ -92,6 +93,18 @@ def build_default_deps(settings, *, redis_client=None) -> PipelineDeps:
         return fetch_post(u, data, allow_private=settings.allow_private_targets,
                           max_bytes=settings.fetch_max_bytes, cookies=cookies, proxy=proxy)
 
+    def _capture(u: str, tier_hint=None, proxy=None, solver=None, cookies=None) -> list:
+        from .fetchers.base import FetchContext
+        from .fetchers.capture import capture_xhr
+        ctx = FetchContext(
+            timeout_s=settings.fetch_timeout_s, max_bytes=settings.fetch_max_bytes,
+            allow_private=settings.allow_private_targets, headless=settings.browser_headless,
+            settle_s=settings.browser_settle_s, scroll=settings.browser_scroll,
+            user_agent=settings.browser_user_agent, locale=settings.browser_locale,
+            proxy=proxy, cookies=cookies or {},
+        )
+        return capture_xhr(u, ctx)
+
     # robots: trae el robots.txt con el mismo router (tier 0), tolerante a fallos.
     def _robots_text(robots_url: str) -> str | None:
         try:
@@ -119,6 +132,7 @@ def build_default_deps(settings, *, redis_client=None) -> PipelineDeps:
         anonymize_opaco=anon.process_opaco,
         crawl=_crawl,
         post=_post,
+        capture=_capture,
     )
 
     # Sub-pipeline documental: delega PDFs/docs a Escriba si ESCRIBA_URL está.
@@ -312,6 +326,41 @@ def _json_branch(sobre: Sobre, combined_md: str, deps: PipelineDeps) -> None:
     sobre.content_json = extracted
 
 
+def _capture_branch(sobre: Sobre, deps: PipelineDeps) -> Sobre:
+    """Captura los endpoints JSON/XHR ocultos y los entrega. Respeta privacy_mode."""
+    url = str(sobre.source_url)
+    tier_hint = sobre.meta.get("tier_hint")
+    overrides = _job_overrides(sobre)
+    endpoints = deps.capture(url, tier_hint, **overrides)
+    sobre.tier_usado = FetchTier.BROWSER
+    sobre.fetched_at = datetime.now(timezone.utc)
+    sobre.meta.update({
+        "api_endpoints": len(endpoints),
+        "api_urls": [e.get("url") for e in endpoints[:20]],
+    })
+    body = json.dumps(endpoints, ensure_ascii=False, indent=2)
+
+    if sobre.privacy_mode is PrivacyMode.DIRECTO:
+        sobre.content_json = {"endpoints": endpoints}
+        sobre.content_md = body
+        sobre.anonimizado = False
+    else:  # opaco/reversible: enmascara la representación (puede traer PII)
+        anon, n = deps.anonymize_opaco(body)
+        sobre.content_md = anon
+        sobre.anonimizado = True
+        sobre.meta["entidades_anonimizadas"] = n
+
+    sobre.status = JobStatus.OK if endpoints else JobStatus.ERROR
+    if not endpoints:
+        sobre.error = "No se capturó ningún endpoint JSON/XHR (¿la página no usa API?)."
+    if deps.persist is not None:
+        deps.persist(sobre)
+    if deps.metrics is not None:
+        deps.metrics.inc_job(sobre.status.value)
+    log.info("captura API", extra={"job_id": sobre.job_id, "endpoints": len(endpoints)})
+    return sobre
+
+
 def process_job(sobre: Sobre, deps: PipelineDeps) -> Sobre:
     """Procesa un job de punta a punta. Nunca lanza: las fallas quedan en el sobre."""
     sobre.status = JobStatus.EN_PROCESO
@@ -319,6 +368,10 @@ def process_job(sobre: Sobre, deps: PipelineDeps) -> Sobre:
     log.info("job en proceso", extra={"job_id": sobre.job_id, "url": url})
 
     try:
+        # Keystone (ADR-010): capturar el API/XHR oculto en vez de pelear el HTML.
+        if sobre.meta.get("capture_api") and deps.capture is not None:
+            return _capture_branch(sobre, deps)
+
         pages = _gather(sobre, deps)
         first = pages[0]
         sobre.tier_usado = FetchTier(first.tier) if first.tier is not None else FetchTier.ESTATICO

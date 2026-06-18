@@ -169,3 +169,25 @@ def test_llms_txt_output_wraps_header():
     assert out.status.value == "ok"
     assert out.content_md.startswith("# Mi Doc")
     assert "Fuente:" in out.content_md
+
+
+def test_capture_api_branch_directo():
+    eps = [{"url": "https://api.x.com/items?p=1", "status": 200, "content_type": "application/json",
+            "bytes": 1234, "json": {"items": [{"id": 1}, {"id": 2}]}}]
+    sobre = _sobre(privacy_mode=PrivacyMode.DIRECTO)
+    sobre.meta["capture_api"] = True
+    deps = _base_deps(capture=lambda u, tier_hint=None, **kw: eps)
+    out = process_job(sobre, deps)
+    assert out.status.value == "ok"
+    assert out.content_json["endpoints"][0]["json"]["items"][0]["id"] == 1
+    assert out.meta["api_endpoints"] == 1
+    assert out.anonimizado is False
+
+
+def test_capture_api_empty_errors():
+    sobre = _sobre(privacy_mode=PrivacyMode.DIRECTO)
+    sobre.meta["capture_api"] = True
+    deps = _base_deps(capture=lambda u, tier_hint=None, **kw: [])
+    out = process_job(sobre, deps)
+    assert out.status.value == "error"
+    assert "endpoint" in out.error.lower()
