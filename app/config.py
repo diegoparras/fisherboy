@@ -90,6 +90,23 @@ class Settings:
         self.captcha_solver_url = e.get("CAPTCHA_SOLVER_URL", "")
         self.captcha_solver_key = e.get("CAPTCHA_SOLVER_KEY", "")
 
+        # Browser tiers (2/3): stealth. headless=False es menos detectable pero necesita
+        # display (en server usar xvfb o dejar True). settle = espera tras cargar; scroll
+        # dispara contenido lazy. UA realista.
+        self.browser_headless = (
+            (e.get("BROWSER_HEADLESS", "1") or "1").strip().lower() in ("1", "true", "yes", "on")
+        )
+        self.browser_settle_s = float(e.get("BROWSER_SETTLE_S", "3.5"))
+        self.browser_scroll = (
+            (e.get("BROWSER_SCROLL", "1") or "1").strip().lower() in ("1", "true", "yes", "on")
+        )
+        self.browser_user_agent = e.get(
+            "BROWSER_USER_AGENT",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        )
+        self.browser_locale = e.get("BROWSER_LOCALE", "es-AR")
+
         # Allowlist de destinos de callback en producción. Vacío = solo bloqueo SSRF.
         # Coma-separada de hosts. Ver ADR-004 punto 3.
         raw_allow = (e.get("CALLBACK_ALLOWLIST", "") or "").strip()

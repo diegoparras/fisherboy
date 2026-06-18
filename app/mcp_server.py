@@ -44,6 +44,9 @@ def build_server():
         crawl_depth: int = 0,
         max_pages: int = 1,
         extract_schema: dict | None = None,
+        proxy: str | None = None,
+        captcha_api_url: str | None = None,
+        captcha_api_key: str | None = None,
     ) -> dict:
         """Encola un job de scraping. Devuelve job_id y status.
 
@@ -63,6 +66,9 @@ def build_server():
             crawl_depth=crawl_depth,
             max_pages=max_pages,
             extract_schema=extract_schema,
+            proxy=proxy,
+            captcha_api_url=captcha_api_url,
+            captcha_api_key=captcha_api_key,
         )
         try:
             mode = policy.resolve_mode(req.rol, req.privacy_mode)
@@ -94,6 +100,11 @@ def build_server():
         sobre.meta["max_pages"] = int(req.max_pages)
         if req.extract_schema is not None:
             sobre.meta["extract_schema"] = req.extract_schema
+        if req.proxy:
+            sobre.meta["proxy"] = req.proxy
+        if req.captcha_api_url and req.captcha_api_key:
+            sobre.meta["captcha_api_url"] = req.captcha_api_url
+            sobre.meta["captcha_api_key"] = req.captcha_api_key
         queue.enqueue(sobre)
         return {"job_id": job_id, "status": JobStatus.PENDIENTE.value}
 

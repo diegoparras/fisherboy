@@ -1,12 +1,18 @@
-"""Tier 3 — browser de último recurso (nodriver / Playwright). Ver ADR-006.
+"""Tier 3 — browser de último recurso (nodriver / Playwright), endurecido. Ver ADR-006.
 
-El escalón más caro y más capaz: un Chrome real manejado por CDP. nodriver es el
-sucesor de undetected-chromedriver (no usa webdriver, cuesta más detectarlo);
-Playwright es el fallback robusto. Solo se llega acá si tier 0/1/2 fallaron, porque
-arrancar un Chrome por job es lento y pesado.
+El escalón más caro y más capaz: Chrome real por CDP. nodriver (sucesor de
+undetected-chromedriver) es lo más difícil de detectar; Playwright es el fallback.
 
-nodriver es async; lo corremos en un event loop propio para mantener la interfaz
-síncrona del Fetcher. Import perezoso: si nada está, `available()` es False.
+Hardening anti-detección (clave para targets hostiles):
+- args que apagan las señales de automatización (AutomationControlled, etc.),
+- `headless` configurable: en modo headful (con display o xvfb) la huella es mucho más
+  creíble; en server se deja headless,
+- proxy inyectado en el LAUNCH del browser (no solo en httpx),
+- espera de asentado (`settle_s`) + scroll para disparar contenido lazy/JS,
+- UA y locale realistas.
+
+Aun así, contra un anti-bot serio sin proxy residencial el sitio puede ganar: ahí entra
+el override de proxy/solver por job desde la UI. Esto sube la vara, no garantiza magia.
 """
 from __future__ import annotations
 
@@ -19,6 +25,21 @@ def _has(mod: str) -> bool:
     import importlib.util
 
     return importlib.util.find_spec(mod) is not None
+
+
+def _stealth_args(ctx: FetchContext) -> list[str]:
+    args = [
+        "--window-size=1920,1080",
+        "--disable-blink-features=AutomationControlled",
+        "--disable-features=IsolateOrigins,site-per-process,AutomationControlled",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-infobars",
+        f"--lang={ctx.locale}",
+    ]
+    if ctx.proxy:
+        args.append(f"--proxy-server={ctx.proxy}")
+    return args
 
 
 class BrowserFetcher:
@@ -34,12 +55,16 @@ class BrowserFetcher:
         import nodriver as uc
 
         async def _run() -> tuple[str, str]:
-            args = []
-            if ctx.proxy:
-                args.append(f"--proxy-server={ctx.proxy}")
-            browser = await uc.start(headless=True, browser_args=args)
+            browser = await uc.start(headless=ctx.headless, browser_args=_stealth_args(ctx))
             page = await browser.get(url)
-            await page.sleep(2)  # deja asentar el render/JS anti-bot
+            await page.sleep(ctx.settle_s)            # deja asentar el JS / anti-bot
+            if ctx.scroll:                            # dispara contenido lazy
+                for _ in range(4):
+                    try:
+                        await page.scroll_down(600)
+                    except Exception:  # noqa: BLE001
+                        break
+                    await page.sleep(0.6)
             html = await page.get_content()
             final = page.url or url
             browser.stop()
@@ -55,13 +80,26 @@ class BrowserFetcher:
     def _render_playwright(self, url: str, ctx: FetchContext) -> tuple[str, int, dict, str]:
         from playwright.sync_api import sync_playwright
 
-        launch = {"headless": True}
+        launch = {"headless": ctx.headless, "args": _stealth_args(ctx)}
         if ctx.proxy:
             launch["proxy"] = {"server": ctx.proxy}
         with sync_playwright() as p:
             browser = p.chromium.launch(**launch)
-            page = browser.new_page(user_agent=ctx.user_agent)
+            context = browser.new_context(
+                user_agent=ctx.user_agent, locale=ctx.locale,
+                viewport={"width": 1920, "height": 1080},
+            )
+            if ctx.cookies:
+                context.add_cookies([
+                    {"name": k, "value": str(v), "url": url} for k, v in ctx.cookies.items()
+                ])
+            page = context.new_page()
             resp = page.goto(url, timeout=ctx.timeout_s * 1000, wait_until="networkidle")
+            page.wait_for_timeout(int(ctx.settle_s * 1000))
+            if ctx.scroll:
+                for _ in range(4):
+                    page.mouse.wheel(0, 600)
+                    page.wait_for_timeout(500)
             html = page.content()
             status = resp.status if resp else 200
             headers = dict(resp.headers) if resp else {}

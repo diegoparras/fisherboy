@@ -110,6 +110,11 @@ def create_app(
         sobre.meta["max_pages"] = int(req.max_pages)
         if req.extract_schema is not None:
             sobre.meta["extract_schema"] = req.extract_schema
+        if req.proxy:
+            sobre.meta["proxy"] = req.proxy
+        if req.captcha_api_url and req.captcha_api_key:
+            sobre.meta["captcha_api_url"] = req.captcha_api_url
+            sobre.meta["captcha_api_key"] = req.captcha_api_key
         _queue().enqueue(sobre)
 
         log.info("job encolado", extra={"job_id": job_id, "mode": mode.value, "rol": req.rol.value})

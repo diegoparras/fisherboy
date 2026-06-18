@@ -113,6 +113,11 @@ class TierRouter:
             proxy=proxy,
             headers=dict(t.headers),
             solver=self.solver,
+            cookies=dict(t.cookies),
+            headless=t.headless,
+            settle_s=t.settle_s,
+            scroll=t.scroll,
+            locale=t.locale,
             extra=dict(t.extra),
         )
 
@@ -123,7 +128,14 @@ class TierRouter:
             chain = [avail[0]]  # siempre intentar algo (el más barato disponible)
         return chain
 
-    def fetch(self, url: str, *, tier_hint: int | None = None) -> FetchResult:
+    def fetch(
+        self,
+        url: str,
+        *,
+        tier_hint: int | None = None,
+        proxy_override: str | None = None,
+        solver_override=None,
+    ) -> FetchResult:
         domain = _domain(url)
         cached = self.cache.get(domain)
         start = max(int(tier_hint or 0), int(cached or 0))
@@ -136,8 +148,11 @@ class TierRouter:
 
         for fetcher in chain:
             for attempt in range(self.proxy_attempts):
-                proxy = self.proxies.acquire(domain=domain)
+                # Override por job (UI Avanzado): proxy fijo, sin rotar el pool.
+                proxy = proxy_override or self.proxies.acquire(domain=domain)
                 ctx = self._build_ctx(proxy)
+                if solver_override is not None:
+                    ctx.solver = solver_override
                 try:
                     result = fetcher.fetch(url, ctx)
                     self.proxies.report_success(proxy)
@@ -163,15 +178,17 @@ class TierRouter:
                     last_exc = e
                     self.proxies.report_failure(proxy)
                     escalation.append(f"t{fetcher.tier}:{e.signal}")
+                    if proxy_override:
+                        break  # proxy fijo del job: rotar no ayuda → escalar tier
                     continue  # bloqueo por IP: probar otro proxy en el mismo tier
 
                 except FetchError as e:
                     last_exc = e
                     escalation.append(f"t{fetcher.tier}:error")
-                    if proxy:
+                    if proxy and not proxy_override:
                         self.proxies.report_failure(proxy)
-                        continue  # quizás el proxy está muerto: un reintento
-                    # Error real sin proxy (404, tamaño, redirects): subir no arregla.
+                        continue  # quizás el proxy del pool está muerto: un reintento
+                    # Error real (404, tamaño, redirects) o proxy fijo: subir no arregla.
                     raise
 
         log.info("fetch agotó todos los tiers", extra={"url": url, "escalation": escalation})
@@ -209,6 +226,11 @@ def build_router(settings, *, redis_client=None) -> TierRouter:
         max_bytes=settings.fetch_max_bytes,
         max_redirects=settings.fetch_max_redirects,
         allow_private=settings.allow_private_targets,
+        headless=settings.browser_headless,
+        settle_s=settings.browser_settle_s,
+        scroll=settings.browser_scroll,
+        user_agent=settings.browser_user_agent,
+        locale=settings.browser_locale,
     )
     return TierRouter(
         fetchers,

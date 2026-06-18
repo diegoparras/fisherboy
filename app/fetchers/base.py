@@ -45,6 +45,12 @@ class FetchContext:
     proxy: str | None = None          # URL del proxy para este intento (lo elige el pool)
     headers: dict = field(default_factory=dict)
     solver: object | None = None      # CaptchaSolver, inyectado en tiers con browser
+    cookies: dict = field(default_factory=dict)  # sesión por dominio (SessionStore)
+    # Stealth de los browser tiers (2/3).
+    headless: bool = True
+    settle_s: float = 3.5             # espera tras cargar (deja asentar el JS anti-bot)
+    scroll: bool = True               # scrollea para disparar contenido lazy
+    locale: str = "es-AR"
     extra: dict = field(default_factory=dict)
 
 

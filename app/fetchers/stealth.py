@@ -29,13 +29,21 @@ class StealthFetcher:
     def available(self) -> bool:
         return _has("camoufox") or _has("patchright")
 
+    def _settle_scroll(self, page, ctx: FetchContext) -> None:
+        page.wait_for_timeout(int(ctx.settle_s * 1000))   # deja asentar el JS
+        if ctx.scroll:
+            for _ in range(4):
+                page.mouse.wheel(0, 600)
+                page.wait_for_timeout(500)
+
     def _render_camoufox(self, url: str, ctx: FetchContext) -> tuple[str, int, dict, str]:
         from camoufox.sync_api import Camoufox
 
         proxy = {"server": ctx.proxy} if ctx.proxy else None
-        with Camoufox(headless=True, proxy=proxy, humanize=True) as browser:
+        with Camoufox(headless=ctx.headless, proxy=proxy, humanize=True, locale=ctx.locale) as browser:
             page = browser.new_page()
             resp = page.goto(url, timeout=ctx.timeout_s * 1000, wait_until="domcontentloaded")
+            self._settle_scroll(page, ctx)
             html = page.content()
             status = resp.status if resp else 200
             headers = dict(resp.headers) if resp else {}
@@ -46,13 +54,22 @@ class StealthFetcher:
     def _render_patchright(self, url: str, ctx: FetchContext) -> tuple[str, int, dict, str]:
         from patchright.sync_api import sync_playwright
 
-        launch = {"headless": True}
+        launch = {"headless": ctx.headless}
         if ctx.proxy:
             launch["proxy"] = {"server": ctx.proxy}
         with sync_playwright() as p:
             browser = p.chromium.launch(**launch)
-            page = browser.new_page(user_agent=ctx.user_agent)
+            context = browser.new_context(
+                user_agent=ctx.user_agent, locale=ctx.locale,
+                viewport={"width": 1920, "height": 1080},
+            )
+            if ctx.cookies:
+                context.add_cookies([
+                    {"name": k, "value": str(v), "url": url} for k, v in ctx.cookies.items()
+                ])
+            page = context.new_page()
             resp = page.goto(url, timeout=ctx.timeout_s * 1000, wait_until="domcontentloaded")
+            self._settle_scroll(page, ctx)
             html = page.content()
             status = resp.status if resp else 200
             headers = dict(resp.headers) if resp else {}

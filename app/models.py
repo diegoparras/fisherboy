@@ -66,6 +66,10 @@ class JobRequest(BaseModel):
     max_pages: int = Field(default=1, ge=1, le=1000)
     tier_hint: FetchTier | None = None
     callback_url: HttpUrl | None = None
+    # Overrides por job (panel Avanzado de la UI): para cuando nada más sirve.
+    proxy: str | None = None              # proxy puntual para este job (override del pool)
+    captcha_api_url: str | None = None    # servicio resolvedor de CAPTCHA (estilo 2captcha)
+    captcha_api_key: str | None = None
 
 
 class RevertRequest(BaseModel):

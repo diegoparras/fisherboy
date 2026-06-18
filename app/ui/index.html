@@ -89,6 +89,12 @@
   .btn-pill:disabled { opacity: .55; cursor: not-allowed; }
   .actions { margin-top: 20px; display: flex; justify-content: flex-end; }
 
+  .adv { margin-top: 18px; border: 1px solid var(--border); border-radius: 11px; padding: 0 14px; background: var(--card-2); }
+  .adv summary { cursor: pointer; padding: 13px 0; font-size: 13px; color: var(--muted-2); list-style: none; user-select: none; }
+  .adv summary::-webkit-details-marker { display: none; }
+  .adv summary::before { content: "▸ "; color: var(--accent); }
+  .adv[open] summary::before { content: "▾ "; }
+  .adv[open] { padding-bottom: 16px; }
   .hint { font-size: 12.5px; color: var(--muted); margin-top: 14px; line-height: 1.5; }
   .hint b { color: var(--muted-2); font-weight: 600; }
 
@@ -185,6 +191,22 @@
           </select>
         </div>
       </div>
+
+      <details class="adv">
+        <summary>Avanzado · proxy y anti-CAPTCHA (cuando nada más sirve)</summary>
+        <label class="field-label" for="proxy">Proxy (override de este job)</label>
+        <input id="proxy" name="proxy" type="text" placeholder="http://user:pass@host:puerto · socks5://host:puerto" autocomplete="off" />
+        <div class="row">
+          <div>
+            <label class="field-label" for="captcha_api_url">Anti-CAPTCHA · API URL</label>
+            <input id="captcha_api_url" name="captcha_api_url" type="text" placeholder="https://solver.tuservicio.com" autocomplete="off" />
+          </div>
+          <div>
+            <label class="field-label" for="captcha_api_key">Anti-CAPTCHA · API key</label>
+            <input id="captcha_api_key" name="captcha_api_key" type="password" placeholder="••••••" autocomplete="off" />
+          </div>
+        </div>
+      </details>
 
       <div class="actions">
         <button type="submit" class="btn-pill" id="submit-btn">Pescar 🎣</button>
@@ -332,6 +354,11 @@ form.addEventListener("submit", async (ev) => {
     output_format: form.output_format.value,
   };
   if (form.tier.value !== "") payload.tier_hint = parseInt(form.tier.value, 10);
+  if (form.proxy.value.trim()) payload.proxy = form.proxy.value.trim();
+  if (form.captcha_api_url.value.trim() && form.captcha_api_key.value.trim()) {
+    payload.captcha_api_url = form.captcha_api_url.value.trim();
+    payload.captcha_api_key = form.captcha_api_key.value.trim();
+  }
 
   try {
     const r = await fetch("/api/jobs", {
