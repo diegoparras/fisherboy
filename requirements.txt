@@ -26,6 +26,9 @@ fastmcp>=2.0
 # nodriver>=0.38
 # playwright>=1.47
 
-# --- Capas 5/7 opcionales (ADR-006/007/008). El sistema degrada sin ellas.
-# crawl4ai>=0.4          # conversión HTML→markdown rica (Capa 5; si no, Trafilatura)
-# psycopg[binary]>=3.1   # persistencia Postgres + pgvector (Capa 7)
+# --- Conversión LLM-ready RECOMENDADA (Capa 5). Si falta, cae a Trafilatura.
+crawl4ai>=0.4            # markdown "fit" (poda nav/boilerplate por densidad) — lo mejor para LLM
+# scrapling>=0.2         # parsing adaptivo + stealth fetcher (alternativa a parsing/adaptive.py)
+
+# --- Capa 7 opcional. El sistema degrada sin ella.
+# psycopg[binary]>=3.1   # persistencia Postgres + pgvector
