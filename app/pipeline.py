@@ -227,12 +227,8 @@ def _job_overrides(sobre: Sobre) -> dict:
         kw["solver"] = ExternalSolver(cu, ck)
     raw_cookies = sobre.meta.get("cookies")
     if raw_cookies:
-        jar = {}
-        for part in raw_cookies.split(";"):
-            if "=" in part:
-                k, _, v = part.strip().partition("=")
-                if k:
-                    jar[k] = v
+        from .security.cookies import parse_cookies
+        jar = parse_cookies(raw_cookies)
         if jar:
             kw["cookies"] = jar
     if sobre.meta.get("max_tier") is not None:
