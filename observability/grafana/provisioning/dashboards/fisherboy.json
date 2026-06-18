@@ -1,0 +1,51 @@
+{
+  "title": "Fisherboy",
+  "uid": "fisherboy",
+  "tags": ["fisherboy"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "time": { "from": "now-6h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Jobs por estado (rate 5m)",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "sum by (status) (rate(fisherboy_jobs_total[5m]))", "legendFormat": "{{status}}" }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Fetches por tier ganador (rate 5m)",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        { "expr": "sum by (tier) (rate(fisherboy_fetch_tier_total[5m]))", "legendFormat": "tier {{tier}}" }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "CAPTCHAs detectados por proveedor (rate 5m)",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        { "expr": "sum by (vendor) (rate(fisherboy_captcha_total[5m]))", "legendFormat": "{{vendor}}" }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "logs",
+      "title": "Logs (errores)",
+      "datasource": { "type": "loki", "uid": "Loki" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        { "expr": "{level=\"ERROR\"} | json" }
+      ]
+    }
+  ]
+}

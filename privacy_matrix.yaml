@@ -1,0 +1,21 @@
+# privacy_matrix.yaml
+# Modos de privacidad habilitados por rol.
+# Referenciado por app/privacy_policy.py vía PRIVACY_MATRIX_PATH.
+# Si el rol no habilita el modo pedido, el gateway responde 403.
+# Nunca se baja de modo en silencio. Ver ADR-004.
+
+roles:
+  dios:
+    allowed_modes: [reversible, opaco, directo]
+  angel:
+    allowed_modes: [reversible, opaco]
+  humano:
+    allowed_modes: [opaco]
+
+# Comportamiento ante modo no habilitado.
+# deny = responder 403 y no encolar. Unica opcion permitida.
+on_denied: deny
+
+# Modo por defecto si el job no especifica uno.
+# Debe estar dentro de allowed_modes del rol, si no, 403.
+default_mode: opaco

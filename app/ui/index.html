@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="es" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Fisherboy · El papá de todos los scrapers</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='15' fill='%23e06a3a'/%3E%3Cg fill='none' stroke='white' stroke-width='3' stroke-linecap='round'%3E%3Ccircle cx='32' cy='16' r='3.4' stroke-width='2.6'/%3E%3Cpath d='M32 19.4 V40 a9 9 0 0 1 -18 0 v-3'/%3E%3Cpath d='M14 39 l3.2 4.2 4.4 -2.4'/%3E%3C/g%3E%3C/svg%3E" />
+<style>
+  :root {
+    --bg: #0a0a0c; --bg-2: #101014; --panel: #141418;
+    --card: rgba(255,255,255,0.04); --card-2: rgba(255,255,255,0.022);
+    --border: rgba(255,255,255,0.10); --hairline: rgba(255,255,255,0.16);
+    --text: #ededf0; --muted: #8b8b96; --muted-2: #bdbdc7;
+    --blue: #ef8b66; --blue-press: #e3754d; --accent: #ef8b66; --accent-2: #e3754d;
+    --on-accent: #1a1208;
+    --ok: #3fb950; --warn: #d6a01a; --err: #f85149;
+    --radius: 12px; --radius-lg: 16px;
+    --ring: 0 0 0 3px rgba(239,139,102,.26);
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Consolas, monospace;
+    color-scheme: dark;
+  }
+  [data-theme="light"] {
+    --bg: #fafafb; --bg-2: #ffffff; --panel: #ffffff;
+    --card: rgba(15,15,20,0.028); --card-2: rgba(15,15,20,0.016);
+    --border: rgba(15,15,20,0.10); --hairline: rgba(15,15,20,0.17);
+    --text: #16161a; --muted: #70707b; --muted-2: #3c3c44;
+    --blue: #e06a3a; --blue-press: #cf5a2c; --accent: #e06a3a; --accent-2: #d2764f;
+    --on-accent: #ffffff;
+    --ok: #1a7f37; --warn: #9a6700; --err: #cf222e;
+    --ring: 0 0 0 3px rgba(224,106,58,.18);
+    --shadow: 0 1px 2px rgba(15,15,20,.04), 0 12px 32px -16px rgba(15,15,20,.16);
+    color-scheme: light;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--text); background: var(--bg);
+    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+  }
+  .wrap { max-width: 940px; margin: 0 auto; padding: 22px clamp(20px, 6vw, 84px) 100px; }
+
+  /* topbar */
+  .topbar { display: flex; align-items: center; gap: 12px; margin-bottom: 30px; }
+  .logo { display: inline-flex; align-items: center; gap: 11px; font-weight: 600; font-size: 19px; letter-spacing: -.02em; flex-shrink: 0; }
+  .logomark { width: 30px; height: 30px; border-radius: 8px; display: block; }
+  .spacer { flex: 1; }
+  .topbar-actions { display: flex; align-items: center; gap: 8px; }
+  .badge { font-size: 12px; font-weight: 600; padding: 5px 11px; border-radius: 999px; border: 1px solid var(--border); text-transform: capitalize; }
+  .badge.dios { background: rgba(240,169,140,.16); color: #f0a98c; border-color: rgba(240,169,140,.35); }
+  .badge.angel { background: rgba(127,178,240,.14); color: #7fb2f0; border-color: rgba(127,178,240,.32); }
+  .badge.humano { background: rgba(150,150,150,.14); color: var(--muted-2); }
+  .icon-btn { width: 38px; height: 38px; border-radius: 11px; border: 1px solid var(--border); background: var(--card); color: var(--text); cursor: pointer; font-size: 16px; transition: background .2s, border-color .2s; display: grid; place-items: center; }
+  .icon-btn:hover { background: var(--card-2); border-color: var(--hairline); }
+  .status-chip { display: inline-flex; align-items: center; gap: 9px; height: 38px; padding: 0 13px; border-radius: 11px; border: 1px solid var(--border); background: var(--card); color: var(--muted-2); font-size: 13px; }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); transition: background .3s, box-shadow .3s; }
+  .status-dot.ok { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); }
+  .status-dot.crit { background: var(--err); box-shadow: 0 0 0 3px color-mix(in srgb, var(--err) 22%, transparent); }
+
+  /* hero */
+  header.hero { text-align: center; margin: 14px 0 34px; }
+  h1 { font-size: clamp(34px, 6vw, 60px); line-height: 1.05; margin: 6px 0 14px; font-weight: 600; letter-spacing: -.03em; }
+  .sub { color: var(--muted); font-size: clamp(16px, 2.2vw, 20px); max-width: 600px; margin: 0 auto; line-height: 1.45; }
+
+  /* panel */
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 22px; box-shadow: var(--shadow); }
+  .field-label { font-size: 13px; font-weight: 500; color: var(--muted-2); margin: 0 0 7px; display: block; }
+  .url-row { display: flex; gap: 10px; align-items: stretch; }
+  .url-row input { flex: 1; }
+  textarea, input[type="text"], input[type="url"], select {
+    width: 100%; background: var(--card-2); border: 1px solid var(--border); color: var(--text);
+    border-radius: 9px; padding: 12px 14px; font: inherit; font-size: 14.5px; outline: none;
+    transition: border-color .15s, box-shadow .15s, background .15s;
+  }
+  input:focus, select:focus { border-color: var(--accent); box-shadow: var(--ring); background: var(--bg-2); }
+  input::placeholder { color: var(--muted); }
+  select { appearance: none; cursor: pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238b8b96' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 13px center; padding-right: 34px;
+  }
+  select option { background: var(--panel); color: var(--text); }
+  .controls-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 18px; }
+  @media (max-width: 560px) { .controls-grid { grid-template-columns: 1fr; } .url-row { flex-direction: column; } }
+
+  .btn-pill { border: 0; cursor: pointer; border-radius: 999px; padding: 12px 26px; font-size: 15px; font-weight: 600; color: var(--on-accent); background: var(--blue); transition: background .2s, transform .08s, filter .2s; white-space: nowrap; }
+  .btn-pill:hover { background: var(--blue-press); }
+  .btn-pill:active { transform: translateY(1px); }
+  .btn-pill:disabled { opacity: .55; cursor: not-allowed; }
+  .actions { margin-top: 20px; display: flex; justify-content: flex-end; }
+
+  .hint { font-size: 12.5px; color: var(--muted); margin-top: 14px; line-height: 1.5; }
+  .hint b { color: var(--muted-2); font-weight: 600; }
+
+  /* result */
+  .result { margin-top: 18px; }
+  .result-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+  .pill-status { display: inline-flex; align-items: center; gap: 9px; font-size: 13px; font-weight: 500; padding: 6px 13px; border-radius: 999px; border: 1px solid var(--border); background: var(--card); }
+  .pill-status .status-dot.run { background: var(--warn); box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 22%, transparent); animation: pulse 1.1s infinite; }
+  @keyframes pulse { 50% { opacity: .4; } }
+  .meta { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 14px; }
+  .chip { font-family: var(--mono); font-size: 11.5px; color: var(--muted-2); background: var(--card); border: 1px solid var(--border); padding: 4px 9px; border-radius: 7px; }
+  .preview pre {
+    background: var(--bg-2); border: 1px solid var(--border); border-radius: 10px; padding: 16px;
+    overflow: auto; max-height: 460px; font-family: var(--mono); font-size: 13px; line-height: 1.55;
+    white-space: pre-wrap; word-break: break-word; color: var(--text); margin: 0;
+  }
+  .preview .tok { color: var(--accent); font-weight: 600; }
+  .placeholder { color: var(--muted); font-size: 14px; text-align: center; padding: 40px 20px; }
+  .err-box { color: var(--err); background: color-mix(in srgb, var(--err) 9%, transparent); border: 1px solid color-mix(in srgb, var(--err) 32%, transparent); border-radius: 10px; padding: 14px 16px; font-size: 14px; line-height: 1.5; }
+
+  footer { margin-top: 30px; color: var(--muted); font-size: 12.5px; text-align: center; line-height: 1.6; }
+  footer a { color: var(--accent); text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div class="logo">
+      <svg class="logomark" viewBox="0 0 64 64" aria-label="Fisherboy">
+        <rect width="64" height="64" rx="15" fill="#e06a3a"/>
+        <g fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="32" cy="16" r="3.4" stroke-width="2.6"/>
+          <path d="M32 19.4 V40 a9 9 0 0 1 -18 0 v-3"/>
+          <path d="M14 39 l3.2 4.2 4.4 -2.4"/>
+        </g>
+      </svg>
+      Fisherboy
+    </div>
+    <div class="spacer"></div>
+    <div class="topbar-actions">
+      <span class="status-chip"><span class="status-dot" id="healthDot"></span><span id="healthTxt">conectando…</span></span>
+      <span class="badge humano" id="roleBadge">humano</span>
+      <button class="icon-btn" id="themeBtn" title="Cambiar tema" aria-label="Cambiar tema">◐</button>
+    </div>
+  </div>
+
+  <header class="hero">
+    <h1>Pescá cualquier<br/>página de la web.</h1>
+    <p class="sub">URL → Markdown limpio y anónimo, listo para tu LLM. El papá de todos los scrapers.</p>
+  </header>
+
+  <div class="panel">
+    <form id="job-form">
+      <label class="field-label" for="url">URL a scrapear</label>
+      <div class="url-row">
+        <input id="url" name="url" type="url" placeholder="https://ejemplo.com/articulo" required autocomplete="off" />
+      </div>
+
+      <div class="controls-grid">
+        <div>
+          <label class="field-label" for="rol">Rol</label>
+          <select id="rol" name="rol">
+            <option value="dios">dios</option>
+            <option value="angel">ángel</option>
+            <option value="humano" selected>humano</option>
+          </select>
+        </div>
+        <div>
+          <label class="field-label" for="privacy_mode">Privacidad</label>
+          <select id="privacy_mode" name="privacy_mode">
+            <option value="opaco" selected>opaco</option>
+            <option value="reversible">reversible · v2</option>
+            <option value="directo">directo</option>
+          </select>
+        </div>
+        <div>
+          <label class="field-label" for="output_format">Salida</label>
+          <select id="output_format" name="output_format">
+            <option value="markdown" selected>markdown</option>
+            <option value="llms_txt">llms.txt</option>
+            <option value="json">json · v2</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button type="submit" class="btn-pill" id="submit-btn">Pescar 🎣</button>
+      </div>
+
+      <p class="hint">Toda salida pasa por <b>Anonimal</b> en modo opaco antes de entregarse: el contenido vuelve con la PII enmascarada en marcadores tipados estables (<b>«PERSONA_1»</b>, <b>«CUIT_2»</b>). El rol acota qué modos de privacidad podés pedir.</p>
+    </form>
+
+    <div class="result hidden" id="result-wrap">
+      <div class="result-head">
+        <span class="pill-status" id="pill-status"></span>
+        <span class="chip" id="job-chip"></span>
+      </div>
+      <div class="meta" id="meta"></div>
+      <div id="result-body"></div>
+    </div>
+  </div>
+
+  <footer>
+    Fisherboy v1 · núcleo liviano · <a href="/docs">API REST</a> · modo standalone<br/>
+    httpx → Trafilatura → Anonimal → entrega · un job vive en un worker.
+  </footer>
+</div>
+
+<script>
+const form = document.getElementById("job-form");
+const wrap = document.getElementById("result-wrap");
+const pill = document.getElementById("pill-status");
+const jobChip = document.getElementById("job-chip");
+const metaEl = document.getElementById("meta");
+const bodyEl = document.getElementById("result-body");
+const btn = document.getElementById("submit-btn");
+const roleBadge = document.getElementById("roleBadge");
+const rolSel = document.getElementById("rol");
+let polling = null;
+
+/* ---------- tema ---------- */
+const themeBtn = document.getElementById("themeBtn");
+function applyTheme(t) {
+  document.documentElement.setAttribute("data-theme", t);
+  themeBtn.textContent = t === "dark" ? "◐" : "◑";
+  try { localStorage.setItem("fb-theme", t); } catch (e) {}
+}
+themeBtn.addEventListener("click", () => {
+  const cur = document.documentElement.getAttribute("data-theme");
+  applyTheme(cur === "dark" ? "light" : "dark");
+});
+try { applyTheme(localStorage.getItem("fb-theme") || "dark"); } catch (e) { applyTheme("dark"); }
+
+/* ---------- badge de rol ---------- */
+function syncRoleBadge() {
+  const r = rolSel.value;
+  roleBadge.textContent = r === "angel" ? "ángel" : r;
+  roleBadge.className = "badge " + r;
+}
+rolSel.addEventListener("change", syncRoleBadge);
+syncRoleBadge();
+
+/* ---------- health ---------- */
+async function ping() {
+  const dot = document.getElementById("healthDot");
+  const txt = document.getElementById("healthTxt");
+  try {
+    const r = await fetch("/healthz");
+    const d = await r.json();
+    dot.className = "status-dot ok";
+    txt.textContent = d.app_mode + " · v" + d.version;
+  } catch (e) {
+    dot.className = "status-dot crit";
+    txt.textContent = "sin conexión";
+  }
+}
+ping();
+
+/* ---------- render ---------- */
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+}
+function highlightTokens(s) {
+  return escapeHtml(s).replace(/«[A-ZÁÉÍÓÚ]+_\d+»/g, m => `<span class="tok">${m}</span>`);
+}
+const STATUS_LABEL = { pendiente: "en cola", en_proceso: "procesando", ok: "listo", error: "error" };
+function statusPill(status) {
+  const cls = (status === "ok") ? "ok" : (status === "error") ? "crit" : "run";
+  return `<span class="status-dot ${cls}"></span>${STATUS_LABEL[status] || status}`;
+}
+
+function render(sobre) {
+  wrap.classList.remove("hidden");
+  pill.innerHTML = statusPill(sobre.status);
+  jobChip.textContent = sobre.job_id.slice(0, 12) + "…";
+
+  const m = sobre.meta || {};
+  const chips = [];
+  if (sobre.tier_usado != null) chips.push(`tier ${sobre.tier_usado}${m.tier_name ? " · " + m.tier_name : ""}`);
+  if (m.proxied) chips.push("vía proxy");
+  if (Array.isArray(m.escalation) && m.escalation.length) chips.push(`escaló ${m.escalation.length}×`);
+  if (sobre.anonimizado) chips.push("anonimizado");
+  if (m.entidades_anonimizadas != null) chips.push(`${m.entidades_anonimizadas} entidades`);
+  if (m.http_status) chips.push(`HTTP ${m.http_status}`);
+  if (m.bytes) chips.push(`${(m.bytes / 1024).toFixed(1)} KB`);
+  metaEl.innerHTML = chips.map(c => `<span class="chip">${c}</span>`).join("");
+
+  if (sobre.status === "error") {
+    bodyEl.innerHTML = `<div class="err-box">${escapeHtml(sobre.error || "Error desconocido")}</div>`;
+  } else if (sobre.status === "ok") {
+    bodyEl.innerHTML = `<div class="preview"><pre>${highlightTokens(sobre.content_md || "(sin contenido)")}</pre></div>`;
+  } else {
+    bodyEl.innerHTML = `<div class="placeholder">Procesando… el worker está pescando la página.</div>`;
+  }
+}
+
+async function poll(jobId) {
+  try {
+    const r = await fetch(`/api/jobs/${jobId}`);
+    if (!r.ok) throw new Error("no se pudo consultar el job");
+    const sobre = await r.json();
+    render(sobre);
+    if (sobre.status === "ok" || sobre.status === "error") {
+      clearInterval(polling); polling = null;
+      btn.disabled = false; btn.textContent = "Pescar 🎣";
+    }
+  } catch (e) {
+    clearInterval(polling); polling = null;
+    btn.disabled = false; btn.textContent = "Pescar 🎣";
+    wrap.classList.remove("hidden");
+    bodyEl.innerHTML = `<div class="err-box">${escapeHtml(e.message)}</div>`;
+  }
+}
+
+form.addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  if (polling) clearInterval(polling);
+  btn.disabled = true; btn.textContent = "Lanzando…";
+  wrap.classList.remove("hidden");
+  pill.innerHTML = statusPill("pendiente");
+  jobChip.textContent = "";
+  metaEl.innerHTML = "";
+  bodyEl.innerHTML = `<div class="placeholder">Encolando job…</div>`;
+
+  const payload = {
+    url: form.url.value.trim(),
+    rol: form.rol.value,
+    privacy_mode: form.privacy_mode.value,
+    output_format: form.output_format.value,
+  };
+
+  try {
+    const r = await fetch("/api/jobs", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || "el gateway rechazó el job");
+    jobChip.textContent = data.job_id.slice(0, 12) + "…";
+    bodyEl.innerHTML = `<div class="placeholder">Job en cola. Esperando al worker…</div>`;
+    polling = setInterval(() => poll(data.job_id), 1200);
+    poll(data.job_id);
+  } catch (e) {
+    btn.disabled = false; btn.textContent = "Pescar 🎣";
+    pill.innerHTML = statusPill("error");
+    bodyEl.innerHTML = `<div class="err-box">${escapeHtml(e.message)}</div>`;
+  }
+});
+</script>
+</body>
+</html>

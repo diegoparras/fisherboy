@@ -1,0 +1,51 @@
+# Stack de observabilidad de Fisherboy (Capa 8). Opcional, aparte del compose principal.
+#   docker compose -f docker-compose.yml -f docker-compose.observability.yml up
+#
+# Prometheus scrapea /metrics de la API; Promtail manda los logs JSON a Loki; Grafana
+# los muestra (datasources ya provisionados). Fisherboy emite logs JSON y /metrics desde
+# el día uno, así que esto es solo el backend de visualización.
+
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports: ["9090:9090"]
+    networks: [fisherboy]
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:latest
+    command: -config.file=/etc/loki/loki-config.yml
+    volumes:
+      - ./observability/loki-config.yml:/etc/loki/loki-config.yml:ro
+    ports: ["3100:3100"]
+    networks: [fisherboy]
+    restart: unless-stopped
+
+  promtail:
+    image: grafana/promtail:latest
+    command: -config.file=/etc/promtail/promtail-config.yml
+    volumes:
+      - ./observability/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [fisherboy]
+    depends_on: [loki]
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+    ports: ["3000:3000"]
+    networks: [fisherboy]
+    depends_on: [prometheus, loki]
+    restart: unless-stopped
+
+networks:
+  fisherboy:
+    external: true

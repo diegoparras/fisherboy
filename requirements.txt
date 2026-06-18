@@ -1,0 +1,31 @@
+# Fisherboy v1 — núcleo liviano. Runtime.
+fastapi>=0.111
+uvicorn[standard]>=0.30
+httpx>=0.27
+pydantic>=2.7
+pyyaml>=6.0
+trafilatura>=1.12
+redis>=5.0
+lxml>=5.0               # parsing auto-reparable (Capa 4)
+cssselect>=1.2          # selectores CSS para el parsing auto-reparable
+cryptography>=42.0      # modo reversible: cifra la tabla de mapeo (Fernet)
+jsonschema>=4.20        # valida la extracción estructurada del LLM
+prometheus-client>=0.20 # métricas (Capa 8)
+
+# MCP (sidekick): n8n / Claude Code / Escriba encolan por MCP. Opcional para REST.
+fastmcp>=2.0
+
+# --- Tiers de fetch altos (Capa 3, ADR-006). OPCIONALES: instalá el que necesites.
+# El router los detecta solos; sin ellos solo corre el tier 0 (httpx) + proxies.
+#   tier 1 (TLS fingerprint):
+# curl_cffi>=0.7
+#   tier 2 (stealth browser): elegí uno
+# camoufox[geoip]>=0.4
+# patchright>=1.45
+#   tier 3 (browser último recurso): elegí uno
+# nodriver>=0.38
+# playwright>=1.47
+
+# --- Capas 5/7 opcionales (ADR-006/007/008). El sistema degrada sin ellas.
+# crawl4ai>=0.4          # conversión HTML→markdown rica (Capa 5; si no, Trafilatura)
+# psycopg[binary]>=3.1   # persistencia Postgres + pgvector (Capa 7)
