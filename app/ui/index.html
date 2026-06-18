@@ -80,8 +80,8 @@
     background-repeat: no-repeat; background-position: right 13px center; padding-right: 34px;
   }
   select option { background: var(--panel); color: var(--text); }
-  .controls-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 18px; }
-  @media (max-width: 560px) { .controls-grid { grid-template-columns: 1fr; } .url-row { flex-direction: column; } }
+  .controls-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 18px; }
+  @media (max-width: 560px) { .controls-grid { grid-template-columns: 1fr 1fr; } .url-row { flex-direction: column; } }
 
   .btn-pill { border: 0; cursor: pointer; border-radius: 999px; padding: 12px 26px; font-size: 15px; font-weight: 600; color: var(--on-accent); background: var(--blue); transition: background .2s, transform .08s, filter .2s; white-space: nowrap; }
   .btn-pill:hover { background: var(--blue-press); }
@@ -171,7 +171,17 @@
           <select id="output_format" name="output_format">
             <option value="markdown" selected>markdown</option>
             <option value="llms_txt">llms.txt</option>
-            <option value="json">json · v2</option>
+            <option value="json">json · LLM</option>
+          </select>
+        </div>
+        <div>
+          <label class="field-label" for="tier">Tier de fetch</label>
+          <select id="tier" name="tier">
+            <option value="" selected>auto (escala)</option>
+            <option value="0">0 · estático</option>
+            <option value="1">1 · TLS</option>
+            <option value="2">2 · stealth</option>
+            <option value="3">3 · browser (JS)</option>
           </select>
         </div>
       </div>
@@ -180,7 +190,7 @@
         <button type="submit" class="btn-pill" id="submit-btn">Pescar 🎣</button>
       </div>
 
-      <p class="hint">Toda salida pasa por <b>Anonimal</b> en modo opaco antes de entregarse: el contenido vuelve con la PII enmascarada en marcadores tipados estables (<b>«PERSONA_1»</b>, <b>«CUIT_2»</b>). El rol acota qué modos de privacidad podés pedir.</p>
+      <p class="hint">La privacidad la elegís por job: <b>opaco</b>/<b>reversible</b> enmascaran la PII en marcadores tipados estables (<b>«PERSONA_1»</b>, <b>«CUIT_2»</b>) antes de entregar; <b>directo</b> devuelve el contenido <b>crudo</b> (solo para data no sensible). El rol acota qué modos podés pedir.</p>
     </form>
 
     <div class="result hidden" id="result-wrap">
@@ -321,6 +331,7 @@ form.addEventListener("submit", async (ev) => {
     privacy_mode: form.privacy_mode.value,
     output_format: form.output_format.value,
   };
+  if (form.tier.value !== "") payload.tier_hint = parseInt(form.tier.value, 10);
 
   try {
     const r = await fetch("/api/jobs", {

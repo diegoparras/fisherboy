@@ -21,7 +21,23 @@ La diferencia entre opaco y reversible es solo si se guarda el mapeo. Los dos pr
 
 El modo solo aplica a la rama de extracción por LLM, que sale a un proveedor externo. La rama de conversión local pasa siempre por Anonimal en modo opaco antes de cualquier salida.
 
-La matriz rol por modo vive en `privacy_matrix.yaml`, no hardcodeada.
+## Revisión 2026-06-18 — el privacy_mode manda en las dos ramas
+
+Decisión del dueño del proyecto que SUPERSEDE el párrafo anterior: anonimizar es
+**opt-in**, no obligatorio en la rama local. El `privacy_mode` ahora gobierna también
+la salida de markdown/llms.txt:
+
+- `directo`            → contenido **crudo**, NO pasa por Anonimal, en cualquier formato.
+  Es la elección explícita para data no sensible; la responsabilidad es de quien lo pide.
+- `opaco` / `reversible` → enmascarado opaco con marcadores estables, fail-closed.
+
+Motivo: con la regla vieja, `directo` no cambiaba nada en la salida markdown (siempre
+anonimizaba), lo que volvía el modo inútil y confuso. La garantía fail-closed (ADR-004)
+sigue intacta para opaco/reversible: solo aplica cuando se PIDE anonimización.
+
+La matriz rol por modo vive en `privacy_matrix.yaml`, no hardcodeada. El `default_mode`
+sigue siendo `opaco` (privacidad por defecto); para salida cruda se pide `directo`
+explícito, y el rol debe habilitarlo (hoy solo `dios`).
 
 Tarea de Claude Code con acceso al repo: leer los nombres de modo reales que expone Anonimal hoy y reconciliarlos con esta semántica. Si Anonimal nombra a estos modos distinto, se respeta la semántica de este ADR y se ajustan los nombres en el cliente.
 

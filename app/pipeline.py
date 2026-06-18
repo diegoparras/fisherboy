@@ -4,14 +4,18 @@ Un job vive entero en un worker (ADR-001): no se reparte entre procesos. Esta
 función es pura respecto de la infraestructura — recibe sus dependencias por
 inyección, así se testea sin red, sin Redis, sin Anonimal ni LLM reales.
 
-Dos ramas de salida, con privacidad distinta (ADR-002):
+El privacy_mode manda en las DOS ramas de salida (ADR-002, rev. 2026-06-18):
 
-- LOCAL (markdown / llms.txt): SIEMPRE pasa por Anonimal en modo opaco antes de
-  salir, sin importar el privacy_mode. Si Anonimal falla, el job termina en error sin
-  devolver contenido crudo (fail-closed).
-- LLM (json, extracción estructurada): acá manda el privacy_mode. `directo` manda el
-  texto crudo; `opaco` lo pseudonimiza y deja la salida pseudonimizada; `reversible`
-  lo pseudonimiza, extrae, y RE-HIDRATA la salida local con la tabla de mapeo.
+- `directo`            → contenido CRUDO, no pasa por Anonimal. Solo para data no
+  sensible; es responsabilidad de quien lo pide.
+- `opaco`              → la PII se enmascara con marcadores tipados estables
+  («PERSONA_1»). Fail-closed: si Anonimal falla, el job termina en error sin devolver
+  contenido crudo.
+- `reversible`         → como opaco en la rama local; en la rama LLM (json) además
+  re-hidrata la salida con la tabla de mapeo cifrada.
+
+Antes la rama local anonimizaba SIEMPRE; se cambió para que `directo` signifique de
+verdad "crudo" en todos los formatos (decisión del dueño del proyecto).
 
 Las dependencias avanzadas (crawl, reversible, llm, persist, metrics) son opcionales:
 si no están inyectadas, esa capacidad simplemente no se usa.
@@ -254,14 +258,18 @@ def process_job(sobre: Sobre, deps: PipelineDeps) -> Sobre:
         if sobre.output_format is OutputFormat.JSON:
             _json_branch(sobre, combined, deps)
         else:
-            # Rama local: SIEMPRE opaco antes de salir (fail-closed).
-            anon_md, n_entidades = deps.anonymize_opaco(combined)
+            # El privacy_mode manda también en la rama local (ADR-002, rev. 2026-06-18):
+            #   directo            → crudo, NO pasa por Anonimal (solo data no sensible)
+            #   opaco / reversible → enmascarado opaco con marcadores estables (fail-closed)
+            if sobre.privacy_mode is PrivacyMode.DIRECTO:
+                body, n_entidades = combined, 0
+                sobre.anonimizado = False
+            else:
+                body, n_entidades = deps.anonymize_opaco(combined)
+                sobre.anonimizado = True
             if sobre.output_format is OutputFormat.LLMS_TXT:
-                anon_md = to_llms_txt(
-                    anon_md, title=title_from_markdown(anon_md), source_url=url
-                )
-            sobre.content_md = anon_md
-            sobre.anonimizado = True
+                body = to_llms_txt(body, title=title_from_markdown(body), source_url=url)
+            sobre.content_md = body
             sobre.meta["entidades_anonimizadas"] = n_entidades
 
         sobre.status = JobStatus.OK

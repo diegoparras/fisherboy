@@ -122,6 +122,42 @@ def test_crawl_bundles_pages():
     assert "## https://x.com/2" in out.content_md
 
 
+def test_directo_markdown_is_raw():
+    # directo → el markdown sale CRUDO, sin pasar por Anonimal.
+    pii = "Mail juan@x.com y CUIT 20-12345678-9"
+    called = {"anon": False}
+
+    def anon(md):
+        called["anon"] = True
+        return ("NO debería llamarse", 9)
+
+    sobre = _sobre(privacy_mode=PrivacyMode.DIRECTO)
+    deps = _base_deps(
+        fetch=lambda url, tier_hint=None: _html(pii),
+        extract=lambda html, url: pii,
+        anonymize_opaco=anon,
+    )
+    out = process_job(sobre, deps)
+    assert out.status.value == "ok"
+    assert out.anonimizado is False
+    assert out.content_md == pii          # crudo, intacto
+    assert called["anon"] is False        # Anonimal NO se invocó
+
+
+def test_opaco_markdown_is_masked():
+    pii = "Mail juan@x.com"
+    sobre = _sobre(privacy_mode=PrivacyMode.OPACO)
+    deps = _base_deps(
+        fetch=lambda url, tier_hint=None: _html(pii),
+        extract=lambda html, url: pii,
+        anonymize_opaco=lambda md: ("Mail «EMAIL_1»", 1),
+    )
+    out = process_job(sobre, deps)
+    assert out.anonimizado is True
+    assert out.content_md == "Mail «EMAIL_1»"
+    assert "juan@x.com" not in out.content_md
+
+
 def test_llms_txt_output_wraps_header():
     sobre = _sobre(output_format=OutputFormat.LLMS_TXT)
     deps = _base_deps(
