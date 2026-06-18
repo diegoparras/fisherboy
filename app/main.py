@@ -13,18 +13,25 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import FastAPI, HTTPException, Response
-
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 from .config import Settings, get_settings
 from .logging import get_logger, setup_logging
-from .models import JobRequest, JobStatus, RevertRequest, Sobre
+from .models import JobRequest, JobStatus, Rol, RevertRequest, Sobre
 from .privacy_policy import PolicyDenied, PrivacyPolicy, get_policy
 from .queue import JobQueue, get_queue
+from .security import auth
 from .security.ssrf import SSRFError, validate_callback_url
 
 log = get_logger("fisherboy.api")
+
+_RANK = {"humano": 0, "angel": 1, "dios": 2}
+
+
+class LoginRequest(BaseModel):
+    key: str
 
 
 def create_app(
@@ -74,13 +81,68 @@ def create_app(
     async def healthz():
         return {"status": "ok", "app_mode": settings.app_mode.value, "version": "1.0.0"}
 
+    # --- Auth (espejo de Escriba): login por rol, cookie + Bearer ---------------
+    @app.post("/api/login")
+    async def login(body: LoginRequest):
+        role = auth.role_for_password(body.key)
+        if role is None:
+            raise HTTPException(status_code=401, detail="Clave inválida.")
+        resp = JSONResponse({"role": role, "caps": auth.caps_for(role)})
+        resp.set_cookie(auth.COOKIE_NAME, auth.make_token(role), httponly=True,
+                        samesite="lax", max_age=auth.SESSION_TTL)
+        return resp
+
+    @app.post("/api/logout")
+    async def logout():
+        resp = JSONResponse({"ok": True})
+        resp.delete_cookie(auth.COOKIE_NAME)
+        return resp
+
+    @app.get("/api/me")
+    async def me(request: Request):
+        role = auth.role_from_request(request)
+        if role is None:
+            raise HTTPException(status_code=401, detail="Necesitás iniciar sesión.")
+        return {"role": role, "caps": auth.caps_for(role), "auth_enabled": auth.auth_enabled()}
+
+    def _effective_role(request: Request, body_rol) -> str:
+        """Rol de sesión; si el body pide un rol IGUAL o MENOR, se respeta (downgrade).
+        Nunca se puede escalar por encima del rol de sesión (anti-escalada)."""
+        session = auth.role_from_request(request)
+        if session is None:
+            raise HTTPException(status_code=401, detail="Necesitás iniciar sesión.")
+        if body_rol is not None and _RANK.get(body_rol.value, 9) <= _RANK[session]:
+            return body_rol.value
+        return session
+
     @app.post("/api/jobs", status_code=202)
-    async def create_job(req: JobRequest):
-        # 2. rol × modo
+    async def create_job(req: JobRequest, request: Request):
+        # 1. autenticación + rol efectivo (de la sesión, no escalable)
+        role = _effective_role(request, req.rol)
+        rol_enum = Rol(role)
+        caps = auth.caps_for(role)
+
+        # 2. rol × modo de privacidad (matriz)
         try:
-            mode = app.state.policy.resolve_mode(req.rol, req.privacy_mode)
+            mode = app.state.policy.resolve_mode(rol_enum, req.privacy_mode)
         except PolicyDenied as e:
             raise HTTPException(status_code=403, detail=str(e))
+
+        # 2b. gating de capacidades por rol (armas caras)
+        def _deny(msg):
+            raise HTTPException(status_code=403, detail=f"Tu rol '{role}' no habilita {msg}.")
+        if req.tier_hint is not None and int(req.tier_hint) > caps["max_tier"]:
+            _deny(f"el tier {int(req.tier_hint)} (máx {caps['max_tier']})")
+        if req.capture_api and not caps["capture"]:
+            _deny("capturar API/XHR")
+        if req.proxy and not caps["proxy"]:
+            _deny("proxy propio")
+        if req.captcha_api_url and req.captcha_api_key and not caps["solver"]:
+            _deny("solver de CAPTCHA")
+        if req.crawl_depth and not caps["crawl"]:
+            _deny("crawling multipágina")
+        if req.paginate and not caps["paginate"]:
+            _deny("barrer paginado")
 
         # 3. callback_url contra bloques SSRF
         if req.callback_url is not None:
@@ -99,9 +161,10 @@ def create_app(
             job_id=job_id,
             source_url=req.url,
             privacy_mode=mode,
-            rol=req.rol,
+            rol=rol_enum,
             output_format=req.output_format,
         )
+        sobre.meta["max_tier"] = caps["max_tier"]   # cap del escalado automático por rol
         if req.callback_url is not None:
             sobre.meta["callback_url"] = str(req.callback_url)
         if req.tier_hint is not None:
@@ -123,28 +186,31 @@ def create_app(
             sobre.meta["cookies"] = req.cookies
         _queue().enqueue(sobre)
 
-        log.info("job encolado", extra={"job_id": job_id, "mode": mode.value, "rol": req.rol.value})
+        log.info("job encolado", extra={"job_id": job_id, "mode": mode.value, "rol": role})
         return {"job_id": job_id, "status": JobStatus.PENDIENTE.value}
 
     @app.get("/api/jobs/{job_id}")
-    async def get_job(job_id: str):
+    async def get_job(job_id: str, request: Request):
+        if auth.role_from_request(request) is None:
+            raise HTTPException(status_code=401, detail="Necesitás iniciar sesión.")
         sobre = _queue().get(job_id)
         if sobre is None:
             raise HTTPException(status_code=404, detail="job no encontrado")
         return JSONResponse(sobre.model_dump(mode="json"))
 
     @app.post("/api/revert")
-    async def revert(req: "RevertRequest"):
+    async def revert(req: "RevertRequest", request: Request):
         """Rehidrata contenido pseudonimizado con un mapping_ref (modo reversible).
 
-        Valida el rol contra el que creó el mapeo y contra la matriz. Un solo uso:
-        el mapeo se borra tras revertir. Ver ADR-005.
+        El rol sale de la SESIÓN (no del body): valida contra el dueño del mapeo y la
+        matriz. Un solo uso: el mapeo se borra tras revertir. Ver ADR-005.
         """
+        role = _effective_role(request, req.rol)
         rev = _reversible()
         if rev is None:
             raise HTTPException(status_code=503, detail="Modo reversible no disponible (falta cripto).")
         try:
-            content = rev.revert(req.content, req.mapping_ref, req.rol)
+            content = rev.revert(req.content, req.mapping_ref, Rol(role))
         except Exception as e:  # ReversibleError u otra falla controlada
             raise HTTPException(status_code=403, detail=str(e))
         return {"content": content}

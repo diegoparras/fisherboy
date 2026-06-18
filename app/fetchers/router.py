@@ -136,11 +136,15 @@ class TierRouter:
         proxy_override: str | None = None,
         solver_override=None,
         cookies_override: dict | None = None,
+        max_tier_override: int | None = None,
     ) -> FetchResult:
         domain = _domain(url)
         cached = self.cache.get(domain)
-        start = max(int(tier_hint or 0), int(cached or 0))
-        chain = self._eligible(start)
+        cap = self.max_tier if max_tier_override is None else min(self.max_tier, int(max_tier_override))
+        start = min(max(int(tier_hint or 0), int(cached or 0)), cap)
+        chain = [f for f in self._eligible(start) if f.tier <= cap]
+        if not chain:
+            chain = self._eligible(start)[:1]
         if not chain:
             raise FetchError("No hay ningún tier de fetch disponible.")
 

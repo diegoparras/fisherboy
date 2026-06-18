@@ -80,8 +80,19 @@
     background-repeat: no-repeat; background-position: right 13px center; padding-right: 34px;
   }
   select option { background: var(--panel); color: var(--text); }
-  .controls-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 18px; }
-  @media (max-width: 560px) { .controls-grid { grid-template-columns: 1fr 1fr; } .url-row { flex-direction: column; } }
+  .controls-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 18px; }
+  @media (max-width: 560px) { .controls-grid { grid-template-columns: 1fr; } .url-row { flex-direction: column; } }
+  /* login + estados */
+  .gate { position: fixed; inset: 0; background: var(--bg); display: grid; place-items: center; z-index: 100; padding: 20px; }
+  .gate-card { width: 100%; max-width: 340px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 28px 26px; text-align: center; box-shadow: var(--shadow); }
+  .gate .logomark { width: 44px; height: 44px; margin: 0 auto 12px; }
+  .gate h2 { font-size: 18px; margin: 0 0 4px; font-weight: 600; }
+  .gate p { color: var(--muted); font-size: 13px; margin: 0 0 18px; }
+  .gate input { text-align: center; }
+  .gate .err { color: var(--err); font-size: 12.5px; margin-top: 10px; min-height: 16px; }
+  .switch input:disabled + .track { opacity: .4; }
+  .field.locked { opacity: .5; }
+  .lockmsg { font-size: 11px; color: var(--warn); margin-top: 4px; }
 
   .btn-pill { border: 0; cursor: pointer; border-radius: 999px; padding: 12px 26px; font-size: 15px; font-weight: 600; color: var(--on-accent); background: var(--blue); transition: background .2s, transform .08s, filter .2s; white-space: nowrap; }
   .btn-pill:hover { background: var(--blue-press); }
@@ -172,6 +183,7 @@
     <div class="topbar-actions">
       <span class="status-chip"><span class="status-dot" id="healthDot"></span><span id="healthTxt">conectando…</span></span>
       <span class="badge humano" id="roleBadge">humano</span>
+      <button class="icon-btn hidden" id="logoutBtn" title="Salir" aria-label="Salir">⎋</button>
       <button class="icon-btn" id="themeBtn" title="Cambiar tema" aria-label="Cambiar tema">◐</button>
     </div>
   </div>
@@ -189,15 +201,6 @@
       </div>
 
       <div class="controls-grid">
-        <div class="field">
-          <label for="rol">Rol</label>
-          <select id="rol" name="rol">
-            <option value="dios">dios</option>
-            <option value="angel">ángel</option>
-            <option value="humano" selected>humano</option>
-          </select>
-          <p class="help">Define qué modos de privacidad podés pedir.</p>
-        </div>
         <div class="field">
           <label for="privacy_mode">Privacidad</label>
           <select id="privacy_mode" name="privacy_mode">
@@ -297,6 +300,25 @@
     </div>
   </div>
 
+  <div class="gate hidden" id="gate">
+    <form class="gate-card" id="login-form">
+      <svg class="logomark" viewBox="0 0 64 64" aria-hidden="true">
+        <rect width="64" height="64" rx="15" fill="#e06a3a"/>
+        <g fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="32" cy="16" r="3.4" stroke-width="2.6"/>
+          <path d="M32 19.4 V40 a9 9 0 0 1 -18 0 v-3"/>
+          <path d="M14 39 l3.2 4.2 4.4 -2.4"/>
+        </g>
+      </svg>
+      <h2>Fisherboy</h2>
+      <p>Ingresá tu clave de acceso</p>
+      <input id="login-key" type="password" placeholder="••••••••••" autocomplete="current-password" />
+      <button type="submit" class="btn-pill" style="width:100%;margin-top:12px" id="login-btn">Entrar</button>
+      <div class="err" id="login-err"></div>
+      <p style="margin:8px 0 0;font-size:11px">tu clave define el rol — dios · ángel · humano</p>
+    </form>
+  </div>
+
   <footer>
     Fisherboy v1 · núcleo liviano · <a href="/docs">API REST</a> · modo standalone<br/>
     httpx → Trafilatura → Anonimal → entrega · un job vive en un worker.
@@ -312,8 +334,8 @@ const metaEl = document.getElementById("meta");
 const bodyEl = document.getElementById("result-body");
 const btn = document.getElementById("submit-btn");
 const roleBadge = document.getElementById("roleBadge");
-const rolSel = document.getElementById("rol");
 let polling = null;
+let CAPS = null;
 
 /* ---------- tema ---------- */
 const themeBtn = document.getElementById("themeBtn");
@@ -352,14 +374,69 @@ const outSel = document.getElementById("output_format");
 privSel.addEventListener("change", () => { document.getElementById("privacy-help").textContent = PRIV_HELP[privSel.value]; });
 outSel.addEventListener("change", () => { document.getElementById("output-help").textContent = OUT_HELP[outSel.value]; });
 
-/* ---------- badge de rol ---------- */
-function syncRoleBadge() {
-  const r = rolSel.value;
-  roleBadge.textContent = r === "angel" ? "ángel" : r;
-  roleBadge.className = "badge " + r;
+/* ---------- sesión / auth ---------- */
+const gate = document.getElementById("gate");
+const loginForm = document.getElementById("login-form");
+const logoutBtn = document.getElementById("logoutBtn");
+
+function setRoleBadge(role) {
+  roleBadge.textContent = role === "angel" ? "ángel" : role;
+  roleBadge.className = "badge " + role;
 }
-rolSel.addEventListener("change", syncRoleBadge);
-syncRoleBadge();
+
+function applyCaps(role, caps, authEnabled) {
+  CAPS = caps;
+  setRoleBadge(role);
+  logoutBtn.classList.toggle("hidden", !authEnabled);
+  // Gating visual: deshabilitar lo que el rol no puede (Jobs: no ofrecer lo prohibido).
+  const cap = caps || {};
+  const lock = (id, ok, why) => {
+    const el = document.getElementById(id); if (!el) return;
+    el.disabled = !ok;
+    const field = el.closest(".field") || el.closest("label");
+    if (field) field.classList.toggle("locked", !ok);
+  };
+  document.getElementById("capture_api").disabled = !cap.capture;
+  document.getElementById("paginate").disabled = !cap.paginate;
+  lock("proxy", cap.proxy);
+  lock("captcha_api_url", cap.solver);
+  lock("captcha_api_key", cap.solver);
+  // Tier: limitar opciones por encima de max_tier.
+  [...document.getElementById("tier").options].forEach(o => {
+    if (o.value !== "" && parseInt(o.value, 10) > cap.max_tier) o.disabled = true;
+  });
+}
+
+async function checkSession() {
+  try {
+    const r = await fetch("/api/me");
+    if (r.status === 401) { gate.classList.remove("hidden"); return; }
+    const d = await r.json();
+    gate.classList.add("hidden");
+    applyCaps(d.role, d.caps, d.auth_enabled);
+  } catch (e) { gate.classList.remove("hidden"); }
+}
+
+loginForm.addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const errEl = document.getElementById("login-err"); errEl.textContent = "";
+  try {
+    const r = await fetch("/api/login", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: document.getElementById("login-key").value }),
+    });
+    if (!r.ok) { errEl.textContent = "Clave inválida."; return; }
+    document.getElementById("login-key").value = "";
+    await checkSession();
+  } catch (e) { errEl.textContent = "No se pudo conectar."; }
+});
+
+logoutBtn.addEventListener("click", async () => {
+  try { await fetch("/api/logout", { method: "POST" }); } catch (e) {}
+  gate.classList.remove("hidden");
+});
+
+checkSession();
 
 /* ---------- health ---------- */
 async function ping() {
@@ -470,7 +547,6 @@ form.addEventListener("submit", async (ev) => {
 
   const payload = {
     url: form.url.value.trim(),
-    rol: form.rol.value,
     privacy_mode: form.privacy_mode.value,
     output_format: form.output_format.value,
   };

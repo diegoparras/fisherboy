@@ -81,9 +81,10 @@ def build_default_deps(settings, *, redis_client=None) -> PipelineDeps:
 
     router = build_router(settings, redis_client=redis_client)
 
-    def _fetch(url: str, tier_hint=None, proxy=None, solver=None, cookies=None) -> FetchResult:
+    def _fetch(url: str, tier_hint=None, proxy=None, solver=None, cookies=None, max_tier=None) -> FetchResult:
         return router.fetch(url, tier_hint=tier_hint, proxy_override=proxy,
-                            solver_override=solver, cookies_override=cookies)
+                            solver_override=solver, cookies_override=cookies,
+                            max_tier_override=max_tier)
 
     def _extract(html: str, url: str | None) -> str:
         return html_to_markdown_rich(html, url=url)[0]
@@ -93,7 +94,7 @@ def build_default_deps(settings, *, redis_client=None) -> PipelineDeps:
         return fetch_post(u, data, allow_private=settings.allow_private_targets,
                           max_bytes=settings.fetch_max_bytes, cookies=cookies, proxy=proxy)
 
-    def _capture(u: str, tier_hint=None, proxy=None, solver=None, cookies=None) -> list:
+    def _capture(u: str, tier_hint=None, proxy=None, solver=None, cookies=None, max_tier=None) -> list:
         from .fetchers.base import FetchContext
         from .fetchers.capture import capture_xhr
         ctx = FetchContext(
@@ -115,11 +116,12 @@ def build_default_deps(settings, *, redis_client=None) -> PipelineDeps:
     robots = RobotsChecker(_robots_text, user_agent="Fisherboy")
 
     def _crawl(seed: str, *, tier_hint=None, max_pages=10, max_depth=1,
-               proxy=None, solver=None, cookies=None) -> list[FetchResult]:
+               proxy=None, solver=None, cookies=None, max_tier=None) -> list[FetchResult]:
         pages = _crawl_bfs(
             seed,
             fetch=lambda u: router.fetch(u, tier_hint=tier_hint, proxy_override=proxy,
-                                         solver_override=solver, cookies_override=cookies),
+                                         solver_override=solver, cookies_override=cookies,
+                                         max_tier_override=max_tier),
             robots_allowed=robots.allowed if settings.respect_robots else None,
             max_pages=max_pages,
             max_depth=max_depth,
@@ -233,6 +235,8 @@ def _job_overrides(sobre: Sobre) -> dict:
                     jar[k] = v
         if jar:
             kw["cookies"] = jar
+    if sobre.meta.get("max_tier") is not None:
+        kw["max_tier"] = int(sobre.meta["max_tier"])
     return kw
 
 

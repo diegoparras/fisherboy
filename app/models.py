@@ -58,7 +58,7 @@ class JobRequest(BaseModel):
     """Lo que entra por POST /api/jobs. Se valida antes de encolar."""
 
     url: HttpUrl
-    rol: Rol
+    rol: Rol | None = None  # en REST lo fija la sesión; opcional para bajar de rol (nunca subir)
     privacy_mode: PrivacyMode | None = None  # None → default de la matriz, validado contra el rol
     output_format: OutputFormat = OutputFormat.MARKDOWN
     extract_schema: dict | None = None
@@ -80,7 +80,7 @@ class RevertRequest(BaseModel):
 
     content: str
     mapping_ref: str
-    rol: Rol
+    rol: Rol | None = None  # lo fija la sesión en el gateway
 
 
 class Sobre(BaseModel):
