@@ -23,6 +23,10 @@ for _stream in (sys.stdout, sys.stderr):
         pass
 
 os.environ.setdefault("APP_MODE", "standalone")
+# DEV: modo abierto como dios (opt-in explícito, fail-closed en prod) y cookie no-secure
+# porque el devserver sirve http://127.0.0.1 sin TLS.
+os.environ.setdefault("FISHERBOY_OPEN_GOD", "1")
+os.environ.setdefault("COOKIE_SECURE", "0")
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import fakeredis  # noqa: E402

@@ -60,3 +60,29 @@ def test_job_enqueue_then_fetch_roundtrip(client_factory, fake_queue):
     assert got.status_code == 200
     assert got.json()["job_id"] == job_id
     assert got.json()["status"] == "pendiente"
+
+
+def test_public_dump_scrubs_secrets():
+    sobre = Sobre(
+        job_id="x", source_url="https://x.com/", privacy_mode=PrivacyMode.DIRECTO, rol=Rol.DIOS,
+        meta={"proxy": "http://u:p@1.2.3.4:8080", "captcha_api_key": "SECRET",
+              "cookies": "sid=abc", "cookies_browser": "chrome", "owner_jti": "j",
+              "callback_url": "https://hook/", "records": [{"title": "ok"}]},
+    )
+    pub = sobre.public_dump()
+    for k in ("proxy", "captcha_api_key", "cookies", "cookies_browser", "owner_jti", "callback_url"):
+        assert k not in pub["meta"], f"{k} no debería salir"
+    assert pub["meta"]["records"] == [{"title": "ok"}]   # lo no-sensible sí
+
+
+def test_get_job_does_not_leak_job_secrets(client_factory, fake_queue):
+    client = client_factory()
+    resp = client.post("/api/jobs", json={
+        "url": "https://1.1.1.1/", "rol": "dios", "privacy_mode": "directo",
+        "proxy": "http://user:pass@9.9.9.9:3128", "capture_api": True,
+        "captcha_api_url": "https://so023.com", "captcha_api_key": "KEY123",
+    })
+    job_id = resp.json()["job_id"]
+    body = client.get(f"/api/jobs/{job_id}").json()
+    blob = str(body)
+    assert "KEY123" not in blob and "user:pass" not in blob

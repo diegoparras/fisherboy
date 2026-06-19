@@ -34,7 +34,9 @@ def post_callback(
         log.warning("callback bloqueado por SSRF", extra={"job_id": sobre.job_id, "reason": str(e)})
         return False
 
-    payload = sobre.model_dump(mode="json")
+    # public_dump: el webhook lleva el RESULTADO, nunca los secretos por-job
+    # (proxy con credenciales, API key de CAPTCHA, cookies de sesión). Auditoría 2026-06.
+    payload = sobre.public_dump(mode="json")
     try:
         resp = httpx.post(callback_url, json=payload, timeout=timeout_s, follow_redirects=False)
         ok = resp.is_success

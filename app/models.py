@@ -108,3 +108,24 @@ class Sobre(BaseModel):
     created_at: datetime = Field(default_factory=_now)
     fetched_at: datetime | None = None
     meta: dict = Field(default_factory=dict)
+
+    def public_dump(self, mode: str = "json") -> dict:
+        """model_dump sin los secretos por-job ni metadata interna de control.
+
+        El sobre se persiste, se devuelve por GET /api/jobs y se POSTea al callback;
+        los secretos del panel Avanzado (proxy con credenciales, API key de CAPTCHA,
+        cookies de sesión) NUNCA deben salir por esos canales. Ver auditoría 2026-06.
+        """
+        data = self.model_dump(mode=mode)
+        meta = data.get("meta")
+        if isinstance(meta, dict):
+            for k in _SENSITIVE_META:
+                meta.pop(k, None)
+        return data
+
+
+# Claves de meta que jamás se serializan hacia afuera (secretos por-job + control interno).
+_SENSITIVE_META = frozenset({
+    "proxy", "captcha_api_url", "captcha_api_key", "cookies", "cookies_browser",
+    "callback_url", "owner_jti",
+})

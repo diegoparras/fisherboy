@@ -1,7 +1,14 @@
 """Fixtures de test. Todo hermético: fakeredis, sin red real, sin Anonimal real."""
 from __future__ import annotations
 
+import os
 from pathlib import Path
+
+# El modo abierto ahora es opt-in EXPLÍCITO (fail-closed por defecto). Los tests que
+# pegan a los endpoints sin parchear role_from_request asumen el modo dev-abierto:
+# lo habilitamos acá, igual que el devserver. Cookie no-secure: TestClient va por http.
+os.environ.setdefault("FISHERBOY_OPEN_GOD", "1")
+os.environ.setdefault("COOKIE_SECURE", "0")
 
 import fakeredis
 import pytest

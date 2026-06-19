@@ -43,6 +43,11 @@ def create_app(
     settings = settings or get_settings()
     setup_logging(settings.log_level)
 
+    # Avisos de arranque ruidosos (fail-closed igual protege con 401, pero que se vea).
+    for _w in (auth.insecure_open_warning(), auth.secret_key_warning()):
+        if _w:
+            log.warning("SEGURIDAD: %s", _w)
+
     app = FastAPI(title="Fisherboy", version="1.0.0")
     app.state.settings = settings
     app.state.queue = queue
@@ -89,13 +94,15 @@ def create_app(
             raise HTTPException(status_code=401, detail="Clave inválida.")
         resp = JSONResponse({"role": role, "caps": auth.caps_for(role)})
         resp.set_cookie(auth.COOKIE_NAME, auth.make_token(role), httponly=True,
-                        samesite="lax", max_age=auth.SESSION_TTL)
+                        secure=settings.cookie_secure, samesite="lax",
+                        max_age=auth.SESSION_TTL, path="/")
         return resp
 
     @app.post("/api/logout")
     async def logout():
         resp = JSONResponse({"ok": True})
-        resp.delete_cookie(auth.COOKIE_NAME)
+        resp.delete_cookie(auth.COOKIE_NAME, path="/", samesite="lax",
+                           secure=settings.cookie_secure)
         return resp
 
     @app.get("/api/me")
@@ -105,10 +112,11 @@ def create_app(
             raise HTTPException(status_code=401, detail="Necesitás iniciar sesión.")
         return {"role": role, "caps": auth.caps_for(role), "auth_enabled": auth.auth_enabled()}
 
-    def _effective_role(request: Request, body_rol) -> str:
+    def _effective_role(request: Request, body_rol, session: str | None = None) -> str:
         """Rol de sesión; si el body pide un rol IGUAL o MENOR, se respeta (downgrade).
         Nunca se puede escalar por encima del rol de sesión (anti-escalada)."""
-        session = auth.role_from_request(request)
+        if session is None:
+            session = auth.role_from_request(request)
         if session is None:
             raise HTTPException(status_code=401, detail="Necesitás iniciar sesión.")
         if body_rol is not None and _RANK.get(body_rol.value, 9) <= _RANK[session]:
@@ -117,8 +125,9 @@ def create_app(
 
     @app.post("/api/jobs", status_code=202)
     async def create_job(req: JobRequest, request: Request):
-        # 1. autenticación + rol efectivo (de la sesión, no escalable)
-        role = _effective_role(request, req.rol)
+        # 1. autenticación + rol efectivo (de la sesión, no escalable) + identidad
+        session_role, owner_jti = auth.identity_from_request(request)
+        role = _effective_role(request, req.rol, session_role)
         rol_enum = Rol(role)
         caps = auth.caps_for(role)
 
@@ -128,25 +137,11 @@ def create_app(
         except PolicyDenied as e:
             raise HTTPException(status_code=403, detail=str(e))
 
-        # 2b. gating de capacidades por rol (armas caras)
-        def _deny(msg):
-            raise HTTPException(status_code=403, detail=f"Tu rol '{role}' no habilita {msg}.")
-        if req.tier_hint is not None and int(req.tier_hint) > caps["max_tier"]:
-            _deny(f"el tier {int(req.tier_hint)} (máx {caps['max_tier']})")
-        if req.capture_api and not caps["capture"]:
-            _deny("capturar API/XHR")
-        if req.proxy and not caps["proxy"]:
-            _deny("proxy propio")
-        if req.captcha_api_url and req.captcha_api_key and not caps["solver"]:
-            _deny("solver de CAPTCHA")
-        if req.crawl_depth and not caps["crawl"]:
-            _deny("crawling multipágina")
-        if req.paginate and not caps["paginate"]:
-            _deny("barrer paginado")
-        if req.tarantula and not caps.get("tarantula"):
-            _deny("la araña profunda (tarántula)")
-        if req.cookies_browser and role != "dios":
-            _deny("leer las cookies de tu navegador")
+        # 2b. gating de capacidades (mismo helper que el MCP; incluye veto por sidekick)
+        try:
+            auth.enforce_job_caps(role, req, is_sidekick=settings.is_sidekick)
+        except auth.CapDenied as e:
+            raise HTTPException(status_code=403, detail=str(e))
 
         # 3. callback_url contra bloques SSRF
         if req.callback_url is not None:
@@ -169,6 +164,8 @@ def create_app(
             output_format=req.output_format,
         )
         sobre.meta["max_tier"] = caps["max_tier"]   # cap del escalado automático por rol
+        if owner_jti:
+            sobre.meta["owner_jti"] = owner_jti      # dueño de la sesión (ownership en lectura)
         if req.callback_url is not None:
             sobre.meta["callback_url"] = str(req.callback_url)
         if req.tier_hint is not None:
@@ -201,21 +198,29 @@ def create_app(
 
     @app.get("/api/jobs/{job_id}")
     async def get_job(job_id: str, request: Request):
-        if auth.role_from_request(request) is None:
+        role, jti = auth.identity_from_request(request)
+        if role is None:
             raise HTTPException(status_code=401, detail="Necesitás iniciar sesión.")
         sobre = _queue().get(job_id)
         if sobre is None:
             raise HTTPException(status_code=404, detail="job no encontrado")
-        return JSONResponse(sobre.model_dump(mode="json"))
+        # Ownership: si el job tiene dueño y no sos vos (ni dios), 404 (no filtra existencia).
+        owner = sobre.meta.get("owner_jti")
+        if owner and role != "dios" and owner != jti:
+            raise HTTPException(status_code=404, detail="job no encontrado")
+        # Nunca devolver los secretos por-job (proxy/captcha/cookies). Ver public_dump.
+        return JSONResponse(sobre.public_dump(mode="json"))
 
     @app.post("/api/revert")
     async def revert(req: "RevertRequest", request: Request):
         """Rehidrata contenido pseudonimizado con un mapping_ref (modo reversible).
 
-        El rol sale de la SESIÓN (no del body): valida contra el dueño del mapeo y la
-        matriz. Un solo uso: el mapeo se borra tras revertir. Ver ADR-005.
+        El rol sale de la SESIÓN (no del body, sin downgrade): valida contra el dueño del
+        mapeo y la matriz. Un solo uso: el mapeo se borra tras revertir. Ver ADR-005.
         """
-        role = _effective_role(request, req.rol)
+        role = auth.role_from_request(request)   # NO _effective_role: el downgrade del body
+        if role is None:                          # permitiría a un rol alto hacerse pasar por el owner
+            raise HTTPException(status_code=401, detail="Necesitás iniciar sesión.")
         rev = _reversible()
         if rev is None:
             raise HTTPException(status_code=503, detail="Modo reversible no disponible (falta cripto).")
@@ -226,7 +231,10 @@ def create_app(
         return {"content": content}
 
     @app.get("/metrics", include_in_schema=False)
-    async def metrics():
+    async def metrics(request: Request):
+        # Si hay auth configurada, /metrics también la exige (no exponer telemetría abierta).
+        if auth.auth_enabled() and auth.role_from_request(request) is None:
+            raise HTTPException(status_code=401, detail="Necesitás iniciar sesión.")
         from .obs.metrics import get_metrics
 
         body, ctype = get_metrics().render()

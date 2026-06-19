@@ -119,6 +119,12 @@ class Settings:
             (e.get("ALLOW_PRIVATE_TARGETS", "") or "").strip().lower() in ("1", "true", "yes", "on")
         )
 
+        # Cookie de sesión: Secure por defecto (solo viaja por HTTPS). Para dev local
+        # sobre http://127.0.0.1 poné COOKIE_SECURE=0 o el navegador no la mandará.
+        self.cookie_secure = (
+            (e.get("COOKIE_SECURE", "1") or "1").strip().lower() in ("1", "true", "yes", "on")
+        )
+
         self.log_level = (e.get("LOG_LEVEL", "INFO") or "INFO").upper()
 
     @property

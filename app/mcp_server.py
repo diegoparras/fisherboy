@@ -10,12 +10,29 @@ from __future__ import annotations
 
 import uuid
 
+import os
+
 from .config import get_settings
-from .logging import setup_logging
+from .logging import get_logger, setup_logging
 from .models import JobRequest, JobStatus, Sobre
 from .privacy_policy import PolicyDenied, get_policy
 from .queue import get_queue
+from .security import auth
 from .security.ssrf import SSRFError, validate_callback_url
+
+log = get_logger("fisherboy.mcp")
+
+
+def _mcp_role() -> str:
+    """Rol fijo del servidor MCP. NO se confía en el `rol` del caller (la auditoría
+    2026-06 mostró que aceptarlo era escalada de privilegios). El operador fija el
+    techo con MCP_ROLE (default 'humano'); el caller solo puede pedir un rol IGUAL o
+    MENOR. El MCP corre típicamente por stdio/red interna, sin sesión por-usuario."""
+    role = (os.getenv("MCP_ROLE", "humano") or "humano").strip().lower()
+    return role if role in auth.ROLE_CAPS else "humano"
+
+
+_RANK = {"humano": 0, "angel": 1, "dios": 2}
 
 
 def build_server():
@@ -82,10 +99,24 @@ def build_server():
             cookies=cookies,
             cookies_browser=cookies_browser,
         )
+        # Rol efectivo: techo del servidor (MCP_ROLE), nunca el que pida el caller hacia
+        # arriba. Solo se respeta un downgrade (rol pedido <= techo).
+        ceiling = _mcp_role()
+        effective = ceiling
+        if req.rol is not None and _RANK.get(req.rol.value, 9) <= _RANK[ceiling]:
+            effective = req.rol.value
         try:
-            mode = policy.resolve_mode(req.rol, req.privacy_mode)
+            from .models import Rol
+            rol_enum = Rol(effective)
+            mode = policy.resolve_mode(rol_enum, req.privacy_mode)
         except PolicyDenied as e:
             raise ValueError(str(e))
+        # MISMO gating de capacidades que el REST (incluye veto de tarántula/cookies en sidekick).
+        try:
+            auth.enforce_job_caps(effective, req, is_sidekick=settings.is_sidekick)
+        except auth.CapDenied as e:
+            raise ValueError(str(e))
+        caps = auth.caps_for(effective)
         if req.callback_url is not None:
             try:
                 validate_callback_url(
@@ -101,9 +132,10 @@ def build_server():
             job_id=job_id,
             source_url=req.url,
             privacy_mode=mode,
-            rol=req.rol,
+            rol=rol_enum,
             output_format=req.output_format,
         )
+        sobre.meta["max_tier"] = caps["max_tier"]   # cap del escalado automático por rol
         if req.callback_url is not None:
             sobre.meta["callback_url"] = str(req.callback_url)
         if req.tier_hint is not None:
@@ -134,21 +166,25 @@ def build_server():
 
     @mcp.tool()
     def get_job(job_id: str) -> dict:
-        """Devuelve el sobre de un job (estado y resultado), o un error si no existe."""
+        """Devuelve el sobre de un job (estado y resultado), o un error si no existe.
+        Sin los secretos por-job (proxy/captcha/cookies): ver public_dump."""
         sobre = queue.get(job_id)
         if sobre is None:
             return {"error": "job no encontrado", "job_id": job_id}
-        return sobre.model_dump(mode="json")
+        return sobre.public_dump(mode="json")
 
     @mcp.tool()
-    def revert(content: str, mapping_ref: str, rol: str = "humano") -> dict:
-        """Rehidrata contenido pseudonimizado (modo reversible). Valida rol; un solo uso."""
+    def revert(content: str, mapping_ref: str) -> dict:
+        """Rehidrata contenido pseudonimizado (modo reversible). Un solo uso.
+
+        El rol es el techo del servidor (MCP_ROLE), NO un parámetro del caller: aceptar
+        un rol arbitrario permitía revertir mapeos de cualquiera (auditoría 2026-06)."""
         from .models import Rol
         from .privacy.reversible import build_reversible_anonymizer
 
         try:
             rev = build_reversible_anonymizer(settings, _anon_for_revert(), policy=policy, redis_client=queue._r)
-            return {"content": rev.revert(content, mapping_ref, Rol(rol))}
+            return {"content": rev.revert(content, mapping_ref, Rol(_mcp_role()))}
         except Exception as e:  # noqa: BLE001
             return {"error": str(e)}
 
