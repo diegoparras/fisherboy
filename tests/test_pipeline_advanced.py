@@ -211,6 +211,11 @@ def test_tarantula_builds_data_tree():
     assert t["url"] == "https://x.com/"
     assert t["children"][0]["url"] == "https://x.com/a"
     assert t["endpoints"][0]["json"]["items"] == [1, 2]      # dato real en el nodo
-    # el árbol de display (meta) NO lleva cuerpos
+    # CONTENIDO por nodo: el HTML renderizado → markdown vive en cada nodo (no solo el árbol de links)
+    assert t["markdown"] == "<a href='/a'>a</a>"             # extract() de test devuelve el html
+    assert t["children"][0]["markdown"] == "hoja"
+    assert out.meta["markdown_total_chars"] == len("<a href='/a'>a</a>") + len("hoja")
+    # el árbol de display (meta) NO lleva cuerpos, pero sí los conteos
     assert out.meta["tree"]["endpoints_count"] == 1
+    assert out.meta["tree"]["markdown_chars"] == len("<a href='/a'>a</a>")
     assert "json" not in json.dumps(out.meta["tree"])

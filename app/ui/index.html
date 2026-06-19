@@ -180,6 +180,7 @@
   .tnode .tdot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
   .tnode a { color: var(--muted-2); text-decoration: none; word-break: break-all; }
   .tnode a:hover { color: var(--accent); }
+  .tnode .tmeta { color: var(--muted); font-size: 11px; flex-shrink: 0; opacity: .8; }
   .placeholder { color: var(--muted); font-size: 14px; text-align: center; padding: 40px 20px; }
   .prog { display: flex; flex-direction: column; gap: 7px; padding: 6px 2px; }
   .pstep { display: flex; align-items: center; gap: 9px; font-size: 13px; color: var(--muted); transition: color .2s; }
@@ -606,8 +607,13 @@ function renderTree(node, depth) {
   const label = node.title ? `${node.title}` : (node.url || "").replace(/^https?:\/\//, "");
   let h = "";
   if (node.depth >= 0) {
+    const bits = [];
+    if (node.markdown_chars) bits.push(`${(node.markdown_chars/1024).toFixed(1)} KB texto`);
+    if (node.records_count) bits.push(`${node.records_count} reg`);
+    if (node.endpoints_count) bits.push(`${node.endpoints_count} API`);
+    const meta = bits.length ? `<span class="tmeta">${bits.join(" · ")}</span>` : "";
     h += `<div class="tnode" style="padding-left:${pad}px">` +
-      `<span class="tdot"></span><a href="${escapeHtml(node.url)}" target="_blank" rel="noopener">${escapeHtml(label).slice(0,90)}</a></div>`;
+      `<span class="tdot"></span><a href="${escapeHtml(node.url)}" target="_blank" rel="noopener">${escapeHtml(label).slice(0,90)}</a>${meta}</div>`;
   }
   (node.children || []).forEach(c => { h += renderTree(c, node.depth >= 0 ? depth + 1 : depth); });
   return h;

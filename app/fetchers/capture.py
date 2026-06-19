@@ -21,12 +21,17 @@ from urllib.parse import urlsplit
 from ..security.ssrf import resolve_and_validate
 from .base import FetchContext, FetchError
 
-# Endpoints de telemetría/tracking/analytics: NUNCA son el dato. Se descartan.
+# Endpoints de telemetría/tracking/analytics/PUBLICIDAD: NUNCA son el dato. Se descartan.
 _TELEMETRY = re.compile(
     r"(melidata|/tracks?\b|o11y|otel|/v1/(metrics|traces|logs)|/collect\b|/beacon|"
     r"analytics|google-?analytics|googletagmanager|/gtm|/gtag|doubleclick|segment\.|"
     r"mixpanel|amplitude|sentry|datadog|newrelic|nr-data|hotjar|clarity\.ms|"
-    r"facebook\.com/tr|/pixel|/rum\b|/telemetry|cookielaw|onetrust|/csp-report)",
+    r"facebook\.com/tr|/pixel|/rum\b|/telemetry|cookielaw|onetrust|/csp-report|"
+    # Publicidad / ad-tech (zonaprop & co. disparan un montón de esto):
+    r"adtrafficquality|googlesyndication|googleads|adservice\.google|/getconfig/soda|"
+    r"/pagead|2mdn|gstatic\.com|recaptcha|/safeframe|criteo|taboola|outbrain|"
+    r"quantserve|scorecardresearch|adsystem|pubmatic|rubicon|casalemedia|"
+    r"adsrvr|adnxs|/aclk|/ads\?|smartadserver|teads|moatads|/prebid)",
     re.I,
 )
 

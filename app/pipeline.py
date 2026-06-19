@@ -455,7 +455,23 @@ def _tarantula_branch(sobre: Sobre, deps: PipelineDeps) -> Sobre:
             log.info("tarantula: nodo falló", extra={"url": u, "error": type(e).__name__})
             continue
         total_endpoints += len(endpoints)
+        # El contenido REAL de la subpágina: el HTML renderizado → markdown limpio.
+        # Sin esto el nodo solo tendría el JSON/XHR capturado (que en sitios gateados
+        # o con API cifrada es ruido). Así cada link trae su texto, pase lo que pase.
+        node_md = ""
+        try:
+            node_md = deps.extract(html, u) if html else ""
+        except Exception:  # noqa: BLE001 — un nodo sin markdown no corta la araña
+            node_md = ""
+        # Registros de este nodo (del endpoint de datos más grande, si lo hay).
+        node_recs = []
+        node_best = max((e for e in endpoints if e.get("json") is not None),
+                        key=lambda e: e.get("bytes", 0), default=None)
+        if node_best is not None:
+            from .extractors.records import flatten_records
+            node_recs = flatten_records(node_best["json"])
         nodes[u] = {"url": u, "depth": depth, "parent": parent,
+                    "markdown": node_md, "records": node_recs,
                     "endpoints": endpoints, "children": []}
         order.append(u)
         if depth < max_depth and len(order) < max_pages:
@@ -480,23 +496,23 @@ def _tarantula_branch(sobre: Sobre, deps: PipelineDeps) -> Sobre:
         (p["children"] if p and p is not node else roots).append(node)
     tree = roots[0] if len(roots) == 1 else {"url": url, "depth": -1, "endpoints": [], "children": roots}
 
-    # Árbol de DISPLAY para meta/UI: solo url/depth/conteo, SIN cuerpos (no filtra PII).
+    # Árbol de DISPLAY para meta/UI: solo url/depth/conteos, SIN cuerpos (no filtra PII).
     def _strip(n):
         return {"url": n["url"], "depth": n["depth"],
                 "endpoints_count": len(n.get("endpoints", [])),
+                "markdown_chars": len(n.get("markdown", "") or ""),
+                "records_count": len(n.get("records", []) or []),
                 "children": [_strip(c) for c in n.get("children", [])]}
 
     sobre.tier_usado = FetchTier.BROWSER
     sobre.fetched_at = datetime.now(timezone.utc)
-    sobre.meta.update({"nodos": len(order), "api_endpoints": total_endpoints, "tree": _strip(tree)})
-    # Aplana registros del endpoint más grande de toda la araña.
-    best = max((e for n in nodes.values() for e in n["endpoints"] if e.get("json") is not None),
-               key=lambda e: e.get("bytes", 0), default=None)
-    if best is not None:
-        from .extractors.records import flatten_records
-        recs = flatten_records(best["json"])
-        if recs:
-            sobre.meta["records"] = recs
+    total_md = sum(len(n.get("markdown", "") or "") for n in nodes.values())
+    sobre.meta.update({"nodos": len(order), "api_endpoints": total_endpoints,
+                       "markdown_total_chars": total_md, "tree": _strip(tree)})
+    # Registros de TODA la araña: junta los de cada nodo (ya aplanados arriba).
+    all_recs = [r for u in order for r in nodes[u].get("records", [])]
+    if all_recs:
+        sobre.meta["records"] = all_recs
 
     full = json.dumps({"tree": tree}, ensure_ascii=False, indent=2)
     if sobre.privacy_mode is PrivacyMode.DIRECTO:
