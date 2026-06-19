@@ -178,7 +178,7 @@ what you fish out of the web flows straight into conversion, anonymization, chun
 Eight layers — REST/MCP surface · Redis queue + workers · discovery · tiered fetch with
 proxies & anti‑CAPTCHA · self‑healing parsing · conversion & LLM extraction · Anonimal
 privacy · output (Markdown/JSON/llms.txt/vector store/Postgres/webhook) · observability
-(Prometheus/Loki/Grafana). Design notes live in [`docs/FISHERBOY-build.md`](docs/FISHERBOY-build.md).
+(Prometheus/Loki/Grafana).
 
 ```bash
 pip install curl_cffi      # tier 1 (TLS fingerprint)
