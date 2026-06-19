@@ -40,8 +40,19 @@ class JobQueue:
         self._r.lpush(_QUEUE_KEY, sobre.job_id)
 
     def pop(self, timeout_s: int = 5) -> str | None:
-        """Bloquea hasta sacar un job_id o agotar el timeout. None si no hubo."""
-        item = self._r.brpop(_QUEUE_KEY, timeout=timeout_s)
+        """Bloquea hasta sacar un job_id o agotar el timeout. None si no hubo.
+
+        Cuando la cola está vacía, la lectura bloqueante (BRPOP) puede cortar el socket
+        por timeout (Redis/red que cierra la conexión idle, típico en PaaS). Eso NO es
+        un error: se trata como 'cola vacía' y el worker reintenta. Las fallas reales de
+        conexión sí se propagan (el worker las loguea y reintenta)."""
+        try:
+            item = self._r.brpop(_QUEUE_KEY, timeout=timeout_s)
+        except Exception as exc:  # noqa: BLE001
+            from redis.exceptions import TimeoutError as RedisTimeout
+            if isinstance(exc, RedisTimeout):
+                return None
+            raise
         if item is None:
             return None
         _key, job_id = item
@@ -54,7 +65,11 @@ class JobQueue:
 def build_redis(redis_url: str):
     import redis  # import perezoso: los tests con fakeredis no necesitan redis-py real
 
-    return redis.Redis.from_url(redis_url)
+    # socket_keepalive + health_check: evita que la red/PaaS tire la conexión idle y la
+    # detecta si murió, en vez de colgar la lectura bloqueante del worker.
+    return redis.Redis.from_url(
+        redis_url, socket_keepalive=True, health_check_interval=30,
+    )
 
 
 def get_queue(settings) -> JobQueue:
