@@ -15,16 +15,16 @@ prometheus-client>=0.20 # métricas (Capa 8)
 # MCP (sidekick): n8n / Claude Code / Escriba encolan por MCP. Opcional para REST.
 fastmcp>=2.0
 
-# --- Tiers de fetch altos (Capa 3, ADR-006). OPCIONALES: instalá el que necesites.
-# El router los detecta solos; sin ellos solo corre el tier 0 (httpx) + proxies.
+# --- Tiers de fetch altos (Capa 3, ADR-006). El router los detecta solos.
 #   tier 1 (TLS fingerprint):
-# curl_cffi>=0.7
-#   tier 2 (stealth browser): elegí uno
-# camoufox[geoip]>=0.4
-# patchright>=1.45
-#   tier 3 (browser último recurso): elegí uno
-# nodriver>=0.38
-# playwright>=1.47
+curl_cffi>=0.7
+#   tier 2 (stealth browser) + captura de API/XHR: patchright (Chromium, stealth):
+patchright>=1.45
+#   tier 3 (browser último recurso): Playwright. El binario de Chromium se instala en
+#   el Dockerfile (`playwright install chromium`). Local: corré ese comando una vez.
+playwright>=1.47
+# nodriver>=0.38          # alternativa a Playwright para tier 3 (usa Chrome del sistema)
+# camoufox[geoip]>=0.4    # alternativa a patchright para tier 2
 
 # --- Conversión LLM-ready RECOMENDADA (Capa 5). Si falta, cae a Trafilatura.
 crawl4ai>=0.4            # markdown "fit" (poda nav/boilerplate por densidad) — lo mejor para LLM

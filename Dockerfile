@@ -18,6 +18,15 @@ RUN apt-get update \
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 
+# Navegador (Chromium) para los tiers 2/3 — sitios con JavaScript / anti-bot — y para la
+# captura de API/XHR. patchright = Chromium con stealth (tier 2 + captura); playwright =
+# Chromium estándar (tier 3). Se instalan en una ruta compartida accesible por el user
+# no-root. Esto agranda la imagen (~1 GB) pero hace que el scraping funcione de verdad.
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN patchright install --with-deps chromium \
+    && playwright install chromium \
+    && chmod -R a+rx /ms-playwright
+
 COPY app ./app
 COPY privacy_matrix.yaml ./privacy_matrix.yaml
 
