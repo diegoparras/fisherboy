@@ -27,9 +27,11 @@ USER fisher
 
 EXPOSE 8000
 
-# Healthcheck contra el endpoint liviano.
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -fsS http://localhost:8000/healthz || exit 1
+# Sin HEALTHCHECK en la imagen a propósito: la misma imagen corre la API (puerto 8000)
+# y el worker (sin puerto). Un healthcheck HTTP marcaría el worker como "unhealthy" para
+# siempre. La salud de la API la chequea la plataforma por su dominio/puerto (EasyPanel,
+# compose), no la imagen. Si querés un healthcheck a nivel servicio, definilo solo en el
+# servicio de API: `curl -fsS http://localhost:8000/healthz`.
 
 # La API es el comando por defecto; el worker se levanta con `python -m app.worker`
 # (ver docker-compose*.yml). En standalone, la API y el worker pueden ser réplicas
