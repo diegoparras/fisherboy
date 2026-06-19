@@ -1,21 +1,27 @@
 <!doctype html>
-<html lang="es" data-theme="dark">
+<html lang="es" data-theme="light">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Fisherboy · El papá de todos los scrapers</title>
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='15' fill='%23e06a3a'/%3E%3Cg fill='none' stroke='white' stroke-width='3' stroke-linecap='round'%3E%3Ccircle cx='32' cy='16' r='3.4' stroke-width='2.6'/%3E%3Cpath d='M32 19.4 V40 a9 9 0 0 1 -18 0 v-3'/%3E%3Cpath d='M14 39 l3.2 4.2 4.4 -2.4'/%3E%3C/g%3E%3C/svg%3E" />
+<meta name="theme-color" content="#f7faf9" />
+<!-- Anti-FOUC: aplicar el tema guardado ANTES de pintar (claro por defecto, ecosistema). -->
+<script>try{var t=localStorage.getItem("fb-theme")||"light";document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='15' fill='%230f8f6a'/%3E%3Cg fill='none' stroke='white' stroke-width='3' stroke-linecap='round'%3E%3Ccircle cx='32' cy='16' r='3.4' stroke-width='2.6'/%3E%3Cpath d='M32 19.4 V40 a9 9 0 0 1 -18 0 v-3'/%3E%3Cpath d='M14 39 l3.2 4.2 4.4 -2.4'/%3E%3C/g%3E%3C/svg%3E" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource-variable/inter/index.css" />
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.9/dist/purify.min.js"></script>
 <style>
   :root {
     --bg: #0a0a0c; --bg-2: #101014; --panel: #141418;
     --card: rgba(255,255,255,0.04); --card-2: rgba(255,255,255,0.022);
     --border: rgba(255,255,255,0.10); --hairline: rgba(255,255,255,0.16);
     --text: #ededf0; --muted: #8b8b96; --muted-2: #bdbdc7;
-    --blue: #ef8b66; --blue-press: #e3754d; --accent: #ef8b66; --accent-2: #e3754d;
-    --on-accent: #1a1208;
+    --blue: #2bbf94; --blue-press: #20a37c; --accent: #2bbf94; --accent-2: #20a37c;
+    --on-accent: #04231a;
     --ok: #3fb950; --warn: #d6a01a; --err: #f85149;
     --radius: 12px; --radius-lg: 16px;
-    --ring: 0 0 0 3px rgba(239,139,102,.26);
+    --ring: 0 0 0 3px rgba(43,191,148,.26);
     --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
     --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Consolas, monospace;
     color-scheme: dark;
@@ -25,19 +31,20 @@
     --card: rgba(15,15,20,0.028); --card-2: rgba(15,15,20,0.016);
     --border: rgba(15,15,20,0.10); --hairline: rgba(15,15,20,0.17);
     --text: #16161a; --muted: #70707b; --muted-2: #3c3c44;
-    --blue: #e06a3a; --blue-press: #cf5a2c; --accent: #e06a3a; --accent-2: #d2764f;
+    --blue: #0f8f6a; --blue-press: #0c7355; --accent: #0f8f6a; --accent-2: #0c7355;
     --on-accent: #ffffff;
     --ok: #1a7f37; --warn: #9a6700; --err: #cf222e;
-    --ring: 0 0 0 3px rgba(224,106,58,.18);
+    --ring: 0 0 0 3px rgba(15,143,106,.20);
     --shadow: 0 1px 2px rgba(15,15,20,.04), 0 12px 32px -16px rgba(15,15,20,.16);
     color-scheme: light;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; min-height: 100%; }
   body {
-    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-family: "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     color: var(--text); background: var(--bg);
     -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+    letter-spacing: -.011em; transition: background .4s, color .4s;
   }
   .wrap { max-width: 940px; margin: 0 auto; padding: 22px clamp(20px, 6vw, 84px) 100px; }
 
@@ -165,7 +172,7 @@
     white-space: pre-wrap; word-break: break-word; color: var(--text); margin: 0;
   }
   .preview .tok { color: var(--accent); font-weight: 600; }
-  .sub { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+  .flabel { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
   .recs { display: flex; flex-direction: column; gap: 4px; margin-bottom: 16px; max-height: 340px; overflow: auto; }
   .rec { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 13px; color: var(--text); background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 8px 11px; text-decoration: none; }
   a.rec:hover { border-color: var(--accent); }
@@ -193,6 +200,55 @@
   footer a { color: var(--accent); text-decoration: none; }
   footer a:hover { text-decoration: underline; }
   .hidden { display: none !important; }
+
+  /* === Pulido: íconos SVG de línea (sin emojis), command bar, reveal, markdown === */
+  .ico { width: 17px; height: 17px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; display: block; }
+  .icon-btn { transition: background .2s, border-color .2s, color .2s; }
+  .btn-pill { display: inline-flex; align-items: center; gap: 8px; }
+  .btn-pill .ico { width: 16px; height: 16px; }
+  .adv-toggle { display: flex; align-items: center; gap: 9px; }
+  .adv-toggle .caret { transition: transform .18s; color: var(--accent); display: inline-flex; }
+  .adv-toggle[aria-expanded="true"] .caret { transform: rotate(90deg); }
+  .mini-btn { display: inline-flex; align-items: center; gap: 5px; }
+  .mini-btn .ico { width: 13px; height: 13px; }
+
+  /* barra de comando para la URL: tinte de acento + ícono inline (como #urlInput de Escriba) */
+  .cmd { display: flex; align-items: center; gap: 10px; flex: 1;
+    background: color-mix(in srgb, var(--accent) 7%, var(--card-2));
+    border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--border));
+    border-radius: 10px; padding: 0 14px; transition: border-color .15s, box-shadow .15s, background .15s; }
+  .cmd:focus-within { border-color: var(--accent); box-shadow: var(--ring); background: var(--bg-2); }
+  .cmd > .ico { color: var(--accent); }
+  .cmd input { border: 0 !important; background: transparent !important; padding: 13px 0 !important; box-shadow: none !important; }
+
+  /* reveal del bloque de resultado */
+  @keyframes reveal { from { opacity: 0; transform: translateY(8px); } }
+  #result-wrap:not(.hidden) { animation: reveal .22s cubic-bezier(.2,.8,.2,1); }
+
+  /* markdown renderizado (en vez del volcado <pre> crudo) */
+  .md { background: var(--bg-2); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px;
+    max-height: 480px; overflow: auto; font-size: 14px; line-height: 1.65; color: var(--text); word-break: break-word; }
+  .md > :first-child { margin-top: 0; }
+  .md h1,.md h2,.md h3 { letter-spacing: -.02em; line-height: 1.25; margin: 1.1em 0 .5em; font-weight: 600; }
+  .md h1 { font-size: 1.5em; } .md h2 { font-size: 1.3em; } .md h3 { font-size: 1.12em; }
+  .md p { margin: .55em 0; } .md ul, .md ol { padding-left: 1.4em; margin: .55em 0; }
+  .md a { color: var(--accent); } .md hr { border: 0; border-top: 1px solid var(--border); margin: 1em 0; }
+  .md code { font-family: var(--mono); font-size: .88em; background: var(--card); padding: 1px 5px; border-radius: 5px; }
+  .md pre { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 12px; overflow: auto; }
+  .md pre code { background: none; padding: 0; }
+  .md table { border-collapse: collapse; width: 100%; font-size: .92em; margin: .6em 0; }
+  .md th, .md td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; }
+  .md img { max-width: 100%; border-radius: 6px; }
+  .md blockquote { border-left: 3px solid var(--accent); margin: .6em 0; padding-left: 12px; color: var(--muted-2); }
+  .md .tok { color: var(--accent); font-weight: 600; }
+
+  /* botón "Enviar a Escriba" (handoff del ecosistema) */
+  .send-escriba { display: inline-flex; align-items: center; gap: 7px; font: inherit; font-size: 12.5px; font-weight: 500;
+    cursor: pointer; color: var(--accent); background: color-mix(in srgb, var(--accent) 11%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); border-radius: 8px; padding: 6px 12px; transition: background .15s, transform .08s; }
+  .send-escriba:hover { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+  .send-escriba:active { transform: scale(.97); }
+  .send-escriba .ico { width: 15px; height: 15px; }
 </style>
 </head>
 <body>
@@ -200,7 +256,7 @@
   <div class="topbar">
     <div class="logo">
       <svg class="logomark" viewBox="0 0 64 64" aria-label="Fisherboy">
-        <rect width="64" height="64" rx="15" fill="#e06a3a"/>
+        <rect width="64" height="64" rx="15" fill="#0f8f6a"/>
         <g fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="32" cy="16" r="3.4" stroke-width="2.6"/>
           <path d="M32 19.4 V40 a9 9 0 0 1 -18 0 v-3"/>
@@ -213,21 +269,26 @@
     <div class="topbar-actions">
       <span class="status-chip"><span class="status-dot" id="healthDot"></span><span id="healthTxt">conectando…</span></span>
       <span class="badge humano" id="roleBadge">humano</span>
-      <button class="icon-btn hidden" id="logoutBtn" title="Salir" aria-label="Salir">⎋</button>
-      <button class="icon-btn" id="themeBtn" title="Cambiar tema" aria-label="Cambiar tema">◐</button>
+      <button class="icon-btn hidden" id="logoutBtn" title="Salir" aria-label="Salir">
+        <svg class="ico" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      </button>
+      <button class="icon-btn" id="themeBtn" title="Cambiar tema" aria-label="Cambiar tema"></button>
     </div>
   </div>
 
   <header class="hero">
-    <h1>Pescá cualquier<br/>página de la web.</h1>
+    <h1>Cualquier página de la web,<br/>lista para tu IA.</h1>
     <p class="sub">Tu sidekick en la extracción de datos web.</p>
   </header>
 
   <div class="panel">
     <form id="job-form">
-      <label class="field-label" for="url">URL a scrapear</label>
+      <label class="field-label" for="url">URL a extraer</label>
       <div class="url-row">
-        <input id="url" name="url" type="url" placeholder="https://ejemplo.com/articulo" required autocomplete="off" />
+        <div class="cmd">
+          <svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20"/></svg>
+          <input id="url" name="url" type="url" placeholder="https://ejemplo.com/articulo" required autocomplete="off" />
+        </div>
       </div>
 
       <div class="controls-grid">
@@ -252,7 +313,8 @@
       </div>
 
       <button type="button" class="adv-toggle" id="adv-toggle" aria-expanded="false">
-        <span class="caret">▸</span> Opciones avanzadas · fetch, evasión, recorrido
+        <span class="caret"><svg class="ico" viewBox="0 0 24 24" style="width:15px;height:15px"><polyline points="9 18 15 12 9 6"/></svg></span>
+        Opciones avanzadas · fetch, evasión, recorrido
       </button>
 
       <div class="adv-panel hidden" id="adv-panel">
@@ -267,29 +329,29 @@
               <option value="2">2 · stealth (browser indetectable)</option>
               <option value="3">3 · browser (Chrome real, ejecuta JS)</option>
             </select>
-            <p class="help">Dejalo en <b>auto</b>. Forzá <b>browser (3)</b> si la página carga con JavaScript.</p>
+            <p class="help"><b>Auto</b> escala solo si la bloquean. Forzar <b>browser (3)</b> para páginas que cargan con JavaScript.</p>
           </div>
           <div class="field">
             <label for="proxy">Proxy de salida</label>
             <input id="proxy" name="proxy" type="text" placeholder="http://user:pass@host:puerto · socks5://host:puerto" autocomplete="off" />
-            <p class="help">Override para este job. Usá uno <b>residencial</b> para sitios duros (ML, gobierno).</p>
+            <p class="help">Override para este job. Conviene uno <b>residencial</b> para sitios duros (ML, gobierno).</p>
           </div>
           <div class="field">
             <label for="cookies">Cookies de sesión
-              <button type="button" id="cookies-import" class="mini-btn">importar cookies.txt</button>
-              <button type="button" id="cookies-eye" class="mini-btn" aria-label="Mostrar/ocultar">◡ ver</button>
+              <button type="button" id="cookies-import" class="mini-btn"><svg class="ico" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 9 12 4 17 9"/><line x1="12" y1="4" x2="12" y2="16"/></svg>importar cookies.txt</button>
+              <button type="button" id="cookies-eye" class="mini-btn" aria-label="Mostrar/ocultar"><svg class="ico" id="eye-ico" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>ver</button>
               <input type="file" id="cookies-file" accept=".txt,.json" class="hidden" />
             </label>
-            <textarea id="cookies" name="cookies" rows="3" placeholder="pegá tus cookies — nombre=valor; …  ·  cookies.txt  ·  JSON" autocomplete="off" spellcheck="false"></textarea>
+            <textarea id="cookies" name="cookies" rows="3" placeholder="cookies — nombre=valor; …  ·  cookies.txt  ·  JSON" autocomplete="off" spellcheck="false"></textarea>
             <div id="browser-cookies" class="bc-row">
-              <span class="bc-lbl">o usá las de tu navegador (sin extensión):</span>
+              <span class="bc-lbl">o usar las del navegador (sin extensión):</span>
               <button type="button" class="mini-btn bc" data-b="chrome">Chrome</button>
               <button type="button" class="mini-btn bc" data-b="firefox">Firefox</button>
               <button type="button" class="mini-btn bc" data-b="edge">Edge</button>
               <button type="button" class="mini-btn bc" data-b="brave">Brave</button>
               <span class="bc-sel" id="bc-sel"></span>
             </div>
-            <p class="help">Para páginas tras login o ubicación. <b>Usá las de tu navegador</b> (Fisherboy las lee de tu perfil local, igual que la extensión), exportá un <b>cookies.txt</b>, o pegá <b>nombre=valor</b>. Solo en este job · leer del navegador requiere rol dios.</p>
+            <p class="help">Para páginas tras login o ubicación. <b>Usar las del navegador</b> (Fisherboy las lee del perfil local, igual que la extensión), un <b>cookies.txt</b> exportado, o el formato <b>nombre=valor</b>. Solo en este job · leer del navegador requiere rol dios.</p>
           </div>
           <div class="adv-grid">
             <div class="field">
@@ -315,7 +377,7 @@
           <label class="switch">
             <input type="checkbox" id="tarantula" name="tarantula" />
             <span class="track"></span>
-            <span>Araña profunda · tarántula 🕷️</span>
+            <span>Araña profunda · tarántula</span>
           </label>
           <p class="help">Spider que <b>captura el API de cada nodo</b> → árbol de DATOS. Lenta (un browser por página) y solo rol dios. Usa profundidad + páginas máx.</p>
           <label class="switch">
@@ -352,10 +414,13 @@
       </div>
 
       <div class="actions">
-        <button type="submit" class="btn-pill" id="submit-btn">Pescar 🎣</button>
+        <button type="submit" class="btn-pill" id="submit-btn">
+          <svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.6"/><path d="M12 6.6V15a4 4 0 0 1-8 0v-1.5"/><path d="m4 13 1.4 1.9 2-1"/></svg>
+          <span id="btn-label">Pescar</span>
+        </button>
       </div>
 
-      <p class="hint" id="main-hint">Pegá una URL y pescá. Para sitios con JavaScript usá <b>tier browser</b>; para SPAs probá <b>Capturar API</b>. La privacidad se aplica antes de entregar.</p>
+      <p class="hint" id="main-hint">Una URL alcanza para empezar. Para sitios con JavaScript, el <b>tier browser</b>; para SPAs, <b>Capturar API</b>. La privacidad se aplica antes de entregar.</p>
     </form>
 
     <div class="result hidden" id="result-wrap">
@@ -367,6 +432,10 @@
           <button type="button" class="mini-btn" data-dl="data">datos</button>
           <button type="button" class="mini-btn" data-dl="records">registros</button>
         </span>
+        <button type="button" class="send-escriba hidden" id="send-escriba" title="Abrir este contenido en Escriba">
+          <svg class="ico" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          Enviar a Escriba
+        </button>
         <span class="chip" id="job-chip"></span>
       </div>
       <div class="meta" id="meta"></div>
@@ -377,7 +446,7 @@
   <div class="gate hidden" id="gate">
     <form class="gate-card" id="login-form">
       <svg class="logomark" viewBox="0 0 64 64" aria-hidden="true">
-        <rect width="64" height="64" rx="15" fill="#e06a3a"/>
+        <rect width="64" height="64" rx="15" fill="#0f8f6a"/>
         <g fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="32" cy="16" r="3.4" stroke-width="2.6"/>
           <path d="M32 19.4 V40 a9 9 0 0 1 -18 0 v-3"/>
@@ -385,7 +454,7 @@
         </g>
       </svg>
       <h2>Fisherboy</h2>
-      <p>Ingresá tu clave de acceso</p>
+      <p>Tu clave de acceso</p>
       <input id="login-key" type="password" placeholder="••••••••••" autocomplete="current-password" />
       <button type="submit" class="btn-pill" style="width:100%;margin-top:12px" id="login-btn">Entrar</button>
       <div class="err" id="login-err"></div>
@@ -411,18 +480,20 @@ const roleBadge = document.getElementById("roleBadge");
 let polling = null;
 let CAPS = null;
 
-/* ---------- tema ---------- */
+/* ---------- tema (íconos SVG, claro por defecto · ecosistema) ---------- */
 const themeBtn = document.getElementById("themeBtn");
+const ICO_MOON = `<svg class="ico" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg>`;
+const ICO_SUN = `<svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.4 1.4M17.6 17.6 19 19M19 5l-1.4 1.4M6.4 17.6 5 19"/></svg>`;
 function applyTheme(t) {
   document.documentElement.setAttribute("data-theme", t);
-  themeBtn.textContent = t === "dark" ? "◐" : "◑";
+  themeBtn.innerHTML = t === "dark" ? ICO_SUN : ICO_MOON;
   try { localStorage.setItem("fb-theme", t); } catch (e) {}
 }
 themeBtn.addEventListener("click", () => {
   const cur = document.documentElement.getAttribute("data-theme");
   applyTheme(cur === "dark" ? "light" : "dark");
 });
-try { applyTheme(localStorage.getItem("fb-theme") || "dark"); } catch (e) { applyTheme("dark"); }
+try { applyTheme(localStorage.getItem("fb-theme") || "light"); } catch (e) { applyTheme("light"); }
 
 /* ---------- opciones avanzadas (toggle) ---------- */
 const advToggle = document.getElementById("adv-toggle");
@@ -538,10 +609,12 @@ document.querySelectorAll(".mini-btn.bc").forEach(b => {
   });
 });
 
+const EYE = `<svg class="ico" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>`;
+const EYE_OFF = `<svg class="ico" viewBox="0 0 24 24"><path d="M9.9 4.2A10.9 10.9 0 0 1 12 4c6.5 0 10 7 10 7a16.7 16.7 0 0 1-3.4 4.3M6.6 6.6A16.4 16.4 0 0 0 2 11s3.5 7 10 7a10.6 10.6 0 0 0 4.5-1M3 3l18 18"/></svg>`;
 document.getElementById("cookies-eye").addEventListener("click", () => {
   const ta = document.getElementById("cookies");
   const on = ta.classList.toggle("reveal");
-  document.getElementById("cookies-eye").textContent = on ? "◠ ocultar" : "◡ ver";
+  document.getElementById("cookies-eye").innerHTML = (on ? EYE_OFF : EYE) + (on ? "ocultar" : "ver");
 });
 
 /* ---------- health ---------- */
@@ -567,6 +640,13 @@ function escapeHtml(s) {
 function highlightTokens(s) {
   return escapeHtml(s).replace(/«[A-ZÁÉÍÓÚ]+_\d+»/g, m => `<span class="tok">${m}</span>`);
 }
+function renderMarkdown(md) {
+  try {
+    let h = window.marked ? marked.parse(md) : escapeHtml(md);
+    if (window.DOMPurify) h = DOMPurify.sanitize(h);
+    return h.replace(/«[A-ZÁÉÍÓÚ]+_\d+»/g, m => `<span class="tok">${m}</span>`);
+  } catch (e) { return `<pre>${highlightTokens(md)}</pre>`; }
+}
 /* ---------- descarga (3 formatos) ---------- */
 function _download(obj, suffix) {
   const id = (currentSobre && currentSobre.job_id || "job").slice(0, 12);
@@ -589,6 +669,32 @@ function buildDownload(kind) {
 }
 document.querySelectorAll("#dl .mini-btn").forEach(b =>
   b.addEventListener("click", () => buildDownload(b.dataset.dl)));
+
+/* ---------- Enviar a Escriba (handoff del ecosistema, same-origin) ---------- */
+function recordsToCsv(recs) {
+  if (!recs || !recs.length) return null;
+  const cols = [...recs.reduce((s, r) => { Object.keys(r).forEach(k => s.add(k)); return s; }, new Set())];
+  const esc = v => `"${String(v == null ? "" : v).replace(/"/g, '""')}"`;
+  return [cols.join(",")].concat(recs.map(r => cols.map(c => esc(r[c])).join(","))).join("\n");
+}
+const sendEscribaBtn = document.getElementById("send-escriba");
+sendEscribaBtn.addEventListener("click", () => {
+  const s = currentSobre; if (!s || !s.content_md) return;
+  const title = (s.content_md.match(/^#\s+(.+)$/m) || [])[1]
+    || (s.source_url || "").replace(/^https?:\/\//, "").slice(0, 80) || "Fisherboy";
+  const recs = (s.meta || {}).records;
+  const handoff = {
+    from: "fisherboy", version: 1, title, source: s.source_url || "",
+    mime: "text/markdown", content: s.content_md,
+    alt: recs && recs.length ? { csv: recordsToCsv(recs) } : undefined,
+    ts: Date.now(),
+  };
+  try { sessionStorage.setItem("escriba.handoff", JSON.stringify(handoff)); } catch (e) {}
+  let url = "/"; try { url = localStorage.getItem("fb-escriba-url") || "/"; } catch (e) {}
+  window.open(url, "_blank");
+  sendEscribaBtn.lastChild.textContent = " enviado";
+  setTimeout(() => { sendEscribaBtn.lastChild.textContent = " Enviar a Escriba"; }, 1800);
+});
 
 function renderProgress(steps) {
   steps = steps || [];
@@ -632,6 +738,8 @@ function render(sobre) {
   pill.innerHTML = statusPill(sobre.status);
   jobChip.textContent = sobre.job_id.slice(0, 12) + "…";
   document.getElementById("dl").classList.toggle("hidden", sobre.status !== "ok");
+  const canSend = sobre.status === "ok" && !!(sobre.content_md && sobre.content_md.trim());
+  document.getElementById("send-escriba").classList.toggle("hidden", !canSend);
 
   const m = sobre.meta || {};
   const chips = [];
@@ -663,7 +771,7 @@ function render(sobre) {
   // Registros aplanados (productos/resultados) — lo más útil
   const recs = m.records || [];
   if (recs.length) {
-    html += `<div class="sub">${recs.length} registros extraídos</div><div class="recs">` +
+    html += `<div class="flabel">${recs.length} registros extraídos</div><div class="recs">` +
       recs.slice(0, 100).map(r => {
         const t = escapeHtml(r.title || r.id || "—");
         const p = r.price != null ? `<span class="rp">${escapeHtml(String(r.price))}</span>` : "";
@@ -675,14 +783,16 @@ function render(sobre) {
   }
   // Endpoints capturados (capture_api)
   if (Array.isArray(m.api_urls) && m.api_urls.length) {
-    html += `<div class="sub">Endpoints JSON capturados</div><div class="eplist">` +
+    html += `<div class="flabel">Endpoints JSON capturados</div><div class="eplist">` +
       m.api_urls.map(u => `<div class="ep">${escapeHtml(u)}</div>`).join("") + `</div>`;
   }
-  // Cuerpo: JSON capturado o markdown
+  // Cuerpo: JSON capturado (pre) o markdown RENDERIZADO
   if (sobre.content_json) {
     html += `<div class="preview"><pre>${escapeHtml(JSON.stringify(sobre.content_json, null, 2).slice(0, 12000))}</pre></div>`;
-  } else {
+  } else if (sobre.output_format === "json") {
     html += `<div class="preview"><pre>${highlightTokens(sobre.content_md || "(sin contenido)")}</pre></div>`;
+  } else {
+    html += `<div class="md">${renderMarkdown(sobre.content_md || "_(sin contenido)_")}</div>`;
   }
   // Árbol del spider (jerarquía padre→hijos)
   if (m.tree) {
@@ -706,11 +816,11 @@ async function poll(jobId) {
     render(sobre);
     if (sobre.status === "ok" || sobre.status === "error") {
       clearInterval(polling); polling = null;
-      btn.disabled = false; btn.textContent = "Pescar 🎣";
+      btn.disabled = false; document.getElementById("btn-label").textContent = "Pescar";
     }
   } catch (e) {
     clearInterval(polling); polling = null;
-    btn.disabled = false; btn.textContent = "Pescar 🎣";
+    btn.disabled = false; document.getElementById("btn-label").textContent = "Pescar";
     wrap.classList.remove("hidden");
     bodyEl.innerHTML = `<div class="err-box">${escapeHtml(e.message)}</div>`;
   }
@@ -719,7 +829,7 @@ async function poll(jobId) {
 form.addEventListener("submit", async (ev) => {
   ev.preventDefault();
   if (polling) clearInterval(polling);
-  btn.disabled = true; btn.textContent = "Lanzando…";
+  btn.disabled = true; document.getElementById("btn-label").textContent = "Lanzando…";
   wrap.classList.remove("hidden");
   pill.innerHTML = statusPill("pendiente");
   jobChip.textContent = "";
@@ -764,7 +874,7 @@ form.addEventListener("submit", async (ev) => {
     polling = setInterval(() => poll(data.job_id), 1200);
     poll(data.job_id);
   } catch (e) {
-    btn.disabled = false; btn.textContent = "Pescar 🎣";
+    btn.disabled = false; document.getElementById("btn-label").textContent = "Pescar";
     pill.innerHTML = statusPill("error");
     bodyEl.innerHTML = `<div class="err-box">${escapeHtml(e.message)}</div>`;
   }
