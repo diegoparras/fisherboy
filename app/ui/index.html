@@ -75,7 +75,7 @@
   .field-label { font-size: 13px; font-weight: 500; color: var(--muted-2); margin: 0 0 7px; display: block; }
   .url-row { display: flex; gap: 10px; align-items: stretch; }
   .url-row input { flex: 1; }
-  textarea, input[type="text"], input[type="url"], select {
+  textarea, input[type="text"], input[type="url"], input[type="number"], select {
     width: 100%; background: var(--card-2); border: 1px solid var(--border); color: var(--text);
     border-radius: 9px; padding: 12px 14px; font: inherit; font-size: 14.5px; outline: none;
     transition: border-color .15s, box-shadow .15s, background .15s;
@@ -140,8 +140,11 @@
   .adv-head { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 14px; }
   .adv-section .field { margin-bottom: 14px; }
   .adv-section .field:last-child { margin-bottom: 0; }
-  .adv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .adv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
   @media (max-width: 560px) { .adv-grid { grid-template-columns: 1fr; } }
+  /* aire entre cada toggle y su ayuda y el siguiente control */
+  .adv-section .switch { margin-top: 14px; }
+  .adv-section .switch:first-of-type { margin-top: 0; }
 
   /* switch */
   .switch { display: flex; align-items: center; gap: 11px; cursor: pointer; font-size: 14px; color: var(--text); margin: 4px 0 0; user-select: none; }
@@ -158,9 +161,23 @@
   /* result */
   .result { margin-top: 18px; }
   .result-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
-  .dl { display: inline-flex; align-items: center; gap: 6px; }
-  .dl-lbl { font-size: 11.5px; color: var(--muted); }
   .result-head .chip { margin-left: auto; }
+
+  /* tarjeta de descarga (Opción A · teal clara) */
+  .dlcard { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0 0 16px;
+    background: color-mix(in srgb, var(--accent) 8%, var(--card-2));
+    border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+    border-radius: 12px; padding: 12px 14px; }
+  .dlcard-lbl { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600; color: var(--accent); }
+  .dlcard-lbl .ico { width: 16px; height: 16px; }
+  .dl-btns { display: inline-flex; gap: 8px; flex-wrap: wrap; }
+  .dlbtn { display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer;
+    color: var(--accent); background: var(--bg-2); border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--border));
+    border-radius: 8px; padding: 7px 13px; transition: background .14s, transform .08s, border-color .14s; }
+  .dlbtn:hover { background: color-mix(in srgb, var(--accent) 13%, var(--bg-2)); border-color: var(--accent); }
+  .dlbtn:active { transform: scale(.97); }
+  .dlbtn .ico { width: 14px; height: 14px; }
+  .dlcard .send-escriba { margin-left: auto; }
   .pill-status { display: inline-flex; align-items: center; gap: 9px; font-size: 13px; font-weight: 500; padding: 6px 13px; border-radius: 999px; border: 1px solid var(--border); background: var(--card); }
   .pill-status .status-dot.run { background: var(--warn); box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 22%, transparent); animation: pulse 1.1s infinite; }
   @keyframes pulse { 50% { opacity: .4; } }
@@ -426,17 +443,22 @@
     <div class="result hidden" id="result-wrap">
       <div class="result-head">
         <span class="pill-status" id="pill-status"></span>
-        <span class="dl hidden" id="dl">
-          <span class="dl-lbl">descargar:</span>
-          <button type="button" class="mini-btn" data-dl="full">completo</button>
-          <button type="button" class="mini-btn" data-dl="data">datos</button>
-          <button type="button" class="mini-btn" data-dl="records">registros</button>
+        <span class="chip" id="job-chip"></span>
+      </div>
+      <div class="dlcard hidden" id="dlcard">
+        <span class="dlcard-lbl">
+          <svg class="ico" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Descargar
         </span>
+        <div class="dl-btns">
+          <button type="button" class="dlbtn" data-dl="full"><svg class="ico" viewBox="0 0 24 24"><path d="M14 3v5h5"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg>completo</button>
+          <button type="button" class="dlbtn" data-dl="data"><svg class="ico" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>datos</button>
+          <button type="button" class="dlbtn" data-dl="records"><svg class="ico" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>registros</button>
+        </div>
         <button type="button" class="send-escriba hidden" id="send-escriba" title="Abrir este contenido en Escriba">
           <svg class="ico" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
           Enviar a Escriba
         </button>
-        <span class="chip" id="job-chip"></span>
       </div>
       <div class="meta" id="meta"></div>
       <div id="result-body"></div>
@@ -667,7 +689,7 @@ function buildDownload(kind) {
   }, "datos");
   _download(s, "completo");   // sobre entero (todo)
 }
-document.querySelectorAll("#dl .mini-btn").forEach(b =>
+document.querySelectorAll("#dlcard .dlbtn").forEach(b =>
   b.addEventListener("click", () => buildDownload(b.dataset.dl)));
 
 /* ---------- Enviar a Escriba (handoff del ecosistema, same-origin) ---------- */
@@ -737,7 +759,7 @@ function render(sobre) {
   wrap.classList.remove("hidden");
   pill.innerHTML = statusPill(sobre.status);
   jobChip.textContent = sobre.job_id.slice(0, 12) + "…";
-  document.getElementById("dl").classList.toggle("hidden", sobre.status !== "ok");
+  document.getElementById("dlcard").classList.toggle("hidden", sobre.status !== "ok");
   const canSend = sobre.status === "ok" && !!(sobre.content_md && sobre.content_md.trim());
   document.getElementById("send-escriba").classList.toggle("hidden", !canSend);
 
