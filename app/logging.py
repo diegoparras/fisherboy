@@ -10,6 +10,20 @@ import json
 import logging
 import sys
 from datetime import datetime, timezone
+from urllib.parse import urlsplit
+
+# Campos de log que son URLs: se les saca la querystring (puede llevar tokens, email,
+# dni…). La política dice "nunca PII"; la query del target la trae el usuario. (Auditoría 2026-06)
+_URL_FIELDS = frozenset({"url", "seed", "source_url", "final_url", "callback_url"})
+
+
+def safe_url(u) -> str:
+    """Devuelve scheme://host/path sin querystring ni fragment (no PII en logs)."""
+    try:
+        s = urlsplit(str(u))
+        return f"{s.scheme}://{s.hostname}{s.path}" if s.scheme else str(u)
+    except Exception:  # noqa: BLE001
+        return "?"
 
 
 class JsonFormatter(logging.Formatter):
@@ -29,7 +43,8 @@ class JsonFormatter(logging.Formatter):
         }
         for key, val in record.__dict__.items():
             if key not in self._RESERVED and not key.startswith("_"):
-                payload[key] = val
+                # Defensa en profundidad: redactar la query de cualquier campo URL.
+                payload[key] = safe_url(val) if key in _URL_FIELDS and val else val
         if record.exc_info:
             payload["exc"] = self.formatException(record.exc_info)
         return json.dumps(payload, ensure_ascii=False, default=str)

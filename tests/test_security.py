@@ -102,3 +102,13 @@ def test_max_pages_hard_capped(client_factory, fake_queue):
     job_id = r.json()["job_id"]
     sobre = fake_queue.get(job_id)
     assert sobre.meta["max_pages"] == 10         # clampeado al tope duro, no 200
+
+
+# --------------------------------------------------------------------------- logs sin PII
+def test_log_redacts_url_querystring():
+    import logging as _logging
+    from app.logging import JsonFormatter
+    rec = _logging.makeLogRecord({"msg": "x", "url": "https://s.com/perfil?email=juan@x.com&token=abc"})
+    out = JsonFormatter().format(rec)
+    assert "juan@x.com" not in out and "token=abc" not in out
+    assert "https://s.com/perfil" in out
