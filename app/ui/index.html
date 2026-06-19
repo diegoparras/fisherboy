@@ -110,6 +110,11 @@
   #cookies:focus, #cookies.reveal { filter: none; }
   .mini-btn { background: var(--card); border: 1px solid var(--border); color: var(--accent); border-radius: 7px; padding: 2px 8px; font: inherit; font-size: 11px; cursor: pointer; margin-left: 8px; }
   .mini-btn:hover { background: var(--card-2); border-color: var(--hairline); }
+  .mini-btn.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+  .bc-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
+  .bc-lbl { font-size: 11.5px; color: var(--muted); margin-right: 2px; }
+  .bc-sel { font-size: 11.5px; color: var(--accent); }
+  .bc-row.locked { opacity: .45; pointer-events: none; }
   .help b { color: var(--muted-2); font-weight: 600; }
 
   /* toggle "opciones avanzadas" */
@@ -263,7 +268,15 @@
               <input type="file" id="cookies-file" accept=".txt,.json" class="hidden" />
             </label>
             <textarea id="cookies" name="cookies" rows="3" placeholder="pegá tus cookies — nombre=valor; …  ·  cookies.txt  ·  JSON" autocomplete="off" spellcheck="false"></textarea>
-            <p class="help">Para páginas tras login o ubicación. Exportalas con la extensión <b>“Get cookies.txt LOCALLY”</b> (la misma de YouTube) e importá el archivo, o pegá <b>nombre=valor</b>. Quedan solo en este job.</p>
+            <div id="browser-cookies" class="bc-row">
+              <span class="bc-lbl">o usá las de tu navegador (sin extensión):</span>
+              <button type="button" class="mini-btn bc" data-b="chrome">Chrome</button>
+              <button type="button" class="mini-btn bc" data-b="firefox">Firefox</button>
+              <button type="button" class="mini-btn bc" data-b="edge">Edge</button>
+              <button type="button" class="mini-btn bc" data-b="brave">Brave</button>
+              <span class="bc-sel" id="bc-sel"></span>
+            </div>
+            <p class="help">Para páginas tras login o ubicación. <b>Usá las de tu navegador</b> (Fisherboy las lee de tu perfil local, igual que la extensión), exportá un <b>cookies.txt</b>, o pegá <b>nombre=valor</b>. Solo en este job · leer del navegador requiere rol dios.</p>
           </div>
           <div class="adv-grid">
             <div class="field">
@@ -437,6 +450,8 @@ function applyCaps(role, caps, authEnabled) {
   lock("captcha_api_key", cap.solver);
   document.getElementById("spider").disabled = !cap.crawl;
   document.getElementById("tarantula").disabled = !cap.tarantula;
+  // Leer cookies del navegador = secreto local → solo dios (cap.solver es exclusivo de dios… usamos tarantula que también lo es).
+  document.getElementById("browser-cookies").classList.toggle("locked", !cap.tarantula);
   // Tier: limitar opciones por encima de max_tier.
   [...document.getElementById("tier").options].forEach(o => {
     if (o.value !== "" && parseInt(o.value, 10) > cap.max_tier) o.disabled = true;
@@ -483,6 +498,19 @@ cookiesFile.addEventListener("change", () => {
   reader.onload = () => { document.getElementById("cookies").value = reader.result; };
   reader.readAsText(f);
 });
+/* ---------- cookies del navegador local (sin extensión) ---------- */
+let cookiesBrowser = null;
+document.querySelectorAll(".mini-btn.bc").forEach(b => {
+  b.addEventListener("click", () => {
+    const was = b.classList.contains("on");
+    document.querySelectorAll(".mini-btn.bc").forEach(x => x.classList.remove("on"));
+    cookiesBrowser = was ? null : b.dataset.b;
+    if (!was) b.classList.add("on");
+    document.getElementById("bc-sel").textContent = cookiesBrowser
+      ? `→ leeré tus cookies de ${b.textContent} para el dominio` : "";
+  });
+});
+
 document.getElementById("cookies-eye").addEventListener("click", () => {
   const ta = document.getElementById("cookies");
   const on = ta.classList.toggle("reveal");
@@ -626,6 +654,7 @@ form.addEventListener("submit", async (ev) => {
     payload.captcha_api_key = form.captcha_api_key.value.trim();
   }
   if (form.cookies.value.trim()) payload.cookies = form.cookies.value.trim();
+  if (cookiesBrowser) payload.cookies_browser = cookiesBrowser;
   if (form.paginate.checked) {
     payload.paginate = true;
     payload.max_pages = parseInt(form.max_pages.value, 10) || 10;

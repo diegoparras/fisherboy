@@ -145,6 +145,8 @@ def create_app(
             _deny("barrer paginado")
         if req.tarantula and not caps.get("tarantula"):
             _deny("la araña profunda (tarántula)")
+        if req.cookies_browser and role != "dios":
+            _deny("leer las cookies de tu navegador")
 
         # 3. callback_url contra bloques SSRF
         if req.callback_url is not None:
@@ -188,6 +190,8 @@ def create_app(
             sobre.meta["captcha_api_key"] = req.captcha_api_key
         if req.cookies:
             sobre.meta["cookies"] = req.cookies
+        if req.cookies_browser:
+            sobre.meta["cookies_browser"] = req.cookies_browser
         _queue().enqueue(sobre)
 
         log.info("job encolado", extra={"job_id": job_id, "mode": mode.value, "rol": role})

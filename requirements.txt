@@ -28,6 +28,7 @@ fastmcp>=2.0
 
 # --- Conversión LLM-ready RECOMENDADA (Capa 5). Si falta, cae a Trafilatura.
 crawl4ai>=0.4            # markdown "fit" (poda nav/boilerplate por densidad) — lo mejor para LLM
+browser-cookie3>=0.19   # leer cookies del navegador local (reemplaza la extensión; solo standalone)
 # scrapling>=0.2         # parsing adaptivo + stealth fetcher (alternativa a parsing/adaptive.py)
 
 # --- Capa 7 opcional. El sistema degrada sin ella.

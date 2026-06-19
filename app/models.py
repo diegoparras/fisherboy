@@ -74,6 +74,7 @@ class JobRequest(BaseModel):
     captcha_api_url: str | None = None    # servicio resolvedor de CAPTCHA (estilo 2captcha)
     captcha_api_key: str | None = None
     cookies: str | None = None            # cookies de sesión "k=v; k2=v2" (gate por login/ubicación)
+    cookies_browser: str | None = None    # leer cookies del navegador local (chrome/firefox/edge/brave) — sin extensión
 
 
 class RevertRequest(BaseModel):

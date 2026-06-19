@@ -81,3 +81,11 @@ def test_unauthenticated_rejected(client_factory, monkeypatch):
     client = client_factory()
     r = client.post("/api/jobs", json={"url": "https://1.1.1.1/"})
     assert r.status_code == 401
+
+
+def test_browser_cookies_only_dios(client_factory, monkeypatch):
+    monkeypatch.setattr(auth, "role_from_request", lambda req: "angel")
+    client = client_factory()
+    r = client.post("/api/jobs", json={"url": "https://1.1.1.1/", "cookies_browser": "chrome"})
+    assert r.status_code == 403
+    assert "navegador" in r.json()["detail"].lower()

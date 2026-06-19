@@ -30,3 +30,16 @@ def test_json_dict():
 def test_empty():
     assert parse_cookies("") == {}
     assert parse_cookies(None) == {}
+
+
+def test_job_overrides_reads_browser_cookies(monkeypatch):
+    import app.security.browser_cookies as bc
+    monkeypatch.setattr(bc, "read_cookies", lambda host, browser: {"sess": "abc"})
+    from app.models import PrivacyMode, Rol, Sobre
+    from app.pipeline import _job_overrides
+    s = Sobre(job_id="x", source_url="https://tienda.com/p", privacy_mode=PrivacyMode.DIRECTO, rol=Rol.DIOS)
+    s.meta["cookies_browser"] = "chrome"
+    s.meta["cookies"] = "extra=1"   # lo pegado pisa/se suma
+    kw = _job_overrides(s)
+    assert kw["cookies"]["sess"] == "abc"
+    assert kw["cookies"]["extra"] == "1"

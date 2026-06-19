@@ -238,12 +238,19 @@ def _job_overrides(sobre: Sobre) -> dict:
     if cu and ck:
         from .net.captcha import ExternalSolver
         kw["solver"] = ExternalSolver(cu, ck)
+    jar: dict = {}
+    browser = sobre.meta.get("cookies_browser")
+    if browser:   # leer del navegador local (reemplaza a la extensión); solo dios
+        from urllib.parse import urlsplit
+        from .security.browser_cookies import read_cookies
+        host = urlsplit(str(sobre.source_url)).hostname or ""
+        jar.update(read_cookies(host, browser))
     raw_cookies = sobre.meta.get("cookies")
     if raw_cookies:
         from .security.cookies import parse_cookies
-        jar = parse_cookies(raw_cookies)
-        if jar:
-            kw["cookies"] = jar
+        jar.update(parse_cookies(raw_cookies))   # lo pegado a mano pisa al navegador
+    if jar:
+        kw["cookies"] = jar
     if sobre.meta.get("max_tier") is not None:
         kw["max_tier"] = int(sobre.meta["max_tier"])
     return kw
