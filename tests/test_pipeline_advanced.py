@@ -1,6 +1,8 @@
 """Tests del pipeline avanzado: rama JSON (LLM) por modo, crawl y llms.txt."""
 from __future__ import annotations
 
+import json
+
 from cryptography.fernet import Fernet
 
 from app.fetchers.base import FetchResult
@@ -191,3 +193,24 @@ def test_capture_api_empty_errors():
     out = process_job(sobre, deps)
     assert out.status.value == "error"
     assert "endpoint" in out.error.lower()
+
+
+def test_tarantula_builds_data_tree():
+    pages = {
+        "https://x.com/": ("<a href='/a'>a</a>",
+                           [{"url": "https://api.x.com/home", "status": 200, "bytes": 100, "json": {"items": [1, 2]}}]),
+        "https://x.com/a": ("hoja", [{"url": "https://api.x.com/a", "status": 200, "bytes": 50, "json": {"x": 1}}]),
+    }
+    sobre = _sobre(source_url="https://x.com/", privacy_mode=PrivacyMode.DIRECTO)
+    sobre.meta.update({"tarantula": True, "crawl_depth": 1, "max_pages": 5})
+    deps = _base_deps(capture_page=lambda u, **kw: pages.get(u, ("", [])))
+    out = process_job(sobre, deps)
+    assert out.status.value == "ok"
+    assert out.meta["nodos"] == 2
+    t = out.content_json["tree"]
+    assert t["url"] == "https://x.com/"
+    assert t["children"][0]["url"] == "https://x.com/a"
+    assert t["endpoints"][0]["json"]["items"] == [1, 2]      # dato real en el nodo
+    # el árbol de display (meta) NO lleva cuerpos
+    assert out.meta["tree"]["endpoints_count"] == 1
+    assert "json" not in json.dumps(out.meta["tree"])

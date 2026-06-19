@@ -40,9 +40,9 @@ API_TOKEN_ROLE = os.getenv("API_TOKEN_ROLE", "angel")
 
 # Capacidades por rol: gatean las armas caras (ADR-011, decisión del dueño).
 ROLE_CAPS = {
-    "dios":   {"max_tier": 3, "proxy": True,  "capture": True,  "solver": True,  "crawl": True,  "paginate": True},
-    "angel":  {"max_tier": 2, "proxy": True,  "capture": True,  "solver": False, "crawl": True,  "paginate": True},
-    "humano": {"max_tier": 1, "proxy": False, "capture": False, "solver": False, "crawl": False, "paginate": True},
+    "dios":   {"max_tier": 3, "proxy": True,  "capture": True,  "solver": True,  "crawl": True,  "paginate": True,  "tarantula": True},
+    "angel":  {"max_tier": 2, "proxy": True,  "capture": True,  "solver": False, "crawl": True,  "paginate": True,  "tarantula": False},
+    "humano": {"max_tier": 1, "proxy": False, "capture": False, "solver": False, "crawl": False, "paginate": True,  "tarantula": False},
 }
 
 

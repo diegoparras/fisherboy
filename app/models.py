@@ -66,6 +66,7 @@ class JobRequest(BaseModel):
     max_pages: int = Field(default=1, ge=1, le=1000)
     paginate: bool = False                # barrer el paginado de la URL (postback/links/?page=)
     capture_api: bool = False             # capturar el JSON/XHR oculto en vez del HTML (ADR-010)
+    tarantula: bool = False               # araña profunda: captura el API de CADA nodo (árbol de datos)
     tier_hint: FetchTier | None = None
     callback_url: HttpUrl | None = None
     # Overrides por job (panel Avanzado de la UI): para cuando nada más sirve.

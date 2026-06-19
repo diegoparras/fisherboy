@@ -287,6 +287,12 @@
           </label>
           <p class="help">Trae el JSON que la página ya consume (SPAs, grids dinámicos). <b>Lo más confiable.</b></p>
           <label class="switch">
+            <input type="checkbox" id="tarantula" name="tarantula" />
+            <span class="track"></span>
+            <span>Araña profunda · tarántula 🕷️</span>
+          </label>
+          <p class="help">Spider que <b>captura el API de cada nodo</b> → árbol de DATOS. Lenta (un browser por página) y solo rol dios. Usa profundidad + páginas máx.</p>
+          <label class="switch">
             <input type="checkbox" id="paginate" name="paginate" />
             <span class="track"></span>
             <span>Barrer paginado</span>
@@ -430,6 +436,7 @@ function applyCaps(role, caps, authEnabled) {
   lock("captcha_api_url", cap.solver);
   lock("captcha_api_key", cap.solver);
   document.getElementById("spider").disabled = !cap.crawl;
+  document.getElementById("tarantula").disabled = !cap.tarantula;
   // Tier: limitar opciones por encima de max_tier.
   [...document.getElementById("tier").options].forEach(o => {
     if (o.value !== "" && parseInt(o.value, 10) > cap.max_tier) o.disabled = true;
@@ -624,7 +631,11 @@ form.addEventListener("submit", async (ev) => {
     payload.max_pages = parseInt(form.max_pages.value, 10) || 10;
   }
   if (form.capture_api.checked) payload.capture_api = true;
-  if (form.spider.value !== "0") {
+  if (form.tarantula.checked) {
+    payload.tarantula = true;
+    payload.crawl_depth = parseInt(form.spider.value, 10) || 1;
+    payload.max_pages = parseInt(form.max_pages.value, 10) || 10;
+  } else if (form.spider.value !== "0") {
     payload.crawl_depth = parseInt(form.spider.value, 10);
     payload.max_pages = parseInt(form.max_pages.value, 10) || 50;
   }

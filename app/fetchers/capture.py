@@ -85,9 +85,16 @@ def _sync_playwright():
 
 def capture_xhr(url: str, ctx: FetchContext, *, max_endpoints: int = 40,
                 min_bytes: int = 0) -> list[dict]:
-    """Renderiza `url` y captura las respuestas XHR/fetch JSON. Devuelve endpoints.
+    """Renderiza `url` y captura las respuestas XHR/fetch JSON. Devuelve endpoints."""
+    return capture_page(url, ctx, max_endpoints=max_endpoints, min_bytes=min_bytes)[1]
 
-    Cada endpoint: {url, status, content_type, bytes, json (parseado) | text}.
+
+def capture_page(url: str, ctx: FetchContext, *, max_endpoints: int = 40,
+                 min_bytes: int = 0) -> tuple[str, list[dict]]:
+    """Renderiza `url`, captura los XHR/JSON y devuelve (html_renderizado, endpoints).
+
+    El HTML sirve para que la araña-tarántula saque los links del nodo; los endpoints
+    son el dato. Cada endpoint: {url, status, content_type, bytes, json | text}.
     """
     if not available():  # pragma: no cover
         raise FetchError("Captura de API no disponible: instalá patchright o playwright.")
@@ -138,6 +145,7 @@ def capture_xhr(url: str, ctx: FetchContext, *, max_endpoints: int = 40,
             ])
         page = context.new_page()
         page.on("response", _on_response)
+        html = ""
         try:
             page.goto(url, timeout=ctx.timeout_s * 1000, wait_until="networkidle")
             page.wait_for_timeout(int(ctx.settle_s * 1000))
@@ -145,6 +153,7 @@ def capture_xhr(url: str, ctx: FetchContext, *, max_endpoints: int = 40,
                 for _ in range(5):
                     page.mouse.wheel(0, 800)
                     page.wait_for_timeout(700)
+            html = page.content()
         except Exception as e:  # noqa: BLE001
             browser.close()
             raise FetchError(f"Fallo al capturar API: {type(e).__name__}.") from e
@@ -156,4 +165,4 @@ def capture_xhr(url: str, ctx: FetchContext, *, max_endpoints: int = 40,
     for e in captured:
         e["data_score"] = _data_score(e, target_reg)
     captured.sort(key=lambda e: e["data_score"], reverse=True)
-    return captured[:max_endpoints]
+    return html, captured[:max_endpoints]

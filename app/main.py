@@ -143,6 +143,8 @@ def create_app(
             _deny("crawling multipágina")
         if req.paginate and not caps["paginate"]:
             _deny("barrer paginado")
+        if req.tarantula and not caps.get("tarantula"):
+            _deny("la araña profunda (tarántula)")
 
         # 3. callback_url contra bloques SSRF
         if req.callback_url is not None:
@@ -175,6 +177,8 @@ def create_app(
             sobre.meta["paginate"] = True
         if req.capture_api:
             sobre.meta["capture_api"] = True
+        if req.tarantula:
+            sobre.meta["tarantula"] = True
         if req.extract_schema is not None:
             sobre.meta["extract_schema"] = req.extract_schema
         if req.proxy:

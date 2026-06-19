@@ -52,6 +52,7 @@ class PipelineDeps:
     llm_complete: Callable[[str, str], str] | None = None       # (system, user) -> str
     post: Callable[..., FetchResult] | None = None              # POST SSRF-safe (paginado ASP.NET)
     capture: Callable[..., list] | None = None                  # captura de XHR/JSON oculto (ADR-010)
+    capture_page: Callable[..., tuple] | None = None            # (html, endpoints) — modo tarántula
     persist: Callable[[Sobre], bool] | None = None
     index_content: Callable[[Sobre], bool] | None = None        # embeddings → vector store
     metrics: object | None = None
@@ -106,6 +107,18 @@ def build_default_deps(settings, *, redis_client=None) -> PipelineDeps:
         )
         return capture_xhr(u, ctx)
 
+    def _capture_page(u: str, proxy=None, cookies=None, **_ignore) -> tuple:
+        from .fetchers.base import FetchContext
+        from .fetchers.capture import capture_page
+        ctx = FetchContext(
+            timeout_s=settings.fetch_timeout_s, max_bytes=settings.fetch_max_bytes,
+            allow_private=settings.allow_private_targets, headless=settings.browser_headless,
+            settle_s=settings.browser_settle_s, scroll=settings.browser_scroll,
+            user_agent=settings.browser_user_agent, locale=settings.browser_locale,
+            proxy=proxy, cookies=cookies or {},
+        )
+        return capture_page(u, ctx)
+
     # robots: trae el robots.txt con el mismo router (tier 0), tolerante a fallos.
     def _robots_text(robots_url: str) -> str | None:
         try:
@@ -134,6 +147,7 @@ def build_default_deps(settings, *, redis_client=None) -> PipelineDeps:
         crawl=_crawl,
         post=_post,
         capture=_capture,
+        capture_page=_capture_page,
     )
 
     # Sub-pipeline documental: delega PDFs/docs a Escriba si ESCRIBA_URL está.
@@ -369,6 +383,89 @@ def _capture_branch(sobre: Sobre, deps: PipelineDeps) -> Sobre:
     return sobre
 
 
+_TARANTULA_HARD_CAP = 25   # tope duro de nodos: un browser por nodo es caro
+
+
+def _tarantula_branch(sobre: Sobre, deps: PipelineDeps) -> Sobre:
+    """Araña profunda: BFS donde CADA nodo se renderiza y se le captura el JSON/XHR.
+    Arma un árbol de DATOS (no de links). Tope duro de nodos por costo."""
+    from collections import deque
+
+    from .crawl.discovery import extract_links
+
+    url = str(sobre.source_url)
+    overrides = _job_overrides(sobre)
+    cap_kw = {k: overrides[k] for k in ("proxy", "cookies") if k in overrides}
+    max_pages = min(int(sobre.meta.get("max_pages", 10) or 10), _TARANTULA_HARD_CAP)
+    max_depth = int(sobre.meta.get("crawl_depth", 1) or 1)
+
+    seen = {url}
+    nodes: dict[str, dict] = {}
+    order: list[str] = []
+    queue = deque([(url, 0, None)])
+    total_endpoints = 0
+
+    while queue and len(order) < max_pages:
+        u, depth, parent = queue.popleft()
+        try:
+            html, endpoints = deps.capture_page(u, **cap_kw)
+        except Exception as e:  # noqa: BLE001 — un nodo que falla no corta la araña
+            log.info("tarantula: nodo falló", extra={"url": u, "error": type(e).__name__})
+            continue
+        total_endpoints += len(endpoints)
+        nodes[u] = {"url": u, "depth": depth, "parent": parent,
+                    "endpoints": endpoints, "children": []}
+        order.append(u)
+        if depth < max_depth and len(order) < max_pages:
+            for link in extract_links(html, u, same_domain=True):
+                if link not in seen:
+                    seen.add(link)
+                    queue.append((link, depth + 1, u))
+
+    if not order:
+        sobre.status = JobStatus.ERROR
+        sobre.error = "La tarántula no pudo capturar ningún nodo (¿sitio gateado/bloqueado?)."
+        if deps.metrics is not None:
+            deps.metrics.inc_job("error")
+        return sobre
+
+    # Árbol padre→hijos con los datos (endpoints) de cada nodo.
+    roots = []
+    for u in order:
+        node = nodes[u]
+        p = nodes.get(node["parent"]) if node["parent"] else None
+        (p["children"] if p and p is not node else roots).append(node)
+    tree = roots[0] if len(roots) == 1 else {"url": url, "depth": -1, "endpoints": [], "children": roots}
+
+    # Árbol de DISPLAY para meta/UI: solo url/depth/conteo, SIN cuerpos (no filtra PII).
+    def _strip(n):
+        return {"url": n["url"], "depth": n["depth"],
+                "endpoints_count": len(n.get("endpoints", [])),
+                "children": [_strip(c) for c in n.get("children", [])]}
+
+    sobre.tier_usado = FetchTier.BROWSER
+    sobre.fetched_at = datetime.now(timezone.utc)
+    sobre.meta.update({"nodos": len(order), "api_endpoints": total_endpoints, "tree": _strip(tree)})
+
+    full = json.dumps({"tree": tree}, ensure_ascii=False, indent=2)
+    if sobre.privacy_mode is PrivacyMode.DIRECTO:
+        sobre.content_json = {"tree": tree}        # datos crudos
+        sobre.anonimizado = False
+    else:
+        anon, n = deps.anonymize_opaco(full)        # enmascara la PII de los cuerpos
+        sobre.content_md = anon
+        sobre.anonimizado = True
+        sobre.meta["entidades_anonimizadas"] = n
+    sobre.status = JobStatus.OK
+    if deps.persist is not None:
+        deps.persist(sobre)
+    if deps.metrics is not None:
+        deps.metrics.inc_job("ok")
+    log.info("tarantula ok", extra={"job_id": sobre.job_id, "nodos": len(order),
+                                    "endpoints": total_endpoints})
+    return sobre
+
+
 def process_job(sobre: Sobre, deps: PipelineDeps) -> Sobre:
     """Procesa un job de punta a punta. Nunca lanza: las fallas quedan en el sobre."""
     sobre.status = JobStatus.EN_PROCESO
@@ -376,6 +473,10 @@ def process_job(sobre: Sobre, deps: PipelineDeps) -> Sobre:
     log.info("job en proceso", extra={"job_id": sobre.job_id, "url": url})
 
     try:
+        # Tarántula: araña profunda que captura el JSON/XHR de CADA nodo → árbol de datos.
+        if sobre.meta.get("tarantula") and deps.capture_page is not None:
+            return _tarantula_branch(sobre, deps)
+
         # Keystone (ADR-010): capturar el API/XHR oculto en vez de pelear el HTML.
         if sobre.meta.get("capture_api") and deps.capture is not None:
             return _capture_branch(sobre, deps)
