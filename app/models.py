@@ -65,6 +65,7 @@ class JobRequest(BaseModel):
     crawl_depth: int = Field(default=0, ge=0, le=5)
     max_pages: int = Field(default=1, ge=1, le=1000)
     paginate: bool = False                # barrer el paginado de la URL (postback/links/?page=)
+    crawl_scope: str = "domain"           # "domain" (todo el sitio) | "path" (solo la sección de la semilla)
     capture_api: bool = False             # capturar el JSON/XHR oculto en vez del HTML (ADR-010)
     tarantula: bool = False               # araña profunda: captura el API de CADA nodo (árbol de datos)
     tier_hint: FetchTier | None = None

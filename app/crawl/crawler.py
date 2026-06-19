@@ -36,6 +36,8 @@ def crawl(
     max_pages: int = 10,
     max_depth: int = 1,
     same_domain: bool = True,
+    drop_chrome: bool = True,
+    scope_path: str | None = None,
 ) -> list[CrawlPage]:
     """BFS desde `seed_url`. Devuelve las páginas traídas (semilla incluida)."""
     seen_urls: set[str] = {seed_url}
@@ -63,7 +65,8 @@ def crawl(
         pages.append(CrawlPage(url=url, result=result, depth=depth, parent=parent))
 
         if depth < max_depth and len(pages) < max_pages:
-            for link in extract_links(result.text, result.url, same_domain=same_domain):
+            for link in extract_links(result.text, result.url, same_domain=same_domain,
+                                      drop_chrome=drop_chrome, scope_path=scope_path):
                 if link not in seen_urls:
                     seen_urls.add(link)
                     queue.append((link, depth + 1, url))

@@ -177,6 +177,8 @@ def create_app(
         sobre.meta["max_pages"] = int(req.max_pages)
         if req.paginate:
             sobre.meta["paginate"] = True
+        if req.crawl_scope == "path":
+            sobre.meta["crawl_scope"] = "path"
         if req.capture_api:
             sobre.meta["capture_api"] = True
         if req.tarantula:

@@ -128,8 +128,8 @@ def build_default_deps(settings, *, redis_client=None) -> PipelineDeps:
 
     robots = RobotsChecker(_robots_text, user_agent="Fisherboy")
 
-    def _crawl(seed: str, *, tier_hint=None, max_pages=10, max_depth=1,
-               proxy=None, solver=None, cookies=None, max_tier=None) -> list[FetchResult]:
+    def _crawl(seed: str, *, tier_hint=None, max_pages=10, max_depth=1, proxy=None,
+               solver=None, cookies=None, max_tier=None, scope_path=None) -> list[FetchResult]:
         return _crawl_bfs(
             seed,
             fetch=lambda u: router.fetch(u, tier_hint=tier_hint, proxy_override=proxy,
@@ -138,6 +138,7 @@ def build_default_deps(settings, *, redis_client=None) -> PipelineDeps:
             robots_allowed=robots.allowed if settings.respect_robots else None,
             max_pages=max_pages,
             max_depth=max_depth,
+            scope_path=scope_path,
         )  # devuelve CrawlPage[] (con parent/depth) → el pipeline arma el árbol
 
     deps = PipelineDeps(
@@ -289,6 +290,14 @@ def _sweep_pagination(sobre, deps, url, tier_hint, max_pages, overrides) -> list
     return results
 
 
+def _scope_path(sobre: Sobre) -> str | None:
+    """Si el job pidió foco 'path', devuelve el prefijo de path de la semilla."""
+    if sobre.meta.get("crawl_scope") == "path":
+        from urllib.parse import urlsplit
+        return urlsplit(str(sobre.source_url)).path or "/"
+    return None
+
+
 def _gather(sobre: Sobre, deps: PipelineDeps) -> list[FetchResult]:
     """Trae la(s) página(s): crawl si se pidió y hay crawler, si no un solo fetch."""
     url = str(sobre.source_url)
@@ -304,7 +313,8 @@ def _gather(sobre: Sobre, deps: PipelineDeps) -> list[FetchResult]:
 
     if deps.crawl is not None and (crawl_depth > 0 or max_pages > 1):
         items = deps.crawl(
-            url, tier_hint=tier_hint, max_pages=max_pages, max_depth=crawl_depth, **overrides
+            url, tier_hint=tier_hint, max_pages=max_pages, max_depth=crawl_depth,
+            scope_path=_scope_path(sobre), **overrides
         )
         if not items:
             raise FetchError("El crawl no trajo ninguna página.")
@@ -363,6 +373,12 @@ def _capture_branch(sobre: Sobre, deps: PipelineDeps) -> Sobre:
         "api_endpoints": len(endpoints),
         "api_urls": [e.get("url") for e in endpoints[:20]],
     })
+    # Aplana el endpoint más jugoso (el primero, ya rankeado) a registros limpios.
+    if endpoints and endpoints[0].get("json") is not None:
+        from .extractors.records import flatten_records
+        recs = flatten_records(endpoints[0]["json"])
+        if recs:
+            sobre.meta["records"] = recs
     body = json.dumps(endpoints, ensure_ascii=False, indent=2)
 
     if sobre.privacy_mode is PrivacyMode.DIRECTO:
@@ -406,6 +422,7 @@ def _tarantula_branch(sobre: Sobre, deps: PipelineDeps) -> Sobre:
     max_pages = min(int(sobre.meta.get("max_pages", 10) or 10), _TARANTULA_HARD_CAP)
     max_depth = int(sobre.meta.get("crawl_depth", 1) or 1)
 
+    scope_path = _scope_path(sobre)
     seen = {url}
     nodes: dict[str, dict] = {}
     order: list[str] = []
@@ -424,7 +441,8 @@ def _tarantula_branch(sobre: Sobre, deps: PipelineDeps) -> Sobre:
                     "endpoints": endpoints, "children": []}
         order.append(u)
         if depth < max_depth and len(order) < max_pages:
-            for link in extract_links(html, u, same_domain=True):
+            for link in extract_links(html, u, same_domain=True,
+                                      drop_chrome=True, scope_path=scope_path):
                 if link not in seen:
                     seen.add(link)
                     queue.append((link, depth + 1, u))
@@ -453,6 +471,14 @@ def _tarantula_branch(sobre: Sobre, deps: PipelineDeps) -> Sobre:
     sobre.tier_usado = FetchTier.BROWSER
     sobre.fetched_at = datetime.now(timezone.utc)
     sobre.meta.update({"nodos": len(order), "api_endpoints": total_endpoints, "tree": _strip(tree)})
+    # Aplana registros del endpoint más grande de toda la araña.
+    best = max((e for n in nodes.values() for e in n["endpoints"] if e.get("json") is not None),
+               key=lambda e: e.get("bytes", 0), default=None)
+    if best is not None:
+        from .extractors.records import flatten_records
+        recs = flatten_records(best["json"])
+        if recs:
+            sobre.meta["records"] = recs
 
     full = json.dumps({"tree": tree}, ensure_ascii=False, indent=2)
     if sobre.privacy_mode is PrivacyMode.DIRECTO:

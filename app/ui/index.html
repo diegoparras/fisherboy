@@ -163,6 +163,10 @@
   }
   .preview .tok { color: var(--accent); font-weight: 600; }
   .sub { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+  .recs { display: flex; flex-direction: column; gap: 4px; margin-bottom: 16px; max-height: 340px; overflow: auto; }
+  .rec { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 13px; color: var(--text); background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 8px 11px; text-decoration: none; }
+  a.rec:hover { border-color: var(--accent); }
+  .rec .rp { color: var(--accent); font-weight: 600; font-family: var(--mono); font-size: 12.5px; white-space: nowrap; }
   .eplist { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; max-height: 220px; overflow: auto; }
   .ep { font-family: var(--mono); font-size: 11.5px; color: var(--accent); background: var(--card); border: 1px solid var(--border); border-radius: 7px; padding: 6px 9px; text-decoration: none; word-break: break-all; }
   a.ep:hover { background: var(--card-2); }
@@ -326,6 +330,14 @@
               <label for="max_pages">Páginas máximas</label>
               <input id="max_pages" name="max_pages" type="number" min="1" max="200" value="10" />
             </div>
+          </div>
+          <div class="field">
+            <label for="crawl_scope">Alcance del recorrido</label>
+            <select id="crawl_scope" name="crawl_scope">
+              <option value="domain" selected>todo el dominio</option>
+              <option value="path">solo esta sección (path de la URL)</option>
+            </select>
+            <p class="help">"Sección" sigue solo links bajo el path de la URL (evita vagar por el menú). Siempre descarta navegación/chrome (login, carrito, términos…).</p>
           </div>
         </section>
       </div>
@@ -575,6 +587,8 @@ function render(sobre) {
   if (m.paginas) chips.push(`${m.paginas} páginas`);
   if (m.paginas_barridas) chips.push(`${m.paginas_barridas} págs barridas`);
   if (m.api_endpoints != null) chips.push(`${m.api_endpoints} endpoints`);
+  if (m.records && m.records.length) chips.push(`${m.records.length} registros`);
+  if (m.nodos) chips.push(`${m.nodos} nodos`);
   if (m.hyperlinks_total != null) chips.push(`${m.hyperlinks_total} links`);
   if (m.bytes) chips.push(`${(m.bytes / 1024).toFixed(1)} KB`);
   metaEl.innerHTML = chips.map(c => `<span class="chip">${c}</span>`).join("");
@@ -589,6 +603,19 @@ function render(sobre) {
   }
 
   let html = "";
+  // Registros aplanados (productos/resultados) — lo más útil
+  const recs = m.records || [];
+  if (recs.length) {
+    html += `<div class="sub">${recs.length} registros extraídos</div><div class="recs">` +
+      recs.slice(0, 100).map(r => {
+        const t = escapeHtml(r.title || r.id || "—");
+        const p = r.price != null ? `<span class="rp">${escapeHtml(String(r.price))}</span>` : "";
+        const inner = `${t} ${p}`;
+        return r.url
+          ? `<a class="rec" href="${escapeHtml(/^https?:/.test(r.url) ? r.url : "https://" + r.url)}" target="_blank" rel="noopener">${inner}</a>`
+          : `<div class="rec">${inner}</div>`;
+      }).join("") + `</div>`;
+  }
   // Endpoints capturados (capture_api)
   if (Array.isArray(m.api_urls) && m.api_urls.length) {
     html += `<div class="sub">Endpoints JSON capturados</div><div class="eplist">` +

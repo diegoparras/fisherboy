@@ -44,6 +44,7 @@ def build_server():
         crawl_depth: int = 0,
         max_pages: int = 1,
         paginate: bool = False,
+        crawl_scope: str = "domain",
         capture_api: bool = False,
         tarantula: bool = False,
         extract_schema: dict | None = None,
@@ -71,6 +72,7 @@ def build_server():
             crawl_depth=crawl_depth,
             max_pages=max_pages,
             paginate=paginate,
+            crawl_scope=crawl_scope,
             capture_api=capture_api,
             tarantula=tarantula,
             extract_schema=extract_schema,
@@ -110,6 +112,8 @@ def build_server():
         sobre.meta["max_pages"] = int(req.max_pages)
         if req.paginate:
             sobre.meta["paginate"] = True
+        if req.crawl_scope == "path":
+            sobre.meta["crawl_scope"] = "path"
         if req.capture_api:
             sobre.meta["capture_api"] = True
         if req.tarantula:

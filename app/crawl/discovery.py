@@ -29,8 +29,30 @@ def _same_domain(a: str, b: str) -> bool:
     return urlsplit(a).hostname == urlsplit(b).hostname
 
 
-def extract_links(html: str, base_url: str, *, same_domain: bool = True) -> list[str]:
-    """Links absolutos del HTML. Filtra fragmentos, mailto/js y (opcional) externos."""
+# Segmentos de "chrome" de navegación: aparecen en casi todo sitio y no son contenido.
+# Genérico (no ML): login, cuenta, carrito, términos, ayuda, etc.
+_CHROME = re.compile(
+    r"(?:^|/)(login|signin|sign-in|signup|sign-up|register|registro|registrate|"
+    r"logout|salir|logoff|cart|carrito|checkout|account|cuenta|mi-cuenta|myaccount|"
+    r"help|ayuda|soporte|support|terms|terminos|tos|privacy|privacidad|legal|cookies|"
+    r"feedback|accesibilidad|accessibility|contact|contacto|about|acerca|sitemap|rss|"
+    r"share|compartir|print|addresses|notifications|newsletter|preferences|ajustes)"
+    r"(?:[/?.#]|$)",
+    re.I,
+)
+
+
+def _is_chrome(url: str) -> bool:
+    return bool(_CHROME.search(urlsplit(url).path))
+
+
+def extract_links(html: str, base_url: str, *, same_domain: bool = True,
+                  drop_chrome: bool = False, scope_path: str | None = None) -> list[str]:
+    """Links absolutos del HTML. Filtra fragmentos, mailto/js y (opcional) externos.
+
+    `drop_chrome`: descarta links de navegación/boilerplate (login, carrito, términos…).
+    `scope_path`: si se pasa, solo links cuyo path arranca con ese prefijo (foco de sección).
+    """
     parser = _LinkParser()
     try:
         parser.feed(html or "")
@@ -46,6 +68,10 @@ def extract_links(html: str, base_url: str, *, same_domain: bool = True) -> list
         if not absolute.startswith(("http://", "https://")):
             continue
         if same_domain and not _same_domain(absolute, base_url):
+            continue
+        if drop_chrome and _is_chrome(absolute):
+            continue
+        if scope_path and not urlsplit(absolute).path.startswith(scope_path):
             continue
         if absolute not in seen:
             seen.add(absolute)
