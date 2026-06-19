@@ -56,6 +56,20 @@ class PipelineDeps:
     persist: Callable[[Sobre], bool] | None = None
     index_content: Callable[[Sobre], bool] | None = None        # embeddings → vector store
     metrics: object | None = None
+    progress: Callable[[Sobre], None] | None = None             # persiste el sobre en cada paso (UI en vivo)
+
+
+def _report(deps: "PipelineDeps", sobre: Sobre, msg: str) -> None:
+    """Agrega un paso al progreso del job y lo persiste para que la UI lo vea en vivo."""
+    steps = sobre.meta.setdefault("progress", [])
+    steps.append(msg)
+    if len(steps) > 60:
+        del steps[:-60]
+    if deps.progress is not None:
+        try:
+            deps.progress(sobre)
+        except Exception:  # noqa: BLE001 — el reporte de progreso nunca corta el job
+            pass
 
 
 def build_default_deps(settings, *, redis_client=None) -> PipelineDeps:
@@ -366,7 +380,9 @@ def _capture_branch(sobre: Sobre, deps: PipelineDeps) -> Sobre:
     url = str(sobre.source_url)
     tier_hint = sobre.meta.get("tier_hint")
     overrides = _job_overrides(sobre)
+    _report(deps, sobre, "Renderizando con browser y capturando el API/XHR…")
     endpoints = deps.capture(url, tier_hint, **overrides)
+    _report(deps, sobre, f"{len(endpoints)} endpoints de datos capturados")
     sobre.tier_usado = FetchTier.BROWSER
     sobre.fetched_at = datetime.now(timezone.utc)
     sobre.meta.update({
@@ -429,8 +445,10 @@ def _tarantula_branch(sobre: Sobre, deps: PipelineDeps) -> Sobre:
     queue = deque([(url, 0, None)])
     total_endpoints = 0
 
+    from urllib.parse import urlsplit
     while queue and len(order) < max_pages:
         u, depth, parent = queue.popleft()
+        _report(deps, sobre, f"🕷️ nodo {len(order) + 1}/{max_pages}: {urlsplit(u).path or '/'}")
         try:
             html, endpoints = deps.capture_page(u, **cap_kw)
         except Exception as e:  # noqa: BLE001 — un nodo que falla no corta la araña
@@ -504,6 +522,7 @@ def process_job(sobre: Sobre, deps: PipelineDeps) -> Sobre:
     sobre.status = JobStatus.EN_PROCESO
     url = str(sobre.source_url)
     log.info("job en proceso", extra={"job_id": sobre.job_id, "url": url})
+    _report(deps, sobre, "Procesando el pedido…")
 
     try:
         # Tarántula: araña profunda que captura el JSON/XHR de CADA nodo → árbol de datos.
@@ -518,13 +537,17 @@ def process_job(sobre: Sobre, deps: PipelineDeps) -> Sobre:
         first = pages[0]
         sobre.tier_usado = FetchTier(first.tier) if first.tier is not None else FetchTier.ESTATICO
         sobre.fetched_at = datetime.now(timezone.utc)
+        _kb = sum(len(p.content) for p in pages) / 1024
+        _report(deps, sobre, f"Traído: tier {int(sobre.tier_usado)} · {len(pages)} pág · {_kb:.0f} KB")
 
+        _report(deps, sobre, "Convirtiendo a markdown…")
         sections = [(p.url, _to_markdown(p, deps)) for p in pages]
         combined = bundle_pages(sections) if len(sections) > 1 else sections[0][1]
         if not combined or not combined.strip():
             raise ExtractError("No se encontró contenido utilizable.")
 
         if sobre.output_format is OutputFormat.JSON:
+            _report(deps, sobre, "Extrayendo datos con el LLM…")
             _json_branch(sobre, combined, deps)
         else:
             # El privacy_mode manda también en la rama local (ADR-002, rev. 2026-06-18):
@@ -534,6 +557,7 @@ def process_job(sobre: Sobre, deps: PipelineDeps) -> Sobre:
                 body, n_entidades = combined, 0
                 sobre.anonimizado = False
             else:
+                _report(deps, sobre, "Anonimizando (Anonimal)…")
                 body, n_entidades = deps.anonymize_opaco(combined)
                 sobre.anonimizado = True
             if sobre.output_format is OutputFormat.LLMS_TXT:

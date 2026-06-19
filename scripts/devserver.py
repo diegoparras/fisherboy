@@ -49,6 +49,7 @@ queue = JobQueue(fake)
 # así no hace falta el servicio Anonimal para la demo.
 deps = build_default_deps(settings, redis_client=fake)
 deps.anonymize_opaco = lambda text: build_opaco(text, opf_spans=[])
+deps.progress = queue.save   # persiste cada paso → la UI muestra el progreso en vivo
 
 _stop = threading.Event()
 

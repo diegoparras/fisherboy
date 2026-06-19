@@ -55,6 +55,7 @@ def run() -> None:
 
     queue = get_queue(settings)
     deps = build_default_deps(settings)
+    deps.progress = queue.save   # persiste cada paso → la UI ve el progreso en vivo
     log.info("worker arrancado", extra={"app_mode": settings.app_mode.value})
 
     while _running:
