@@ -63,7 +63,7 @@ class JobRequest(BaseModel):
     output_format: OutputFormat = OutputFormat.MARKDOWN
     extract_schema: dict | None = None
     crawl_depth: int = Field(default=0, ge=0, le=5)
-    max_pages: int = Field(default=1, ge=1, le=1000)
+    max_pages: int = Field(default=1, ge=1, le=200)   # tope duro adicional en config (crawl_max_pages)
     paginate: bool = False                # barrer el paginado de la URL (postback/links/?page=)
     crawl_scope: str = "domain"           # "domain" (todo el sitio) | "path" (solo la sección de la semilla)
     capture_api: bool = False             # capturar el JSON/XHR oculto en vez del HTML (ADR-010)

@@ -22,7 +22,7 @@ from .logging import get_logger, setup_logging
 from .models import JobRequest, JobStatus, Rol, RevertRequest, Sobre
 from .privacy_policy import PolicyDenied, PrivacyPolicy, get_policy
 from .queue import JobQueue, get_queue
-from .security import auth
+from .security import auth, ratelimit
 from .security.ssrf import SSRFError, validate_callback_url, validate_proxy_url
 
 log = get_logger("fisherboy.api")
@@ -132,6 +132,10 @@ def create_app(
         # 1. autenticación + rol efectivo (de la sesión, no escalable) + identidad
         session_role, owner_jti = auth.identity_from_request(request)
         role = _effective_role(request, req.rol, session_role)
+        # 1b. rate-limit de admisión por IP (anti-flood; falla abierto si no hay Redis)
+        client_ip = request.client.host if request.client else "?"
+        if not ratelimit.allow(_queue()._r, f"jobs:{client_ip}", limit=settings.max_jobs_per_min):
+            raise HTTPException(status_code=429, detail="Demasiados jobs; probá en un minuto.")
         rol_enum = Rol(role)
         caps = auth.caps_for(role)
 
@@ -180,7 +184,7 @@ def create_app(
         if req.tier_hint is not None:
             sobre.meta["tier_hint"] = int(req.tier_hint)
         sobre.meta["crawl_depth"] = int(req.crawl_depth)
-        sobre.meta["max_pages"] = int(req.max_pages)
+        sobre.meta["max_pages"] = min(int(req.max_pages), settings.crawl_max_pages)  # tope duro
         if req.paginate:
             sobre.meta["paginate"] = True
         if req.crawl_scope == "path":

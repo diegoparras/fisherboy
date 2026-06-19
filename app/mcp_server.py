@@ -101,6 +101,9 @@ def build_server():
         )
         # Rol efectivo: techo del servidor (MCP_ROLE), nunca el que pida el caller hacia
         # arriba. Solo se respeta un downgrade (rol pedido <= techo).
+        from .security import ratelimit
+        if not ratelimit.allow(queue._r, "jobs:mcp", limit=settings.max_jobs_per_min):
+            raise ValueError("Demasiados jobs; probá en un minuto.")
         ceiling = _mcp_role()
         effective = ceiling
         if req.rol is not None and _RANK.get(req.rol.value, 9) <= _RANK[ceiling]:
@@ -146,7 +149,7 @@ def build_server():
         if req.tier_hint is not None:
             sobre.meta["tier_hint"] = int(req.tier_hint)
         sobre.meta["crawl_depth"] = int(req.crawl_depth)
-        sobre.meta["max_pages"] = int(req.max_pages)
+        sobre.meta["max_pages"] = min(int(req.max_pages), settings.crawl_max_pages)  # tope duro
         if req.paginate:
             sobre.meta["paginate"] = True
         if req.crawl_scope == "path":

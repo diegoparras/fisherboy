@@ -125,6 +125,14 @@ class Settings:
             (e.get("COOKIE_SECURE", "1") or "1").strip().lower() in ("1", "true", "yes", "on")
         )
 
+        # Límites anti-DoS (auditoría 2026-06).
+        # Rate-limit de admisión de jobs (ventana fija por minuto, por IP). 0 = sin límite.
+        self.max_jobs_per_min = int(e.get("MAX_JOBS_PER_MIN", "60"))
+        # Tope DURO de páginas por job (crawl/paginado). Acota RAM/tiempo del worker.
+        self.crawl_max_pages = int(e.get("CRAWL_MAX_PAGES", "100"))
+        # Tope de bytes ACUMULADOS por job (además del cap por página). 0 = sin tope.
+        self.job_max_total_bytes = int(e.get("JOB_MAX_TOTAL_BYTES", str(80 * 1024 * 1024)))
+
         self.log_level = (e.get("LOG_LEVEL", "INFO") or "INFO").upper()
 
     @property

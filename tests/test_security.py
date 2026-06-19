@@ -82,3 +82,23 @@ def test_job_with_internal_proxy_rejected(client_factory):
     })
     assert resp.status_code == 400
     assert "proxy" in resp.json()["detail"].lower()
+
+
+# --------------------------------------------------------------------------- DoS / límites
+def test_rate_limit_returns_429(client_factory):
+    client = client_factory(MAX_JOBS_PER_MIN=3)
+    body = {"url": "https://1.1.1.1/", "rol": "dios", "privacy_mode": "directo"}
+    codes = [client.post("/api/jobs", json=body).status_code for _ in range(5)]
+    assert codes[:3] == [202, 202, 202]
+    assert 429 in codes[3:]                      # el 4º/5º ya pasan el tope por minuto
+
+
+def test_max_pages_hard_capped(client_factory, fake_queue):
+    client = client_factory(CRAWL_MAX_PAGES=10)
+    r = client.post("/api/jobs", json={
+        "url": "https://1.1.1.1/", "rol": "dios", "privacy_mode": "directo",
+        "crawl_depth": 2, "max_pages": 200,
+    })
+    job_id = r.json()["job_id"]
+    sobre = fake_queue.get(job_id)
+    assert sobre.meta["max_pages"] == 10         # clampeado al tope duro, no 200

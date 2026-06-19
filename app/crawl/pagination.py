@@ -108,17 +108,28 @@ def find_next_link(html: str, base_url: str) -> str | None:
     return _bump_query_page(base_url)
 
 
-def paginate(html0: str, url0: str, *, get_text, post_text=None, max_pages: int = 10) -> list[tuple[str, str]]:
+def paginate(html0: str, url0: str, *, get_text, post_text=None, max_pages: int = 10,
+             max_total_bytes: int = 80 * 1024 * 1024, deadline_s: float = 180.0) -> list[tuple[str, str]]:
     """Barre hasta `max_pages` páginas desde (url0, html0). Devuelve [(url, html), ...].
 
     `get_text(url)->html` y `post_text(url, data)->html` los provee el llamador
     (SSRF-safe). Si `post_text` es None, no se intenta el postback ASP.NET.
-    """
+
+    Cortes anti-DoS además de max_pages (auditoría 2026-06): presupuesto de bytes
+    ACUMULADOS y deadline de wall-clock, para que un sitio que genera contenido
+    distinto por página (dedup por hash nunca dispara) no barra indefinidamente."""
+    import time
     pages = [(url0, html0)]
     seen_hashes = {hash(html0)}
     html, url, page_num = html0, url0, 1
+    total_bytes = len(html0.encode("utf-8", "replace"))
+    deadline = time.monotonic() + deadline_s if deadline_s else None
 
     while len(pages) < max_pages:
+        if deadline is not None and time.monotonic() > deadline:
+            break
+        if max_total_bytes and total_bytes >= max_total_bytes:
+            break
         nxt_url, nxt_html = None, None
 
         if is_aspnet(html) and post_text is not None:
@@ -148,6 +159,7 @@ def paginate(html0: str, url0: str, *, get_text, post_text=None, max_pages: int 
             break
         seen_hashes.add(h)
         pages.append((nxt_url, nxt_html))
+        total_bytes += len(nxt_html.encode("utf-8", "replace"))
         html, url, page_num = nxt_html, nxt_url, page_num + 1
 
     return pages
