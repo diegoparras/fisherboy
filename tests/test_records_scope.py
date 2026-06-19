@@ -56,3 +56,27 @@ def test_scope_path_stays_in_section():
             "<a href='/ofertas'>fuera2</a>")
     got = extract_links(html, "https://x.com/c/ropa", scope_path="/c/ropa")
     assert got == ["https://x.com/c/ropa/sub"]          # solo bajo la sección
+
+
+def test_flatten_picks_items_not_nested_components():
+    # Regresión: 'components' tiene más objetos que 'items', pero 'items' es el registro.
+    data = {"items": [
+        {"metadata": {"id": "A1", "url": "x.com/a#t=1"},
+         "components": [
+             {"type": "title", "id": "title", "title": {"text": "Producto A"}},
+             {"type": "price", "price": {"current_price": {"value": 999}}},
+             {"type": "shipping", "shipping": {"text": "Llega gratis"}},
+         ]},
+        {"metadata": {"id": "B2", "url": "x.com/b"},
+         "components": [
+             {"type": "title", "title": {"text": "Producto B"}},
+             {"type": "price", "price": {"current_price": {"value": 500}}},
+             {"type": "shipping", "shipping": {"text": "Envío gratis"}},
+         ]},
+    ]}
+    recs = flatten_records(data)
+    assert len(recs) == 2                       # items, no los 6 components
+    assert recs[0]["title"] == "Producto A"     # título real, no "Llega gratis"
+    assert recs[0]["price"] == 999              # current_price, no cuotas
+    assert recs[0]["id"] == "A1"
+    assert "#" not in recs[0]["url"]            # tracking removido
