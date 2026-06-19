@@ -564,6 +564,10 @@ def process_job(sobre: Sobre, deps: PipelineDeps) -> Sobre:
                 body = to_llms_txt(body, title=title_from_markdown(body), source_url=url)
             sobre.content_md = body
             sobre.meta["entidades_anonimizadas"] = n_entidades
+            # Spider/crawl en directo: además del bundle, el contenido POR PÁGINA estructurado
+            # (para que la descarga "datos" traiga el contenido de cada link).
+            if len(sections) > 1 and sobre.privacy_mode is PrivacyMode.DIRECTO:
+                sobre.content_json = {"pages": [{"url": u, "markdown": md} for u, md in sections]}
 
         sobre.status = JobStatus.OK
         sobre.meta.update(

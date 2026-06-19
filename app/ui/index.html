@@ -150,7 +150,10 @@
 
   /* result */
   .result { margin-top: 18px; }
-  .result-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+  .result-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+  .dl { display: inline-flex; align-items: center; gap: 6px; }
+  .dl-lbl { font-size: 11.5px; color: var(--muted); }
+  .result-head .chip { margin-left: auto; }
   .pill-status { display: inline-flex; align-items: center; gap: 9px; font-size: 13px; font-weight: 500; padding: 6px 13px; border-radius: 999px; border: 1px solid var(--border); background: var(--card); }
   .pill-status .status-dot.run { background: var(--warn); box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 22%, transparent); animation: pulse 1.1s infinite; }
   @keyframes pulse { 50% { opacity: .4; } }
@@ -357,6 +360,12 @@
     <div class="result hidden" id="result-wrap">
       <div class="result-head">
         <span class="pill-status" id="pill-status"></span>
+        <span class="dl hidden" id="dl">
+          <span class="dl-lbl">descargar:</span>
+          <button type="button" class="mini-btn" data-dl="full">completo</button>
+          <button type="button" class="mini-btn" data-dl="data">datos</button>
+          <button type="button" class="mini-btn" data-dl="records">registros</button>
+        </span>
         <span class="chip" id="job-chip"></span>
       </div>
       <div class="meta" id="meta"></div>
@@ -557,6 +566,29 @@ function escapeHtml(s) {
 function highlightTokens(s) {
   return escapeHtml(s).replace(/«[A-ZÁÉÍÓÚ]+_\d+»/g, m => `<span class="tok">${m}</span>`);
 }
+/* ---------- descarga (3 formatos) ---------- */
+function _download(obj, suffix) {
+  const id = (currentSobre && currentSobre.job_id || "job").slice(0, 12);
+  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `fisherboy-${id}-${suffix}.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+function buildDownload(kind) {
+  const s = currentSobre; if (!s) return;
+  const m = s.meta || {};
+  if (kind === "records") return _download(m.records || [], "registros");
+  if (kind === "data") return _download({
+    url: s.source_url, content_json: s.content_json, content_md: s.content_md,
+    records: m.records, tree: m.tree, hyperlinks: m.hyperlinks, api_urls: m.api_urls,
+  }, "datos");
+  _download(s, "completo");   // sobre entero (todo)
+}
+document.querySelectorAll("#dl .mini-btn").forEach(b =>
+  b.addEventListener("click", () => buildDownload(b.dataset.dl)));
+
 function renderProgress(steps) {
   steps = steps || [];
   if (!steps.length) return `<div class="placeholder">Procesando… el worker está pescando.</div>`;
@@ -586,10 +618,14 @@ function statusPill(status) {
   return `<span class="status-dot ${cls}"></span>${STATUS_LABEL[status] || status}`;
 }
 
+let currentSobre = null;
+
 function render(sobre) {
+  currentSobre = sobre;
   wrap.classList.remove("hidden");
   pill.innerHTML = statusPill(sobre.status);
   jobChip.textContent = sobre.job_id.slice(0, 12) + "…";
+  document.getElementById("dl").classList.toggle("hidden", sobre.status !== "ok");
 
   const m = sobre.meta || {};
   const chips = [];
