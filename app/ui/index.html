@@ -90,8 +90,12 @@
   .controls-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 18px; }
   @media (max-width: 560px) { .controls-grid { grid-template-columns: 1fr; } .url-row { flex-direction: column; } }
   /* login + estados */
-  .gate { position: fixed; inset: 0; background: var(--bg); display: grid; place-items: center; z-index: 100; padding: 20px; }
-  .gate-card { width: 100%; max-width: 340px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 28px 26px; text-align: center; box-shadow: var(--shadow); }
+  /* gate frosted: cubre desde el primer paint con el sitio difuminado detrás (sin flash) */
+  .gate { position: fixed; inset: 0; display: grid; place-items: center; z-index: 100; padding: 20px;
+    background: color-mix(in srgb, var(--bg) 55%, transparent);
+    -webkit-backdrop-filter: blur(12px) saturate(1.1); backdrop-filter: blur(12px) saturate(1.1); }
+  .gate-card { width: 100%; max-width: 340px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 28px 26px; text-align: center; box-shadow: var(--shadow); animation: cardpop .2s cubic-bezier(.2,.8,.2,1); }
+  @keyframes cardpop { from { opacity: 0; transform: translateY(8px) scale(.98); } }
   .gate .logomark { width: 44px; height: 44px; margin: 0 auto 12px; }
   .gate h2 { font-size: 18px; margin: 0 0 4px; font-weight: 600; }
   .gate p { color: var(--muted); font-size: 13px; margin: 0 0 18px; }
@@ -589,8 +593,8 @@
     </div>
   </div>
 
-  <div class="gate hidden" id="gate">
-    <form class="gate-card" id="login-form">
+  <div class="gate" id="gate">
+    <form class="gate-card hidden" id="login-form">
       <svg class="logomark" viewBox="0 0 64 64" aria-hidden="true">
         <rect width="64" height="64" rx="15" fill="#0f8f6a"/>
         <g fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
@@ -760,14 +764,15 @@ function applyCaps(role, caps, authEnabled) {
   });
 }
 
+function showLogin() { gate.classList.remove("hidden"); loginForm.classList.remove("hidden"); }
 async function checkSession() {
   try {
     const r = await fetch("/api/me");
-    if (r.status === 401) { gate.classList.remove("hidden"); return; }
+    if (r.status === 401) { showLogin(); return; }
     const d = await r.json();
-    gate.classList.add("hidden");
+    gate.classList.add("hidden");          // hay sesión → revelar la app (sin flash de login)
     applyCaps(d.role, d.caps, d.auth_enabled);
-  } catch (e) { gate.classList.remove("hidden"); }
+  } catch (e) { showLogin(); }
 }
 
 loginForm.addEventListener("submit", async (ev) => {
@@ -786,7 +791,7 @@ loginForm.addEventListener("submit", async (ev) => {
 
 logoutBtn.addEventListener("click", async () => {
   try { await fetch("/api/logout", { method: "POST" }); } catch (e) {}
-  gate.classList.remove("hidden");
+  showLogin();
 });
 
 checkSession();
