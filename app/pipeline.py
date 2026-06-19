@@ -117,7 +117,7 @@ def build_default_deps(settings, *, redis_client=None) -> PipelineDeps:
 
     def _crawl(seed: str, *, tier_hint=None, max_pages=10, max_depth=1,
                proxy=None, solver=None, cookies=None, max_tier=None) -> list[FetchResult]:
-        pages = _crawl_bfs(
+        return _crawl_bfs(
             seed,
             fetch=lambda u: router.fetch(u, tier_hint=tier_hint, proxy_override=proxy,
                                          solver_override=solver, cookies_override=cookies,
@@ -125,8 +125,7 @@ def build_default_deps(settings, *, redis_client=None) -> PipelineDeps:
             robots_allowed=robots.allowed if settings.respect_robots else None,
             max_pages=max_pages,
             max_depth=max_depth,
-        )
-        return [p.result for p in pages]
+        )  # devuelve CrawlPage[] (con parent/depth) → el pipeline arma el árbol
 
     deps = PipelineDeps(
         fetch=_fetch,
@@ -283,12 +282,17 @@ def _gather(sobre: Sobre, deps: PipelineDeps) -> list[FetchResult]:
         return _sweep_pagination(sobre, deps, url, tier_hint, max_pages, overrides)
 
     if deps.crawl is not None and (crawl_depth > 0 or max_pages > 1):
-        pages = deps.crawl(
+        items = deps.crawl(
             url, tier_hint=tier_hint, max_pages=max_pages, max_depth=crawl_depth, **overrides
         )
-        if not pages:
+        if not items:
             raise FetchError("El crawl no trajo ninguna página.")
-        return pages
+        # items pueden ser CrawlPage (con árbol) o FetchResult (tests / simple).
+        if hasattr(items[0], "result"):
+            from .crawl.crawler import build_tree
+            sobre.meta["tree"] = build_tree(items)
+            return [it.result for it in items]
+        return items
     return [deps.fetch(url, tier_hint, **overrides)]
 
 

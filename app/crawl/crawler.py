@@ -25,6 +25,7 @@ class CrawlPage:
     url: str
     result: FetchResult
     depth: int
+    parent: str | None = None   # URL que linkeó a esta (para armar el árbol)
 
 
 def crawl(
@@ -40,10 +41,10 @@ def crawl(
     seen_urls: set[str] = {seed_url}
     seen_hashes: set[str] = set()
     pages: list[CrawlPage] = []
-    queue: deque[tuple[str, int]] = deque([(seed_url, 0)])
+    queue: deque[tuple[str, int, str | None]] = deque([(seed_url, 0, None)])
 
     while queue and len(pages) < max_pages:
-        url, depth = queue.popleft()
+        url, depth, parent = queue.popleft()
 
         if robots_allowed is not None and not robots_allowed(url):
             log.info("crawl: bloqueado por robots", extra={"url": url})
@@ -59,13 +60,36 @@ def crawl(
         if digest in seen_hashes:
             continue  # contenido duplicado (misma página, otra URL)
         seen_hashes.add(digest)
-        pages.append(CrawlPage(url=url, result=result, depth=depth))
+        pages.append(CrawlPage(url=url, result=result, depth=depth, parent=parent))
 
         if depth < max_depth and len(pages) < max_pages:
             for link in extract_links(result.text, result.url, same_domain=same_domain):
                 if link not in seen_urls:
                     seen_urls.add(link)
-                    queue.append((link, depth + 1))
+                    queue.append((link, depth + 1, url))
 
     log.info("crawl ok", extra={"seed": seed_url, "paginas": len(pages), "depth": max_depth})
     return pages
+
+
+def build_tree(pages: list[CrawlPage]) -> dict:
+    """Arma la jerarquía padre→hijos a partir del parentesco registrado en el crawl."""
+    nodes: dict[str, dict] = {}
+    for p in pages:
+        n = nodes.setdefault(p.url, {"url": p.url, "depth": p.depth, "children": []})
+        n["depth"] = p.depth
+        bytes_ = len(p.result.content) if p.result else 0
+        n["bytes"] = bytes_
+        title = next((l.lstrip("# ").strip() for l in (p.result.text or "").splitlines()
+                      if l.strip().startswith("#")), None) if p.result else None
+        if title:
+            n["title"] = title[:90]
+    roots = []
+    for p in pages:
+        node = nodes[p.url]
+        parent = nodes.get(p.parent) if p.parent else None
+        if parent is not None and parent is not node:
+            parent["children"].append(node)
+        else:
+            roots.append(node)
+    return roots[0] if len(roots) == 1 else {"url": "(varios)", "depth": -1, "children": roots}

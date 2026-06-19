@@ -82,3 +82,22 @@ def test_crawl_respects_robots():
     got = crawl("http://x.com/", fetch=_fetch_from(pages),
                 robots_allowed=robots.allowed, max_pages=10, max_depth=1)
     assert all(p.url != "http://x.com/no" for p in got)
+
+
+def test_build_tree_hierarchy():
+    from app.crawl.crawler import build_tree, CrawlPage
+    def fr(u, txt="x"):
+        return FetchResult(url=u, status_code=200, content=txt.encode(), text=txt,
+                           content_type="text/html", tier=0)
+    pages = [
+        CrawlPage(url="http://x.com/", result=fr("http://x.com/", "# Home"), depth=0, parent=None),
+        CrawlPage(url="http://x.com/a", result=fr("http://x.com/a"), depth=1, parent="http://x.com/"),
+        CrawlPage(url="http://x.com/b", result=fr("http://x.com/b"), depth=1, parent="http://x.com/"),
+        CrawlPage(url="http://x.com/a1", result=fr("http://x.com/a1"), depth=2, parent="http://x.com/a"),
+    ]
+    tree = build_tree(pages)
+    assert tree["url"] == "http://x.com/"
+    assert tree["title"] == "Home"
+    assert len(tree["children"]) == 2                       # /a y /b
+    a = next(c for c in tree["children"] if c["url"].endswith("/a"))
+    assert len(a["children"]) == 1 and a["children"][0]["url"].endswith("/a1")

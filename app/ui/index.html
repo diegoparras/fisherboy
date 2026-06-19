@@ -105,6 +105,9 @@
   .help { font-size: 11.5px; color: var(--muted); margin: 6px 0 0; line-height: 1.45; }
   textarea { width: 100%; background: var(--card-2); border: 1px solid var(--border); color: var(--text); border-radius: 9px; padding: 10px 12px; font: inherit; font-size: 13px; font-family: var(--mono); outline: none; resize: vertical; transition: border-color .15s, box-shadow .15s; }
   textarea:focus { border-color: var(--accent); box-shadow: var(--ring); background: var(--bg-2); }
+  /* cookies = dato sensible: difuminado salvo foco o "ojo" (como en Escriba) */
+  #cookies { filter: blur(4.5px); transition: filter .12s; }
+  #cookies:focus, #cookies.reveal { filter: none; }
   .mini-btn { background: var(--card); border: 1px solid var(--border); color: var(--accent); border-radius: 7px; padding: 2px 8px; font: inherit; font-size: 11px; cursor: pointer; margin-left: 8px; }
   .mini-btn:hover { background: var(--card-2); border-color: var(--hairline); }
   .help b { color: var(--muted-2); font-weight: 600; }
@@ -160,6 +163,11 @@
   a.ep:hover { background: var(--card-2); }
   .links { margin-top: 12px; }
   .links summary { cursor: pointer; font-size: 13px; color: var(--muted-2); padding: 8px 0; }
+  .tree { max-height: 320px; overflow: auto; margin-top: 6px; }
+  .tnode { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 12.5px; }
+  .tnode .tdot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+  .tnode a { color: var(--muted-2); text-decoration: none; word-break: break-all; }
+  .tnode a:hover { color: var(--accent); }
   .placeholder { color: var(--muted); font-size: 14px; text-align: center; padding: 40px 20px; }
   .err-box { color: var(--err); background: color-mix(in srgb, var(--err) 9%, transparent); border: 1px solid color-mix(in srgb, var(--err) 32%, transparent); border-radius: 10px; padding: 14px 16px; font-size: 14px; line-height: 1.5; }
 
@@ -251,6 +259,7 @@
           <div class="field">
             <label for="cookies">Cookies de sesión
               <button type="button" id="cookies-import" class="mini-btn">importar cookies.txt</button>
+              <button type="button" id="cookies-eye" class="mini-btn" aria-label="Mostrar/ocultar">◡ ver</button>
               <input type="file" id="cookies-file" accept=".txt,.json" class="hidden" />
             </label>
             <textarea id="cookies" name="cookies" rows="3" placeholder="pegá tus cookies — nombre=valor; …  ·  cookies.txt  ·  JSON" autocomplete="off" spellcheck="false"></textarea>
@@ -283,9 +292,21 @@
             <span>Barrer paginado</span>
           </label>
           <p class="help">Recorre todas las páginas (postback ASP.NET · "siguiente" · ?page=) y junta los hipervínculos.</p>
-          <div class="field" style="max-width:180px">
-            <label for="max_pages">Páginas máximas</label>
-            <input id="max_pages" name="max_pages" type="number" min="1" max="200" value="10" />
+          <div class="adv-grid">
+            <div class="field">
+              <label for="spider">Araña (profundidad)</label>
+              <select id="spider" name="spider">
+                <option value="0" selected>off</option>
+                <option value="1">1 nivel</option>
+                <option value="2">2 niveles</option>
+                <option value="3">3 niveles</option>
+              </select>
+              <p class="help">Sigue links internos en árbol hasta esa profundidad y arma la jerarquía.</p>
+            </div>
+            <div class="field">
+              <label for="max_pages">Páginas máximas</label>
+              <input id="max_pages" name="max_pages" type="number" min="1" max="200" value="10" />
+            </div>
           </div>
         </section>
       </div>
@@ -408,6 +429,7 @@ function applyCaps(role, caps, authEnabled) {
   lock("proxy", cap.proxy);
   lock("captcha_api_url", cap.solver);
   lock("captcha_api_key", cap.solver);
+  document.getElementById("spider").disabled = !cap.crawl;
   // Tier: limitar opciones por encima de max_tier.
   [...document.getElementById("tier").options].forEach(o => {
     if (o.value !== "" && parseInt(o.value, 10) > cap.max_tier) o.disabled = true;
@@ -454,6 +476,11 @@ cookiesFile.addEventListener("change", () => {
   reader.onload = () => { document.getElementById("cookies").value = reader.result; };
   reader.readAsText(f);
 });
+document.getElementById("cookies-eye").addEventListener("click", () => {
+  const ta = document.getElementById("cookies");
+  const on = ta.classList.toggle("reveal");
+  document.getElementById("cookies-eye").textContent = on ? "◠ ocultar" : "◡ ver";
+});
 
 /* ---------- health ---------- */
 async function ping() {
@@ -477,6 +504,19 @@ function escapeHtml(s) {
 }
 function highlightTokens(s) {
   return escapeHtml(s).replace(/«[A-ZÁÉÍÓÚ]+_\d+»/g, m => `<span class="tok">${m}</span>`);
+}
+function renderTree(node, depth) {
+  depth = depth || 0;
+  if (!node) return "";
+  const pad = 14 * depth;
+  const label = node.title ? `${node.title}` : (node.url || "").replace(/^https?:\/\//, "");
+  let h = "";
+  if (node.depth >= 0) {
+    h += `<div class="tnode" style="padding-left:${pad}px">` +
+      `<span class="tdot"></span><a href="${escapeHtml(node.url)}" target="_blank" rel="noopener">${escapeHtml(label).slice(0,90)}</a></div>`;
+  }
+  (node.children || []).forEach(c => { h += renderTree(c, node.depth >= 0 ? depth + 1 : depth); });
+  return h;
 }
 const STATUS_LABEL = { pendiente: "en cola", en_proceso: "procesando", ok: "listo", error: "error" };
 function statusPill(status) {
@@ -524,6 +564,11 @@ function render(sobre) {
     html += `<div class="preview"><pre>${escapeHtml(JSON.stringify(sobre.content_json, null, 2).slice(0, 12000))}</pre></div>`;
   } else {
     html += `<div class="preview"><pre>${highlightTokens(sobre.content_md || "(sin contenido)")}</pre></div>`;
+  }
+  // Árbol del spider (jerarquía padre→hijos)
+  if (m.tree) {
+    html += `<details class="links" open><summary>Mapa del sitio (árbol de la araña)</summary>` +
+      `<div class="tree">${renderTree(m.tree)}</div></details>`;
   }
   // Hipervínculos del barrido
   const links = m.hyperlinks || [];
@@ -579,6 +624,10 @@ form.addEventListener("submit", async (ev) => {
     payload.max_pages = parseInt(form.max_pages.value, 10) || 10;
   }
   if (form.capture_api.checked) payload.capture_api = true;
+  if (form.spider.value !== "0") {
+    payload.crawl_depth = parseInt(form.spider.value, 10);
+    payload.max_pages = parseInt(form.max_pages.value, 10) || 50;
+  }
 
   try {
     const r = await fetch("/api/jobs", {
