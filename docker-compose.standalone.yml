@@ -1,0 +1,46 @@
+# Fisherboy STANDALONE — todo en uno, sin depender de Escriba/Anonimal.
+# API (con UI propia) + worker + Redis. Ideal para self-host (EasyPanel, Docker Desktop).
+#
+#   1) cp .env.example .env   # y poné SECRET_KEY + GOD/ANGEL/HUMAN_PASSWORD
+#   2) docker compose -f docker-compose.standalone.yml up -d --build
+#   3) abrí http://localhost:8000
+#
+# Sin ANONIMAL_URL, el modo "opaco" usa el anonimizador regex incorporado (email/CUIT/
+# IP/tarjeta/teléfono). Para el NER completo, seteá ANONIMAL_URL hacia una instancia de
+# Anonimal (vive dentro de Escriba).
+
+services:
+  fisherboy-api:
+    build: .
+    image: ghcr.io/diegoparras/fisherboy:latest
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    environment:
+      APP_MODE: standalone
+      REDIS_URL: redis://fisherboy-redis:6379/0
+    env_file: .env
+    ports:
+      - "8000:8000"
+    depends_on: [fisherboy-redis]
+    networks: [fisherboy]
+    restart: unless-stopped
+
+  fisherboy-worker:
+    build: .
+    image: ghcr.io/diegoparras/fisherboy:latest
+    command: python -m app.worker
+    environment:
+      APP_MODE: standalone
+      REDIS_URL: redis://fisherboy-redis:6379/0
+    env_file: .env
+    depends_on: [fisherboy-redis]
+    networks: [fisherboy]
+    restart: unless-stopped
+
+  fisherboy-redis:
+    image: redis:7-alpine
+    command: redis-server --save "" --appendonly no
+    networks: [fisherboy]
+    restart: unless-stopped
+
+networks:
+  fisherboy:

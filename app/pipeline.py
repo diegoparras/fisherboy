@@ -34,7 +34,7 @@ from .fetchers.base import FetchError, FetchResult
 from .logging import get_logger
 from .models import FetchTier, JobStatus, OutputFormat, PrivacyMode, Sobre
 from .output.formats import bundle_pages, title_from_markdown, to_llms_txt
-from .privacy.anonimal_client import AnonimalClient, AnonimalError
+from .privacy.anonimal_client import AnonimalClient, AnonimalError, build_opaco
 
 log = get_logger("fisherboy.pipeline")
 
@@ -155,10 +155,19 @@ def build_default_deps(settings, *, redis_client=None) -> PipelineDeps:
             scope_path=scope_path,
         )  # devuelve CrawlPage[] (con parent/depth) → el pipeline arma el árbol
 
+    # Anonimización opaca: si hay ANONIMAL_URL usa el NER de Anonimal; si no (standalone
+    # self-host sin Escriba), degrada al anonimizador REGEX incorporado (PII de alto
+    # riesgo: email/CUIT/IP/tarjeta-Luhn/teléfono) para que opaco funcione igual.
+    if settings.anonimal_url:
+        _anon_opaco = anon.process_opaco
+    else:
+        log.warning("ANONIMAL_URL vacío: modo opaco usa el anonimizador regex incorporado (sin NER).")
+        _anon_opaco = lambda text: build_opaco(text, [])  # noqa: E731
+
     deps = PipelineDeps(
         fetch=_fetch,
         extract=_extract,
-        anonymize_opaco=anon.process_opaco,
+        anonymize_opaco=_anon_opaco,
         crawl=_crawl,
         post=_post,
         capture=_capture,

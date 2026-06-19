@@ -1,301 +1,202 @@
+<div align="center">
+
 # 🎣 Fisherboy
 
-**Sistema supremo de scraping.** Adquiere contenido web, lo convierte a markdown o
-JSON, lo anonimiza según la política del job y lo entrega. El papá de todos los
-scrapers.
+**Your sidekick for extracting data from the web.**
 
-Corre en dos modos, elegidos por una variable de entorno:
+Point it at any page and get back **clean Markdown or structured JSON** — ready for any
+LLM. Fisherboy escalates only when a site fights back (static → TLS fingerprint → stealth
+browser → real browser), captures the **hidden JSON/XHR** that single‑page apps already
+consume, follows pagination and crawls in a tree, and **anonymizes PII before it leaves**.
+Self‑hostable, with its own web UI or as a headless REST + MCP service. Part of the
+[**Escriba**](https://github.com/diegoparras/escriba) family.
 
-- **`sidekick`** (default) — sin interfaz. Se lo llama por REST y por MCP desde n8n,
-  Claude Code o Escriba. Delega la conversión documental de PDFs y docs a Escriba.
-  Vive detrás de la red interna.
-- **`standalone`** — monta su propia interfaz web para cargar jobs y ver resultados.
+[![License: MIT](https://img.shields.io/badge/License-MIT-1d9e75.svg)](LICENSE)
+[![Docker image](https://img.shields.io/badge/image-ghcr.io%2Fdiegoparras%2Ffisherboy-2496ED?logo=docker&logoColor=white)](https://github.com/diegoparras/fisherboy/pkgs/container/fisherboy)
+![Self-hosted](https://img.shields.io/badge/self--hosted-✓-1d9e75.svg)
+![Tests](https://img.shields.io/badge/tests-151%20passing-30d158.svg)
+![Hardened](https://img.shields.io/badge/security-audited-0f8f6a.svg)
 
-El núcleo es **idéntico** en los dos modos. El modo solo decide si se monta el router
-de UI y a quién se delega la conversión. No es un producto comercial: es
-infraestructura propia.
+**English** · [Español](docs/i18n/README.es.md) · [Français](docs/i18n/README.fr.md) · [Português](docs/i18n/README.pt.md) · [Italiano](docs/i18n/README.it.md) · [中文](docs/i18n/README.zh.md) · [日本語](docs/i18n/README.ja.md)
 
-> Estado: **v1 — núcleo liviano**, funcionando de punta a punta. Las fases siguientes
-> (fetch rico, crawling, targets difíciles) están planificadas abajo.
-
----
-
-## Qué hace hoy (v1)
-
-```
-URL → fetch estático (httpx) → markdown (Trafilatura) → Anonimal (opaco) → entrega
-```
-
-1. El REST recibe un job, valida el **schema**, el **rol × modo de privacidad** y el
-   **callback_url** contra bloqueos SSRF, y recién entonces lo **encola**.
-2. Un **worker** saca el job, hace fetch estático, extrae el texto principal a
-   markdown, lo **anonimiza** con Anonimal en modo opaco y lo entrega por webhook.
-3. Logs JSON estructurados desde el día uno. Esqueleto de seguridad completo.
-
-**Toda salida pasa por Anonimal antes de salir** (rama de conversión local). Si la
-anonimización falla, el job termina en error y **nunca** se devuelve contenido crudo
-(_fail-closed_).
+</div>
 
 ---
 
-## Arranque rápido
+## ✨ Features
 
-### Local (dev)
+- 🎣 **Any page → clean Markdown or JSON** — [Crawl4AI](https://github.com/unclecode/crawl4ai) `fit_markdown` (prunes nav/boilerplate by density) with a [Trafilatura](https://github.com/adbar/trafilatura) fallback; or structured extraction to a JSON Schema via an LLM.
+- 🪜 **Tiered fetch (escalates only when blocked)** — tier 0 `httpx` → tier 1 TLS fingerprint (`curl_cffi`) → tier 2 stealth browser (Camoufox/Patchright) → tier 3 real browser (nodriver/Playwright). A gate detects blocks/CAPTCHAs and steps up; the winning tier is cached **per domain**.
+- 🛰️ **Hidden API capture** — instead of fighting the rendered HTML, Fisherboy watches the **XHR/fetch JSON** the page already loads and keeps that. The most reliable way to scrape SPAs and dynamic grids.
+- 🕷️ **Spider & deep crawl** — follow internal links into a tree (with section scoping), sweep pagination (ASP.NET postback · "next" · `?page=`), and the **tarantula** mode that captures each node's content + API into a data tree.
+- 🔌 **Proxies, made easy** — paste a proxy in **any format** (`host:port` · `host:port:user:pass` · `user:pass@host:port` · URL) and Fisherboy normalizes it. A **Test** button routes a request through it and shows your **exit IP + country + latency**, with an actionable hint if it can't connect. Pool with rotation/cooldown, per‑job override, save your proxies.
+- 🍪 **Session cookies, no extension** — paste cookies (Netscape `cookies.txt` / JSON / `name=value`) or read them straight from your local browser (Chrome/Firefox/Edge/Brave) for pages behind a login or a region.
+- 🛡️ **PII anonymization before delivery** — three privacy modes bounded by role: **opaque** (`«PERSON_1»`), **reversible** (mask → let the LLM reason → re‑hydrate locally) and **direct** (raw, for non‑sensitive data). Fail‑closed: if anonymization fails, nothing raw ever leaves. With [Escriba](https://github.com/diegoparras/escriba)'s Anonimal you get full NER; standalone falls back to a built‑in regex pass (email/ID/IP/card/phone).
+- ✏️ **Built‑in editor** — open the result in a modal editor with tabs **Markdown · JSON · Table**: a Markdown toolbar with live preview, a validating JSON editor, and an editable table where **JSON ↔ table is just switching tabs**. Download `.md` / `.json` / `.csv`.
+- 📤 **Download everything** — the whole envelope, just the data (content + records + tree + links), or a flat records array. One click sends the result to **Escriba** for further conversion / anonymization / export.
+- 🔑 **Three access levels** — DIOS / ANGEL / HUMANO, each with its own password and limits (which tiers, proxies, capture, solver, crawl, tarantula).
+- 🐳 **Self‑contained image** — API + worker + Redis. Runs headless (REST + MCP) behind Escriba, or **standalone with its own web UI**.
+- 🛡️ **Hardened** — fail‑closed by default, anti‑SSRF (incl. per‑hop redirect re‑validation), per‑job secret scrubbing, role gating on REST **and** MCP, rate‑limiting, non‑root container. Audited; see [`docs/ADR-012`](docs/ADR-012-auditoria-seguridad.md).
+- 🌐 **REST + MCP** — drive it from `curl`, n8n, Claude Code or Escriba.
+
+---
+
+## 🚀 Quick start (Docker)
+
+The fastest path — standalone, with the web UI:
 
 ```bash
-python -m venv .venv && source .venv/Scripts/activate   # Windows Git Bash
-pip install -r requirements-dev.txt
-
-# API standalone con UI propia:
-APP_MODE=standalone ANONIMAL_URL=http://localhost:8080 \
-  uvicorn app.main:app --reload --port 8000
-# → abrí http://localhost:8000  (UI)  y  http://localhost:8000/docs  (API)
-
-# Worker (otra terminal):
-python -m app.worker
-
-# Tests:
-pytest
+git clone https://github.com/diegoparras/fisherboy.git
+cd fisherboy
+cp .env.example .env          # set SECRET_KEY + GOD/ANGEL/HUMAN_PASSWORD
+docker compose -f docker-compose.standalone.yml up -d --build
+# → open http://localhost:8000
 ```
 
-### Docker
+Don't want to build? Pull the published image instead:
 
 ```bash
-docker network create escriba_internal   # si todavía no existe
-cp .env.example .env                      # ajustá ANONIMAL_URL, APP_MODE, etc.
-docker compose up --build
+docker pull ghcr.io/diegoparras/fisherboy:latest
 ```
+
+📖 **Full deployment guide** (Docker Desktop step‑by‑step, EasyPanel, env reference, going to production): [`docs/DEPLOY.md`](docs/DEPLOY.md).
 
 ---
 
-## API REST
+## 🧭 Two modes
+
+Fisherboy runs in one of two modes, chosen by `APP_MODE`. **The core is identical**; the
+mode only decides whether the web UI is mounted and where document conversion is delegated.
+
+| | `standalone` | `sidekick` |
+|---|---|---|
+| Web UI | ✅ its own | ❌ headless |
+| Interface | UI + REST + MCP | REST + MCP |
+| Use | self‑host, personal | behind Escriba, internal network |
+
+---
+
+## 🔌 REST API
 
 ```http
-POST /api/jobs            # valida schema, rol×modo y callback_url; encola → 202
-GET  /api/jobs/{job_id}   # estado y resultado (el "sobre")
-POST /api/revert          # rehidrata contenido pseudonimizado (modo reversible)
-GET  /healthz
-GET  /metrics             # métricas Prometheus
+POST /api/jobs            # validates schema, role × privacy mode, callback & proxy (SSRF); enqueues → 202
+GET  /api/jobs/{job_id}   # status and result (the "envelope")
+POST /api/proxy/test      # routes a request through a proxy; returns exit IP + country + latency
+POST /api/revert          # re‑hydrates pseudonymized content (reversible mode)
+POST /api/login           # role login (cookie session)
+GET  /healthz · GET /metrics
 ```
-
-Campos del job: `url`, `rol`, `privacy_mode`, `output_format` (`markdown`/`llms_txt`/
-`json`), `tier_hint` (0-3), `crawl_depth`, `max_pages`, `extract_schema` (para `json`),
-`callback_url`.
-
-Ejemplo:
 
 ```bash
 curl -X POST http://localhost:8000/api/jobs \
   -H 'content-type: application/json' \
-  -d '{"url":"https://ejemplo.com/nota","rol":"angel","privacy_mode":"opaco"}'
+  -d '{"url":"https://example.com/article","rol":"angel","privacy_mode":"opaco"}'
 # → { "job_id": "…", "status": "pendiente" }
 
 curl http://localhost:8000/api/jobs/<job_id>
-# → el sobre con content_md anonimizado cuando status == "ok"
+# → the envelope with anonymized content_md once status == "ok"
 ```
+
+Job fields: `url`, `rol`, `privacy_mode` (`opaco`/`reversible`/`directo`), `output_format`
+(`markdown`/`llms_txt`/`json`), `tier_hint` (0–3), `crawl_depth`, `max_pages`, `paginate`,
+`capture_api`, `tarantula`, `extract_schema` (for `json`), `proxy`, `cookies`, `callback_url`.
 
 ### MCP
 
-El mismo pipeline se expone como herramientas MCP (`submit_job`, `get_job`) para que
-n8n, Claude Code o Escriba encolen sin hablar HTTP a mano:
+The same pipeline is exposed as MCP tools (`submit_job`, `get_job`, `revert`) so n8n,
+Claude Code or Escriba can enqueue without hand‑writing HTTP:
 
 ```bash
-python -m app.mcp_server     # requiere fastmcp
+python -m app.mcp_server      # requires fastmcp
 ```
 
 ---
 
-## Fetch escalonado: tiers, proxies y anti-CAPTCHA
+## 🔒 Privacy & roles
 
-Fisherboy escala por costo: arranca barato y sube solo cuando el sitio bloquea.
+The privacy mode is chosen **per job** and **bounded by role** (`privacy_matrix.yaml`, never
+hardcoded). If the role doesn't allow the requested mode, the gateway returns **403** — it
+never silently downgrades.
 
-```
-tier 0 httpx  →  tier 1 TLS  →  tier 2 stealth  →  tier 3 browser
-   (base)        (curl_cffi)     (Camoufox)         (nodriver/Playwright)
-```
+| Role | opaque | reversible | direct |
+|------|:------:|:----------:|:------:|
+| `humano` | ✅ | — | — |
+| `angel`  | ✅ | ✅ | — |
+| `dios`   | ✅ | ✅ | ✅ |
 
-- **Router de gate** — detecta bloqueo (403/429/WAF) o CAPTCHA y **escala** al
-  siguiente tier. Un 404 real no escala. Cachea el tier ganador **por dominio** para
-  no re-pagar el escalado en la próxima URL del mismo sitio.
-- **Proxies** — pool con rotación `round_robin` / `random` / `sticky` (misma IP por
-  dominio), cooldown ante proxy quemado, soporte autenticado y SOCKS5. **Funcionan
-  desde el tier 0.** Se configuran con `PROXIES=...` en el `.env`.
-- **Anti-CAPTCHA, prevención primero** — se detecta el desafío (Cloudflare,
-  reCAPTCHA, hCaptcha, DataDome, PerimeterX, Arkose) y la defensa primaria es subir
-  de tier (un browser stealth lo previene). El solver por API es un hook opcional
-  (`CAPTCHA_SOLVER=external`).
+- **opaque** — each entity becomes a stable typed marker (`«PERSON_1»`, `«ID_2»`). The LLM reasons over markers without seeing PII; the original is not recoverable.
+- **reversible** — same, but an encrypted token→value map is kept so you can re‑hydrate later (`POST /api/revert`, single‑use, role‑bound).
+- **direct** — raw, only for non‑sensitive data.
 
-Los tiers altos usan **import perezoso**: la imagen base es liviana y cada tier se
-enciende instalando su lib. El router detecta qué hay y arma la cadena solo.
+A deterministic regex pass always runs for high‑risk PII (national ID, email, IP, Luhn‑valid
+card, phone), on top of the NER model when Anonimal is configured.
+
+---
+
+## 🛡️ Security
+
+Audited with an adversarial multi‑agent review; findings fixed and locked by tests
+([`docs/ADR-012`](docs/ADR-012-auditoria-seguridad.md)).
+
+- **Fail‑closed by default** — with no passwords configured the service returns 401; the open
+  dev mode is an explicit opt‑in (`FISHERBOY_OPEN_GOD=1`).
+- **Anti‑SSRF** — DNS resolved and private / loopback / link‑local / cloud‑metadata ranges
+  blocked, re‑validated on **every redirect hop** (GET and POST) and on every browser request;
+  the proxy override is validated against the same denylist.
+- **No secret leakage** — per‑job secrets (proxy creds, CAPTCHA key, cookies) are scrubbed from
+  the envelope returned by the API and from the webhook payload.
+- **Role gating on REST and MCP** — capabilities (tier, proxy, capture, solver, crawl,
+  tarantula) gated per role; tarantula and browser‑cookie reading are vetoed in sidekick mode.
+- **Rate‑limiting**, hard page caps, non‑root container, structured JSON logs without PII.
+
+See the [production checklist](docs/DEPLOY.md#going-to-production) before exposing it.
+
+---
+
+## 🌍 Internationalization
+
+This README is available in: **English** (here) · [Español](docs/i18n/README.es.md) ·
+[Français](docs/i18n/README.fr.md) · [Português](docs/i18n/README.pt.md) ·
+[Italiano](docs/i18n/README.it.md) · [中文](docs/i18n/README.zh.md) ·
+[日本語](docs/i18n/README.ja.md).
+
+---
+
+## 🧩 The Escriba family
+
+Fisherboy is a standalone satellite of [**Escriba**](https://github.com/diegoparras/escriba),
+the hub that turns any document into clean, anonymized Markdown ready for AI. Each app stands
+on its own, yet they share a design system and a one‑click **"Send to Escriba"** handoff — so
+what you fish out of the web flows straight into conversion, anonymization, chunking and export.
+
+- **[Escriba](https://github.com/diegoparras/escriba)** — the hub: documents → Markdown + PII anonymization + LLM prep.
+- **Fisherboy** — the web: scraping & data extraction (this repo).
+
+---
+
+## 🏗️ Architecture
+
+Eight layers — REST/MCP surface · Redis queue + workers · discovery · tiered fetch with
+proxies & anti‑CAPTCHA · self‑healing parsing · conversion & LLM extraction · Anonimal
+privacy · output (Markdown/JSON/llms.txt/vector store/Postgres/webhook) · observability
+(Prometheus/Loki/Grafana). Design records live in [`docs/`](docs/) (ADR‑001…012).
 
 ```bash
-pip install curl_cffi      # tier 1
-pip install camoufox       # tier 2  (o patchright)
-pip install nodriver       # tier 3  (o playwright)
+pip install curl_cffi      # tier 1 (TLS fingerprint)
+pip install camoufox       # tier 2 (stealth)    — or patchright
+pip install nodriver       # tier 3 (real browser) — or playwright
 ```
 
-Detalle en [`docs/ADR-006`](docs/ADR-006-fetch-escalonado.md).
-
-## Privacidad
-
-El modo de privacidad se elige **por job** y queda **acotado por el rol**
-(`privacy_matrix.yaml`, nunca hardcodeado):
-
-| Rol      | opaco | reversible | directo |
-|----------|:-----:|:----------:|:-------:|
-| `humano` |   ✅  |     —      |    —    |
-| `angel`  |   ✅  |     ✅     |    —    |
-| `dios`   |   ✅  |     ✅     |    ✅   |
-
-Si el rol no habilita el modo pedido, el gateway responde **403** y no encola. Nunca
-se baja de modo en silencio.
-
-- **opaco** (v1) — cada entidad se reemplaza por un marcador tipado y estable
-  («PERSONA_1», «CUIT_2»). El LLM razona relacional sin ver PII; el valor real no se
-  recupera.
-- **reversible** (v2) — igual, pero guardando una tabla de mapeo cifrada para
-  rehidratar después. Su modelo de amenaza está en [`docs/ADR-005`](docs/ADR-005-reversible-threat-model.md):
-  la garantía está acotada por la _recall_ de detección, no por el cifrado.
-- **directo** — sin anonimizar, solo para data no sensible (rama LLM, v2).
-
-Además del modelo de Anonimal, corre una **pasada determinística por regla** para PII
-de alto riesgo (CUIT/CUIL, email, IP, tarjeta con Luhn, teléfono).
+High tiers are lazy‑imported: the base image stays light and each tier turns on by installing
+its lib. The router detects what's available and builds the chain itself.
 
 ---
 
-## Seguridad (construida en v1, no diferida)
+## 📜 License
 
-- **Fail-closed**: si se pidió anonimización y Anonimal falla, el job queda en error;
-  jamás sale contenido crudo.
-- **SSRF de entrada**: antes de hacer fetch se resuelve el DNS y se bloquean IP
-  privada, loopback, link-local y metadata de cloud (169.254.169.254). Re-validación
-  en cada redirect contra DNS rebinding. Tope de bytes, timeout y máximo de redirects.
-- **SSRF de salida**: el `callback_url` se valida contra los mismos bloqueos, con
-  allowlist opcional en producción.
-- **Secretos por entorno**, nunca en logs. Los logs JSON no incluyen PII ni contenido.
+MIT © 2026 Diego Parrás. The third‑party scrapers Fisherboy can use carry their own licenses
+(mostly permissive: Crawl4AI, Trafilatura — Apache‑2.0; curl_cffi, httpx — MIT/BSD). Some
+optional engines are network‑copyleft (AGPL: nodriver, Firecrawl): for personal, non‑commercial
+use they impose nothing; offering them as a commercial service requires releasing your changes.
 
-Detalle en [`docs/ADR-004`](docs/ADR-004-seguridad.md).
-
----
-
-## Arquitectura objetivo (8 capas)
-
-El destino, no lo que corre el primer día:
-
-0. **Superficie** — FastAPI REST, MCP (FastMCP), webhooks, router de UI si standalone.
-1. **Orquestación** — cola Redis con workers, dedup SHA-256, cache por hash de URL,
-   robots.txt, rate limit (Crawlee en v3).
-2. **Discovery** — Katana, sitemap, RSS.
-3. **Fetch escalonado por costo** — tier 0 httpx · tier 1 Scrapling/curl_cffi · tier 2
-   stealth (Patchright/Camoufox) · tier 3 nodriver/Playwright. Router de gate, cache de
-   tier por dominio, rotación de proxy.
-4. **Parsing auto-reparable** — Scrapling con selectores self-healing.
-5. **Conversión y extracción** — Crawl4AI (HTML→md), Trafilatura, sub-pipeline
-   documental delegado a Escriba, extracción estructurada por LLM con Pydantic.
-6. **Anonimización** — Anonimal, tres modos de privacidad.
-7. **Salida** — markdown / JSON validado / llms.txt / vector store / Postgres / webhook.
-8. **Observabilidad** — logs JSON desde el día uno; Prometheus, Loki, Grafana después.
-
-### Plan por fases
-
-- **v1 — núcleo liviano** ✅ — el camino de arriba, de punta a punta.
-- **fetch escalonado** ✅ — router de tiers, **proxies con rotación**, detección de
-  CAPTCHA y solver pluggable. Tier 0 + proxies andan hoy; tiers 1-3 se encienden
-  instalando su lib.
-- **conversión + extracción** ✅ — Crawl4AI (con fallback Trafilatura), **extracción
-  estructurada por LLM** con validación de schema, y **modo reversible end-to-end**
-  (pseudonimiza → LLM → re-hidrata). Ver [`docs/ADR-008`](docs/ADR-008-extraccion-llm-reversible.md).
-- **crawling + discovery** ✅ — crawler BFS multipágina, dedup por contenido,
-  sitemap/RSS/links, robots.txt. Katana como hook. Ver [`docs/ADR-007`](docs/ADR-007-crawling-discovery.md).
-- **persistencia + observabilidad** ✅ — Postgres + pgvector, métricas Prometheus en
-  `/metrics`, stack Loki/Grafana provisionado (`docker-compose.observability.yml`).
-- **parsing auto-reparable** ✅ — selectores self-healing que relocalizan por
-  fingerprint cuando el DOM cambia (`app/parsing/adaptive.py`).
-- **vector store** ✅ — embeddings (OpenAI-compat) + búsqueda coseno/pgvector.
-- **crawl persistente** ✅ — frontera resumible por `crawl_id` + sesiones por dominio
-  (`app/crawl/frontier.py`).
-- **sub-pipeline documental** ✅ — PDFs/docs delegados a Escriba (`POST /api/convert`);
-  pendiente solo la auth de servicio del lado de Escriba (ADR-001).
-- **profundización futura** — runtime de Crawlee a escala, embeddings en batch,
-  dashboards más finos. Todas las capas del build doc ya tienen implementación o hook.
-
----
-
-## Licencias (comunicación clara)
-
-No hay restricción de uso propio: el proyecto **no se comercializa**. Esta sección
-existe para quien forkee.
-
-- **Permisivas** (sin obligación): Crawl4AI (Apache 2.0), Scrapling (BSD-3),
-  Trafilatura (Apache 2.0), Crawlee (Apache 2.0), Katana (MIT), MarkItDown/Docling
-  (MIT), curl_cffi (MIT), httpx (BSD).
-- **Copyleft de red (AGPL-3.0)**: nodriver, Firecrawl. Para uso propio no comercial no
-  imponen nada; **quien lo ofrezca como servicio comercial debe liberar sus
-  modificaciones**.
-- **A verificar al integrar**: ScrapeGraphAI, Patchright, Camoufox, Marker.
-
-El código propio de Fisherboy es MIT.
-
----
-
-## Estructura
-
-```txt
-app/
-  main.py              # superficie REST + montaje de UI según APP_MODE
-  models.py            # el Sobre y los enums (contrato compartido)
-  config.py            # lee APP_MODE y el entorno
-  privacy_policy.py    # matriz rol×modo desde YAML
-  queue.py             # cola Redis + store del sobre
-  worker.py            # saca jobs, corre el pipeline, hace callback
-  pipeline.py          # fetch → extract → anonimizar (inyectable, testeable)
-  mcp_server.py        # herramientas MCP (sidekick)
-  callbacks.py         # webhook de retorno (SSRF de salida)
-  logging.py           # logs JSON sin PII
-  security/ssrf.py     # SSRF de entrada y de callback
-  fetchers/
-    base.py            # Fetcher protocol, FetchResult, errores de escalado
-    router.py          # TierRouter: gate, escalado, cache de tier por dominio
-    static.py          # tier 0 httpx (+ proxy)
-    tls.py             # tier 1 curl_cffi (fingerprint TLS)
-    stealth.py         # tier 2 Camoufox / Patchright
-    browser.py         # tier 3 nodriver / Playwright
-  net/
-    proxies.py         # pool de proxies: rotación, cooldown, sticky
-    captcha.py         # detección de CAPTCHA + solver pluggable
-  crawl/
-    crawler.py         # BFS multipágina + dedup por contenido
-    discovery.py       # links / sitemap / RSS (+ hook Katana)
-    robots.py          # respeto de robots.txt cacheado
-  extractors/
-    text_main.py       # Trafilatura
-    convert.py         # Crawl4AI con fallback a Trafilatura
-    llm_extract.py     # extracción estructurada por LLM + validación
-  privacy/
-    anonimal_client.py # cliente + armado opaco «TIPO_N»
-    reversible.py      # pseudonimización cifrada + revert (modo reversible)
-    detectors.py       # pasada determinística de PII de alto riesgo
-  output/formats.py    # llms.txt, bundle multipágina
-  store/postgres.py    # persistencia Postgres + pgvector (opcional)
-  obs/metrics.py       # métricas Prometheus
-  ui/                  # interfaz propia (solo standalone)
-tests/                 # seguridad y privacidad primero
-docs/                  # ADR-001..008 + documento de construcción
-```
-
----
-
-## Documentación de diseño
-
-- [`docs/FISHERBOY-build.md`](docs/FISHERBOY-build.md) — documento de construcción.
-- [`docs/ADR-001`](docs/ADR-001-arquitectura-y-modos.md) — arquitectura y modos.
-- [`docs/ADR-002`](docs/ADR-002-modos-privacidad.md) — modos de privacidad y mapeo a Anonimal.
-- [`docs/ADR-003`](docs/ADR-003-contrato-anonimal.md) — contrato de Anonimal y auth.
-- [`docs/ADR-004`](docs/ADR-004-seguridad.md) — modelo de seguridad.
-- [`docs/ADR-005`](docs/ADR-005-reversible-threat-model.md) — threat model del modo reversible.
-- [`docs/ADR-006`](docs/ADR-006-fetch-escalonado.md) — fetch escalonado, proxies y anti-CAPTCHA.
-- [`docs/ADR-007`](docs/ADR-007-crawling-discovery.md) — crawling, discovery y persistencia.
-- [`docs/ADR-008`](docs/ADR-008-extraccion-llm-reversible.md) — extracción por LLM y reversible end-to-end.
-- [`docs/ADR-009`](docs/ADR-009-observabilidad-y-cierre.md) — observabilidad, parsing auto-reparable, vectores y frontera.
-
-Autoría: Diego Parras.
+Authored by Diego Parrás.
