@@ -112,3 +112,31 @@ def test_log_redacts_url_querystring():
     out = JsonFormatter().format(rec)
     assert "juan@x.com" not in out and "token=abc" not in out
     assert "https://s.com/perfil" in out
+
+
+# --------------------------------------------------------------------------- proxy test endpoint
+def test_proxy_test_requires_proxy_cap(client_factory, monkeypatch):
+    from app.security import auth
+    monkeypatch.setattr(auth, "identity_from_request", lambda req: ("humano", None))
+    monkeypatch.setattr(auth, "role_from_request", lambda req: "humano")
+    client = client_factory()
+    r = client.post("/api/proxy/test", json={"proxy": "http://1.1.1.1:3128"})
+    assert r.status_code == 403
+
+
+def test_proxy_test_rejects_internal_proxy(client_factory, monkeypatch):
+    from app.security import auth
+    monkeypatch.setattr(auth, "identity_from_request", lambda req: ("dios", None))
+    monkeypatch.setattr(auth, "role_from_request", lambda req: "dios")
+    client = client_factory()
+    r = client.post("/api/proxy/test", json={"proxy": "http://127.0.0.1:6379"})
+    assert r.status_code == 400
+    assert "proxy" in r.json()["detail"].lower()
+
+
+def test_proxy_test_needs_auth(client_factory, monkeypatch):
+    from app.security import auth
+    monkeypatch.setattr(auth, "identity_from_request", lambda req: (None, None))
+    client = client_factory()
+    r = client.post("/api/proxy/test", json={"proxy": "http://1.1.1.1:3128"})
+    assert r.status_code == 401

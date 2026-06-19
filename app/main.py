@@ -34,6 +34,10 @@ class LoginRequest(BaseModel):
     key: str
 
 
+class ProxyTestRequest(BaseModel):
+    proxy: str
+
+
 def create_app(
     settings: Settings | None = None,
     *,
@@ -242,6 +246,57 @@ def create_app(
         except Exception as e:  # ReversibleError u otra falla controlada
             raise HTTPException(status_code=403, detail=str(e))
         return {"content": content}
+
+    @app.post("/api/proxy/test")
+    async def proxy_test(req: ProxyTestRequest, request: Request):
+        """Prueba un proxy: rutea una request por él y devuelve la IP de salida + latencia.
+
+        Da feedback inmediato en la UI antes de correr un job. Gateado al rol que habilita
+        proxy (ángel/dios), rate-limited, y el proxy se valida contra la denylist SSRF.
+        El destino de prueba es FIJO (echo de IP), no controlado por el usuario.
+        """
+        role, _ = auth.identity_from_request(request)
+        if role is None:
+            raise HTTPException(status_code=401, detail="Necesitás iniciar sesión.")
+        if not auth.caps_for(role).get("proxy"):
+            raise HTTPException(status_code=403, detail=f"Tu rol '{role}' no habilita usar proxy.")
+        client_ip = request.client.host if request.client else "?"
+        if not ratelimit.allow(_queue()._r, f"proxytest:{client_ip}", limit=settings.max_jobs_per_min):
+            raise HTTPException(status_code=429, detail="Demasiadas pruebas; probá en un minuto.")
+        try:
+            validate_proxy_url(req.proxy, allow_private=settings.allow_private_targets)
+        except SSRFError as e:
+            raise HTTPException(status_code=400, detail=f"proxy inválido: {e}")
+
+        import time as _time
+
+        import httpx
+        # Echo de IP a través del proxy (destino fijo y seguro). ip-api da IP + país.
+        t0 = _time.monotonic()
+        try:
+            with httpx.Client(proxy=req.proxy, timeout=12.0, follow_redirects=False) as c:
+                r = c.get("http://ip-api.com/json/?fields=status,country,countryCode,query")
+                ms = int((_time.monotonic() - t0) * 1000)
+                data = {}
+                try:
+                    data = r.json()
+                except Exception:  # noqa: BLE001
+                    data = {}
+                ip = data.get("query") or ""
+                if not ip:  # fallback: solo IP, por HTTPS
+                    rr = c.get("https://api.ipify.org?format=json")
+                    try:
+                        ip = (rr.json() or {}).get("ip", "")
+                    except Exception:  # noqa: BLE001
+                        ip = ""
+                if not ip:
+                    return {"ok": False, "error": "el proxy respondió pero no se pudo leer la IP de salida"}
+                return {"ok": True, "ip": ip, "country": data.get("country", ""),
+                        "country_code": data.get("countryCode", ""), "ms": ms}
+        except httpx.HTTPError as e:
+            return {"ok": False, "error": f"no se pudo conectar por el proxy ({type(e).__name__})"}
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "error": f"falló la prueba ({type(e).__name__})"}
 
     @app.get("/metrics", include_in_schema=False)
     async def metrics(request: Request):

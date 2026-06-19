@@ -232,6 +232,40 @@
   .ed-cancel { font: inherit; font-size: 13px; color: var(--muted-2); background: none; border: 1px solid var(--border); border-radius: 9px; padding: 9px 16px; cursor: pointer; }
   .ed-cancel:hover { background: var(--card); }
   .ed-save { padding: 10px 20px; font-size: 14px; }
+
+  /* ===== Proxy: experiencia simplificada (pegado inteligente + probar + guardados) ===== */
+  .proxy-row { display: flex; gap: 8px; align-items: stretch; }
+  .proxy-cmd { padding: 0 12px; }
+  .proxy-cmd > .ico { color: var(--accent); }
+  .proxy-cmd input { font-family: var(--mono); font-size: 13px; }
+  .proxy-test-btn { white-space: nowrap; align-self: stretch; }
+  .proxy-chips { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 8px; }
+  .px-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; border-radius: 7px; padding: 4px 10px; }
+  .px-chip .ico { width: 13px; height: 13px; }
+  .px-chip b { font-weight: 600; }
+  .px-chip.ok { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+  .px-chip.bad { color: var(--err); background: color-mix(in srgb, var(--err) 10%, transparent); }
+  .px-chip.run { color: var(--muted-2); background: var(--card); }
+  .px-chip.run .ico { animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .proxy-tools { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 10px; font-size: 12px; }
+  .proxy-link { display: inline-flex; align-items: center; gap: 5px; font: inherit; font-size: 12px; color: var(--muted-2); background: none; border: 0; cursor: pointer; padding: 0; }
+  .proxy-link:hover { color: var(--accent); }
+  .proxy-link:disabled { opacity: .5; cursor: not-allowed; }
+  .proxy-link .ico { width: 14px; height: 14px; }
+  .proxy-saved-lbl { color: var(--muted); margin-left: auto; }
+  .proxy-saved { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+  .px-saved { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; cursor: pointer; color: var(--muted-2); }
+  .px-saved:hover { border-color: var(--accent); color: var(--accent); }
+  .px-saved .ico { width: 12px; height: 12px; color: var(--accent); }
+  .px-saved .px-del { color: var(--muted); margin-left: 2px; font-size: 13px; }
+  .px-saved .px-del:hover { color: var(--err); }
+  .proxy-fields { margin-top: 10px; padding: 13px; background: var(--card-2); border: 1px solid var(--border); border-radius: 11px; }
+  .proxy-fields .adv-grid { margin-top: 0; margin-bottom: 10px; }
+  .proxy-fields .field { margin-bottom: 0; }
+  .px-type { display: inline-flex; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 3px; gap: 2px; }
+  .px-type-btn { font: inherit; font-size: 12px; color: var(--muted-2); background: none; border: 0; border-radius: 6px; padding: 5px 14px; cursor: pointer; transition: background .12s, color .12s; }
+  .px-type-btn.on { background: var(--accent); color: var(--on-accent); }
   .pill-status { display: inline-flex; align-items: center; gap: 9px; font-size: 13px; font-weight: 500; padding: 6px 13px; border-radius: 999px; border: 1px solid var(--border); background: var(--card); }
   .pill-status .status-dot.run { background: var(--warn); box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 22%, transparent); animation: pulse 1.1s infinite; }
   @keyframes pulse { 50% { opacity: .4; } }
@@ -402,10 +436,40 @@
             </select>
             <p class="help"><b>Auto</b> escala solo si la bloquean. Forzar <b>browser (3)</b> para páginas que cargan con JavaScript.</p>
           </div>
-          <div class="field">
-            <label for="proxy">Proxy de salida</label>
-            <input id="proxy" name="proxy" type="text" placeholder="http://user:pass@host:puerto · socks5://host:puerto" autocomplete="off" />
-            <p class="help">Override para este job. Conviene uno <b>residencial</b> para sitios duros (ML, gobierno).</p>
+          <div class="field" id="proxy-field">
+            <label for="proxy">Proxy de salida <span style="font-weight:400;color:var(--muted)">· opcional, para sitios duros</span></label>
+            <div class="proxy-row">
+              <div class="cmd proxy-cmd">
+                <svg class="ico" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                <input id="proxy" name="proxy" type="text" placeholder="pegá el proxy en cualquier formato — host:puerto · host:puerto:usuario:clave · usuario:clave@host:puerto · URL" autocomplete="off" spellcheck="false" />
+              </div>
+              <button type="button" class="dlbtn proxy-test-btn" id="proxy-test">
+                <svg class="ico" viewBox="0 0 24 24"><path d="M9 3v6l-3 3v3a2 2 0 0 0 2 2h2M15 3v6l3 3v3a2 2 0 0 1-2 2h-2M9 21v-2M15 21v-2"/></svg>
+                Probar
+              </button>
+            </div>
+            <div class="proxy-chips" id="proxy-chips"></div>
+            <div class="proxy-tools">
+              <button type="button" class="proxy-link" id="proxy-fields-toggle"><svg class="ico" viewBox="0 0 24 24"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="9" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="9" cy="18" r="2"/></svg>campos separados</button>
+              <button type="button" class="proxy-link" id="proxy-save"><svg class="ico" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>guardar</button>
+              <span class="proxy-saved-lbl" id="proxy-saved-lbl"></span>
+              <span class="proxy-saved" id="proxy-saved"></span>
+            </div>
+            <div class="proxy-fields hidden" id="proxy-fields">
+              <div class="adv-grid">
+                <div class="field"><label for="px-host">Host</label><input id="px-host" type="text" placeholder="geo.proveedor.com" autocomplete="off" /></div>
+                <div class="field"><label for="px-port">Puerto</label><input id="px-port" type="number" min="1" max="65535" placeholder="8000" /></div>
+              </div>
+              <div class="adv-grid">
+                <div class="field"><label for="px-user">Usuario</label><input id="px-user" type="text" autocomplete="off" placeholder="opcional" /></div>
+                <div class="field"><label for="px-pass">Contraseña</label><input id="px-pass" type="password" autocomplete="off" placeholder="opcional" /></div>
+              </div>
+              <div class="px-type">
+                <button type="button" class="px-type-btn on" data-scheme="http">HTTP</button>
+                <button type="button" class="px-type-btn" data-scheme="socks5">SOCKS5</button>
+              </div>
+            </div>
+            <p class="help">Conviene uno <b>residencial</b> para sitios duros (ML, gobierno). Desde tu casa quizás no haga falta. Solo en este job · se guarda en tu navegador.</p>
           </div>
           <div class="field">
             <label for="cookies">Cookies de sesión
@@ -678,6 +742,10 @@ function applyCaps(role, caps, authEnabled) {
   document.getElementById("capture_api").disabled = !cap.capture;
   document.getElementById("paginate").disabled = !cap.paginate;
   lock("proxy", cap.proxy);
+  // gating del bloque proxy completo (probar / campos / guardar)
+  ["proxy-test", "proxy-fields-toggle", "proxy-save", "px-host", "px-port", "px-user", "px-pass"].forEach(id => {
+    const e = document.getElementById(id); if (e) e.disabled = !cap.proxy;
+  });
   lock("captcha_api_url", cap.solver);
   lock("captcha_api_key", cap.solver);
   document.getElementById("spider").disabled = !cap.crawl;
@@ -750,6 +818,102 @@ document.getElementById("cookies-eye").addEventListener("click", () => {
   const on = ta.classList.toggle("reveal");
   document.getElementById("cookies-eye").innerHTML = (on ? EYE_OFF : EYE) + (on ? "ocultar" : "ver");
 });
+
+/* ---------- Proxy: pegado inteligente + probar + campos + guardados ---------- */
+function parseProxy(raw) {
+  let s = (raw || "").trim(); if (!s) return null;
+  let scheme = "http";
+  const m = s.match(/^(https?|socks5h?):\/\//i);
+  if (m) { scheme = m[1].toLowerCase(); s = s.slice(m[0].length); }
+  s = s.replace(/\/+$/, "");
+  let user = "", pass = "", host = "", port = "";
+  if (s.includes("@")) {
+    const at = s.lastIndexOf("@"), creds = s.slice(0, at), hp = s.slice(at + 1);
+    const ci = creds.indexOf(":"); user = ci >= 0 ? creds.slice(0, ci) : creds; pass = ci >= 0 ? creds.slice(ci + 1) : "";
+    const parts = hp.split(":"); host = parts[0] || ""; port = parts[1] || "";
+  } else {
+    const parts = s.split(":");
+    if (parts.length >= 4) { host = parts[0]; port = parts[1]; user = parts[2]; pass = parts.slice(3).join(":"); }
+    else if (parts.length === 3) { host = parts[0]; port = parts[1]; user = parts[2]; }
+    else if (parts.length === 2) { host = parts[0]; port = parts[1]; }
+    else host = parts[0];
+  }
+  if (!host) return null;
+  return { scheme, host, port, user, pass };
+}
+function buildProxyUrl(p) {
+  if (!p || !p.host) return "";
+  const cred = p.user ? `${encodeURIComponent(p.user)}${p.pass ? ":" + encodeURIComponent(p.pass) : ""}@` : "";
+  return `${p.scheme || "http"}://${cred}${p.host}${p.port ? ":" + p.port : ""}`;
+}
+function proxyCanonical() {
+  const fields = document.getElementById("proxy-fields");
+  if (!fields.classList.contains("hidden") && document.getElementById("px-host").value.trim()) {
+    const t = document.querySelector(".px-type-btn.on");
+    return buildProxyUrl({
+      scheme: t ? t.dataset.scheme : "http",
+      host: document.getElementById("px-host").value.trim(),
+      port: document.getElementById("px-port").value.trim(),
+      user: document.getElementById("px-user").value.trim(),
+      pass: document.getElementById("px-pass").value,
+    });
+  }
+  return buildProxyUrl(parseProxy(document.getElementById("proxy").value));
+}
+const PX_CHK = `<svg class="ico" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>`;
+const PX_BAD = `<svg class="ico" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>`;
+const PX_SPIN = `<svg class="ico" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-6.2-8.5"/></svg>`;
+function proxyParsedChip() {
+  const raw = document.getElementById("proxy").value.trim();
+  if (!raw) return "";
+  const p = parseProxy(raw);
+  if (p && p.host && p.port) return `<span class="px-chip ok">${PX_CHK}entendido: <b>${escapeHtml(p.host)}:${escapeHtml(p.port)}</b>${p.user ? " · con usuario" : ""}</span>`;
+  if (p && p.host && !p.port) return `<span class="px-chip bad">${PX_BAD}falta el puerto</span>`;
+  return `<span class="px-chip bad">${PX_BAD}no entendí el formato</span>`;
+}
+function updateProxyChip() { document.getElementById("proxy-chips").innerHTML = proxyParsedChip(); }
+document.getElementById("proxy").addEventListener("input", updateProxyChip);
+document.getElementById("proxy-fields-toggle").addEventListener("click", () => document.getElementById("proxy-fields").classList.toggle("hidden"));
+document.querySelectorAll(".px-type-btn").forEach(b => b.addEventListener("click", () => { document.querySelectorAll(".px-type-btn").forEach(x => x.classList.remove("on")); b.classList.add("on"); }));
+document.getElementById("proxy-test").addEventListener("click", async () => {
+  const url = proxyCanonical(), chips = document.getElementById("proxy-chips");
+  if (!url) { chips.innerHTML = `<span class="px-chip bad">${PX_BAD}poné un proxy primero</span>`; return; }
+  const btn = document.getElementById("proxy-test"); btn.disabled = true;
+  chips.innerHTML = proxyParsedChip() + `<span class="px-chip run" id="px-testing">${PX_SPIN}probando…</span>`;
+  try {
+    const r = await fetch("/api/proxy/test", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ proxy: url }) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || "falló la prueba");
+    const t = document.getElementById("px-testing");
+    if (d.ok) {
+      const cc = (d.country_code || d.country) ? ` (${escapeHtml(d.country_code || d.country)})` : "";
+      t.outerHTML = `<span class="px-chip ok">${PX_CHK}funciona · salís por <b>${escapeHtml(d.ip)}</b>${cc} · ${d.ms} ms</span>`;
+    } else {
+      t.outerHTML = `<span class="px-chip bad">${PX_BAD}${escapeHtml(d.error || "no responde")}</span>`;
+    }
+  } catch (e) {
+    const t = document.getElementById("px-testing"); if (t) t.outerHTML = `<span class="px-chip bad">${PX_BAD}${escapeHtml(e.message)}</span>`;
+  } finally { btn.disabled = false; }
+});
+function loadSavedProxies() {
+  let arr = []; try { arr = JSON.parse(localStorage.getItem("fb-proxies") || "[]"); } catch (e) {}
+  const wrap = document.getElementById("proxy-saved"), lbl = document.getElementById("proxy-saved-lbl");
+  lbl.textContent = arr.length ? "guardados:" : "";
+  wrap.innerHTML = arr.map((p, i) => `<span class="px-saved" data-i="${i}"><svg class="ico" viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>${escapeHtml(p.name)}<span class="px-del" data-del="${i}" title="borrar">×</span></span>`).join("");
+  wrap.querySelectorAll(".px-saved").forEach(el => el.addEventListener("click", (e) => {
+    if (e.target.dataset.del != null) { arr.splice(+e.target.dataset.del, 1); localStorage.setItem("fb-proxies", JSON.stringify(arr)); loadSavedProxies(); return; }
+    document.getElementById("proxy").value = arr[+el.dataset.i].url; updateProxyChip();
+  }));
+}
+document.getElementById("proxy-save").addEventListener("click", () => {
+  const url = proxyCanonical();
+  if (!url) { document.getElementById("proxy-chips").innerHTML = `<span class="px-chip bad">${PX_BAD}poné un proxy para guardar</span>`; return; }
+  const name = (window.prompt("Nombre para este proxy:", "Residencial AR") || "").trim(); if (!name) return;
+  let arr = []; try { arr = JSON.parse(localStorage.getItem("fb-proxies") || "[]"); } catch (e) {}
+  arr.push({ name, url }); try { localStorage.setItem("fb-proxies", JSON.stringify(arr)); } catch (e) {}
+  loadSavedProxies();
+});
+loadSavedProxies();
 
 /* ---------- health ---------- */
 async function ping() {
@@ -976,7 +1140,8 @@ form.addEventListener("submit", async (ev) => {
     output_format: form.output_format.value,
   };
   if (form.tier.value !== "") payload.tier_hint = parseInt(form.tier.value, 10);
-  if (form.proxy.value.trim()) payload.proxy = form.proxy.value.trim();
+  const pxUrl = proxyCanonical();
+  if (pxUrl) payload.proxy = pxUrl;
   if (form.captcha_api_url.value.trim() && form.captcha_api_key.value.trim()) {
     payload.captcha_api_url = form.captcha_api_url.value.trim();
     payload.captcha_api_key = form.captcha_api_key.value.trim();
