@@ -34,7 +34,7 @@ MCP. Membre de la famille [**Escriba**](https://github.com/diegoparras/escriba).
 - 📤 **Tout télécharger** — l'enveloppe entière, juste les données (contenu + enregistrements + arbre + liens), ou un tableau plat d'enregistrements. En un clic, envoyez le résultat à **Escriba** pour poursuivre conversion / anonymisation / export.
 - 🔑 **Trois niveaux d'accès** — DIOS / ANGEL / HUMANO, chacun avec son mot de passe et ses limites.
 - 🐳 **Image autonome** — API + worker + Redis. Tourne en headless (REST + MCP) derrière Escriba, ou **standalone avec sa propre UI web**.
-- 🛡️ **Durci** — fail‑closed par défaut, anti‑SSRF (avec re‑validation à chaque saut de redirection), nettoyage des secrets par job, gating par rôle sur REST **et** MCP, rate‑limiting, conteneur non‑root. Audité ; voir [`docs/ADR-012`](../ADR-012-auditoria-seguridad.md).
+- 🛡️ **Durci** — fail‑closed par défaut, anti‑SSRF (avec re‑validation à chaque saut de redirection), nettoyage des secrets par job, gating par rôle sur REST **et** MCP, rate‑limiting, conteneur non‑root. Audité.
 - 🌐 **REST + MCP** — pilotez‑le depuis `curl`, n8n, Claude Code ou Escriba.
 
 ---
@@ -111,7 +111,7 @@ les PII à haut risque (identifiant national, email, IP, carte avec Luhn, télé
 ## 🛡️ Sécurité
 
 Auditée par une revue adversariale multi‑agents ; problèmes corrigés et verrouillés par les
-tests ([`docs/ADR-012`](../ADR-012-auditoria-seguridad.md)).
+tests.
 
 - **Fail‑closed par défaut** — sans mot de passe configuré, renvoie 401 ; le mode ouvert de dev est un opt‑in explicite (`FISHERBOY_OPEN_GOD=1`).
 - **Anti‑SSRF** — bloque les plages privées/loopback/link‑local/metadata, re‑validées à **chaque saut** de redirection et à chaque requête du navigateur ; le proxy override est validé pareil.

@@ -34,7 +34,7 @@ de la familia [**Escriba**](https://github.com/diegoparras/escriba).
 - 📤 **Descargá todo** — el sobre entero, solo los datos (contenido + registros + árbol + links), o un array plano de registros. Con un click mandás el resultado a **Escriba** para seguir convirtiendo / anonimizando / exportando.
 - 🔑 **Tres niveles de acceso** — DIOS / ANGEL / HUMANO, cada uno con su contraseña y límites (qué tiers, proxies, captura, solver, crawl, tarántula).
 - 🐳 **Imagen autocontenida** — API + worker + Redis. Corre headless (REST + MCP) detrás de Escriba, o **standalone con su propia UI web**.
-- 🛡️ **Endurecido** — fail‑closed por defecto, anti‑SSRF (con re‑validación de cada salto de redirect), scrub de secretos por job, gating por rol en REST **y** MCP, rate‑limiting, contenedor no‑root. Auditado; ver [`docs/ADR-012`](../ADR-012-auditoria-seguridad.md).
+- 🛡️ **Endurecido** — fail‑closed por defecto, anti‑SSRF (con re‑validación de cada salto de redirect), scrub de secretos por job, gating por rol en REST **y** MCP, rate‑limiting, contenedor no‑root. Auditado.
 - 🌐 **REST + MCP** — manejalo desde `curl`, n8n, Claude Code o Escriba.
 
 ---
@@ -122,8 +122,7 @@ alto riesgo (CUIT/CUIL, email, IP, tarjeta con Luhn, teléfono).
 
 ## 🛡️ Seguridad
 
-Auditado con una revisión adversarial multi‑agente; hallazgos corregidos y fijados por tests
-([`docs/ADR-012`](../ADR-012-auditoria-seguridad.md)).
+Auditado con una revisión adversarial multi‑agente; hallazgos corregidos y fijados por tests.
 
 - **Fail‑closed por defecto** — sin contraseñas configuradas devuelve 401; el modo abierto de dev es opt‑in explícito (`FISHERBOY_OPEN_GOD=1`).
 - **Anti‑SSRF** — bloquea rangos privados/loopback/link‑local/metadata, re‑validando **cada salto** de redirect y cada request del browser; el proxy override se valida igual.

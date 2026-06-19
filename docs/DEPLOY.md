@@ -164,5 +164,3 @@ Before exposing Fisherboy to anyone but you:
       behind a reverse proxy.
 - [ ] Tune `MAX_JOBS_PER_MIN` / `CRAWL_MAX_PAGES` to your use.
 - [ ] Keep secrets in a secret manager, not in a committed `.env`.
-
-Background on each item: [`docs/ADR-012`](ADR-012-auditoria-seguridad.md).

@@ -36,7 +36,7 @@ Self‑hostable, with its own web UI or as a headless REST + MCP service. Part o
 - 📤 **Download everything** — the whole envelope, just the data (content + records + tree + links), or a flat records array. One click sends the result to **Escriba** for further conversion / anonymization / export.
 - 🔑 **Three access levels** — DIOS / ANGEL / HUMANO, each with its own password and limits (which tiers, proxies, capture, solver, crawl, tarantula).
 - 🐳 **Self‑contained image** — API + worker + Redis. Runs headless (REST + MCP) behind Escriba, or **standalone with its own web UI**.
-- 🛡️ **Hardened** — fail‑closed by default, anti‑SSRF (incl. per‑hop redirect re‑validation), per‑job secret scrubbing, role gating on REST **and** MCP, rate‑limiting, non‑root container. Audited; see [`docs/ADR-012`](docs/ADR-012-auditoria-seguridad.md).
+- 🛡️ **Hardened** — fail‑closed by default, anti‑SSRF (incl. per‑hop redirect re‑validation), per‑job secret scrubbing, role gating on REST **and** MCP, rate‑limiting, non‑root container. Audited.
 - 🌐 **REST + MCP** — drive it from `curl`, n8n, Claude Code or Escriba.
 
 ---
@@ -135,8 +135,7 @@ card, phone), on top of the NER model when Anonimal is configured.
 
 ## 🛡️ Security
 
-Audited with an adversarial multi‑agent review; findings fixed and locked by tests
-([`docs/ADR-012`](docs/ADR-012-auditoria-seguridad.md)).
+Audited with an adversarial multi‑agent review; findings fixed and locked by tests.
 
 - **Fail‑closed by default** — with no passwords configured the service returns 401; the open
   dev mode is an explicit opt‑in (`FISHERBOY_OPEN_GOD=1`).
@@ -179,7 +178,7 @@ what you fish out of the web flows straight into conversion, anonymization, chun
 Eight layers — REST/MCP surface · Redis queue + workers · discovery · tiered fetch with
 proxies & anti‑CAPTCHA · self‑healing parsing · conversion & LLM extraction · Anonimal
 privacy · output (Markdown/JSON/llms.txt/vector store/Postgres/webhook) · observability
-(Prometheus/Loki/Grafana). Design records live in [`docs/`](docs/) (ADR‑001…012).
+(Prometheus/Loki/Grafana). Design notes live in [`docs/FISHERBOY-build.md`](docs/FISHERBOY-build.md).
 
 ```bash
 pip install curl_cffi      # tier 1 (TLS fingerprint)
