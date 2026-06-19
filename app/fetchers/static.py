@@ -125,39 +125,61 @@ def fetch_post(
     *,
     timeout_s: float = 25.0,
     max_bytes: int = 10 * 1024 * 1024,
+    max_redirects: int = 5,
     allow_private: bool = False,
     cookies: dict | None = None,
     proxy: str | None = None,
     user_agent: str = _DEFAULT_UA,
 ) -> FetchResult:
-    """POST form-urlencoded SSRF-safe (postback ASP.NET / forms). Devuelve FetchResult."""
+    """POST form-urlencoded SSRF-safe (postback ASP.NET / forms). Devuelve FetchResult.
+
+    Sigue los redirects A MANO re-validando CADA salto (igual que el GET): NO se delega
+    a httpx con follow_redirects=True, porque eso conectaba a destinos intermedios
+    (p.ej. 302 → 169.254.169.254) antes de cualquier chequeo SSRF. Tras 301/302/303 el
+    método baja a GET (comportamiento estándar de navegadores y clientes HTTP)."""
     resolve_and_validate(url, allow_private=allow_private)
     headers = {"User-Agent": user_agent, "Content-Type": "application/x-www-form-urlencoded"}
     if cookies:
         headers["Cookie"] = "; ".join(f"{k}={v}" for k, v in cookies.items())
-    client_kwargs = dict(follow_redirects=True, timeout=timeout_s, headers=headers)
+    client_kwargs = dict(follow_redirects=False, timeout=timeout_s, headers=headers)
     if proxy:
         client_kwargs["proxy"] = proxy
+
+    current = url
+    method = "POST"
     try:
         with httpx.Client(**client_kwargs) as client:
-            with client.stream("POST", url, data=data) as resp:
-                final = str(resp.url)
-                resolve_and_validate(final, allow_private=allow_private)  # re-valida tras redirect
-                raw = _enforce_byte_cap(resp, max_bytes)
-                enc = resp.encoding or "utf-8"
-                try:
-                    text = raw.decode(enc, errors="replace")
-                except (LookupError, UnicodeDecodeError):
-                    text = raw.decode("utf-8", errors="replace")
-                return FetchResult(
-                    url=final, status_code=resp.status_code, content=raw, text=text,
-                    content_type=resp.headers.get("content-type", ""), tier=0,
-                    proxy_used=proxy, headers=dict(resp.headers),
-                )
+            for _hop in range(max_redirects + 1):
+                # El body solo viaja en el POST inicial; tras un redirect se hace GET sin body.
+                stream = (client.stream("POST", current, data=data) if method == "POST"
+                          else client.stream("GET", current))
+                with stream as resp:
+                    if resp.is_redirect:
+                        location = resp.headers.get("location")
+                        if not location:
+                            raise FetchError("Redirect sin header Location.")
+                        nxt = str(httpx.URL(current).join(location))
+                        validate_scheme_and_host(nxt)
+                        resolve_and_validate(nxt, allow_private=allow_private)  # cada salto
+                        current = nxt
+                        method = "GET"   # 301/302/303 → GET (no reenviar el form)
+                        continue
+                    raw = _enforce_byte_cap(resp, max_bytes)
+                    enc = resp.encoding or "utf-8"
+                    try:
+                        text = raw.decode(enc, errors="replace")
+                    except (LookupError, UnicodeDecodeError):
+                        text = raw.decode("utf-8", errors="replace")
+                    return FetchResult(
+                        url=str(resp.url), status_code=resp.status_code, content=raw, text=text,
+                        content_type=resp.headers.get("content-type", ""), tier=0,
+                        proxy_used=proxy, headers=dict(resp.headers),
+                    )
     except SSRFError:
         raise
     except httpx.HTTPError as e:
         raise FetchError(f"Fallo de red en POST: {type(e).__name__}.") from e
+    raise FetchError(f"Demasiados redirects (>{max_redirects}).")
 
 
 def fetch_static(

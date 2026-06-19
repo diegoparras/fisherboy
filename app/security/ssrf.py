@@ -103,6 +103,26 @@ def resolve_and_validate(url: str, *, allow_private: bool = False) -> list[str]:
     return ips
 
 
+_PROXY_SCHEMES = frozenset({"http", "https", "socks5", "socks5h"})
+
+
+def validate_proxy_url(proxy_url: str, *, allow_private: bool = False) -> None:
+    """Valida que el proxy (override por job) no apunte a la red interna.
+
+    El tráfico se enruta POR el proxy, así que un proxy a 127.0.0.1/10.x/metadata
+    permitiría sondear/alcanzar servicios internos esquivando la denylist (que solo
+    mira la URL objetivo). Falla cerrado. Ver auditoría 2026-06."""
+    parts = urlsplit(proxy_url)
+    if parts.scheme.lower() not in _PROXY_SCHEMES:
+        raise SSRFError(f"Esquema de proxy no permitido: {parts.scheme!r}.")
+    host = parts.hostname
+    if not host:
+        raise SSRFError("Proxy sin host.")
+    # Reusa la resolución+denylist; socks/http da igual: lo que importa es a dónde apunta.
+    fake = f"http://{host}:{parts.port or 80}"
+    resolve_and_validate(fake, allow_private=allow_private)
+
+
 def validate_callback_url(
     url: str, *, allowlist: list[str] | None = None, allow_private: bool = False
 ) -> None:

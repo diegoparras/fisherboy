@@ -18,7 +18,7 @@ from .models import JobRequest, JobStatus, Sobre
 from .privacy_policy import PolicyDenied, get_policy
 from .queue import get_queue
 from .security import auth
-from .security.ssrf import SSRFError, validate_callback_url
+from .security.ssrf import SSRFError, validate_callback_url, validate_proxy_url
 
 log = get_logger("fisherboy.mcp")
 
@@ -126,6 +126,11 @@ def build_server():
                 )
             except SSRFError as e:
                 raise ValueError(f"callback_url inválido: {e}")
+        if req.proxy:
+            try:
+                validate_proxy_url(req.proxy, allow_private=settings.allow_private_targets)
+            except SSRFError as e:
+                raise ValueError(f"proxy inválido: {e}")
 
         job_id = uuid.uuid4().hex
         sobre = Sobre(

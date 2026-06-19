@@ -23,7 +23,7 @@ from .models import JobRequest, JobStatus, Rol, RevertRequest, Sobre
 from .privacy_policy import PolicyDenied, PrivacyPolicy, get_policy
 from .queue import JobQueue, get_queue
 from .security import auth
-from .security.ssrf import SSRFError, validate_callback_url
+from .security.ssrf import SSRFError, validate_callback_url, validate_proxy_url
 
 log = get_logger("fisherboy.api")
 
@@ -44,7 +44,11 @@ def create_app(
     setup_logging(settings.log_level)
 
     # Avisos de arranque ruidosos (fail-closed igual protege con 401, pero que se vea).
-    for _w in (auth.insecure_open_warning(), auth.secret_key_warning()):
+    _warns = [auth.insecure_open_warning(), auth.secret_key_warning()]
+    if settings.allow_private_targets:
+        _warns.append("ALLOW_PRIVATE_TARGETS activo: la defensa SSRF está DESACTIVADA "
+                      "(fetch y callback pueden alcanzar la red interna/metadata). Solo dev/test.")
+    for _w in _warns:
         if _w:
             log.warning("SEGURIDAD: %s", _w)
 
@@ -143,7 +147,7 @@ def create_app(
         except auth.CapDenied as e:
             raise HTTPException(status_code=403, detail=str(e))
 
-        # 3. callback_url contra bloques SSRF
+        # 3. callback_url + proxy contra bloques SSRF
         if req.callback_url is not None:
             try:
                 validate_callback_url(
@@ -153,6 +157,11 @@ def create_app(
                 )
             except SSRFError as e:
                 raise HTTPException(status_code=400, detail=f"callback_url inválido: {e}")
+        if req.proxy:
+            try:
+                validate_proxy_url(req.proxy, allow_private=settings.allow_private_targets)
+            except SSRFError as e:
+                raise HTTPException(status_code=400, detail=f"proxy inválido: {e}")
 
         # 4. encolar
         job_id = uuid.uuid4().hex

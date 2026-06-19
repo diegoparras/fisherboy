@@ -18,7 +18,7 @@ import json
 import re
 from urllib.parse import urlsplit
 
-from ..security.ssrf import resolve_and_validate
+from ..security.ssrf import SSRFError, resolve_and_validate
 from .base import FetchContext, FetchError
 
 # Endpoints de telemetría/tracking/analytics/PUBLICIDAD: NUNCA son el dato. Se descartan.
@@ -149,6 +149,22 @@ def capture_page(url: str, ctx: FetchContext, *, max_endpoints: int = 40,
                 {"name": k, "value": str(v), "url": url} for k, v in ctx.cookies.items()
             ])
         page = context.new_page()
+
+        # SSRF en CADA request del browser (documento, redirects 3xx, XHR/fetch): el
+        # browser re-resuelve y sigue redirects por su cuenta; sin esto un 302 a
+        # 169.254.169.254 o a un servicio interno conectaría sin pasar por la denylist.
+        def _guard(route):
+            try:
+                resolve_and_validate(route.request.url, allow_private=ctx.allow_private)
+            except SSRFError:
+                route.abort()
+                return
+            except Exception:  # noqa: BLE001 — ante la duda, dejar seguir (no romper la carga)
+                pass
+            route.continue_()
+
+        if not ctx.allow_private:
+            page.route("**/*", _guard)
         page.on("response", _on_response)
         html = ""
         try:

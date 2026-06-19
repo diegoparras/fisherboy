@@ -3,7 +3,12 @@ from __future__ import annotations
 
 import pytest
 
-from app.security.ssrf import SSRFError, resolve_and_validate, validate_callback_url
+from app.security.ssrf import (
+    SSRFError,
+    resolve_and_validate,
+    validate_callback_url,
+    validate_proxy_url,
+)
 
 
 @pytest.mark.parametrize(
@@ -51,3 +56,29 @@ def test_outbound_callback_allowlist():
         validate_callback_url(
             "https://evil.example.com/hook", allowlist=["hooks.miempresa.com"]
         )
+
+
+# --------------------------------------------------------------------------- proxy SSRF
+@pytest.mark.parametrize("proxy", [
+    "http://127.0.0.1:8080",
+    "http://10.0.0.5:3128",
+    "socks5://169.254.169.254:1080",
+    "gopher://1.2.3.4:70",          # esquema no permitido
+])
+def test_proxy_to_internal_blocked(proxy):
+    with pytest.raises(SSRFError):
+        validate_proxy_url(proxy, allow_private=False)
+
+
+def test_proxy_public_ok():
+    validate_proxy_url("http://1.1.1.1:3128", allow_private=False)   # no lanza
+
+
+def test_job_with_internal_proxy_rejected(client_factory):
+    client = client_factory()
+    resp = client.post("/api/jobs", json={
+        "url": "https://1.1.1.1/", "rol": "dios", "privacy_mode": "directo",
+        "proxy": "http://127.0.0.1:6379",
+    })
+    assert resp.status_code == 400
+    assert "proxy" in resp.json()["detail"].lower()
