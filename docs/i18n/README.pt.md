@@ -34,7 +34,7 @@ com sua própria UI web ou como serviço headless REST + MCP. Parte da família
 - 📤 **Baixe tudo** — o envelope inteiro, só os dados (conteúdo + registros + árvore + links), ou um array plano de registros. Com um clique você envia o resultado ao **Escriba** para continuar convertendo / anonimizando / exportando.
 - 🔑 **Três níveis de acesso** — DIOS / ANGEL / HUMANO, cada um com senha e limites próprios.
 - 🐳 **Imagem autocontida** — API + worker + Redis. Roda headless (REST + MCP) atrás do Escriba, ou **standalone com sua própria UI web**.
-- 🛡️ **Endurecido** — fail‑closed por padrão, anti‑SSRF (com re‑validação a cada salto de redirect), scrub de segredos por job, gating por papel no REST **e** MCP, rate‑limiting, contêiner não‑root. Auditado; veja [`docs/ADR-012`](../ADR-012-auditoria-seguridad.md).
+- 🛡️ **Endurecido** — fail‑closed por padrão, anti‑SSRF (com re‑validação a cada salto de redirect), scrub de segredos por job, gating por papel no REST **e** MCP, rate‑limiting, contêiner não‑root. Auditado.
 - 🌐 **REST + MCP** — controle por `curl`, n8n, Claude Code ou Escriba.
 
 ---
@@ -109,8 +109,7 @@ risco (ID nacional, email, IP, cartão com Luhn, telefone).
 
 ## 🛡️ Segurança
 
-Auditado com revisão adversarial multi‑agente; achados corrigidos e fixados por testes
-([`docs/ADR-012`](../ADR-012-auditoria-seguridad.md)).
+Auditado com revisão adversarial multi‑agente; achados corrigidos e fixados por testes.
 
 - **Fail‑closed por padrão** — sem senhas configuradas devolve 401; o modo aberto de dev é opt‑in explícito (`FISHERBOY_OPEN_GOD=1`).
 - **Anti‑SSRF** — bloqueia faixas privadas/loopback/link‑local/metadata, re‑validando **cada salto** de redirect e cada requisição do browser; o proxy override é validado igual.
