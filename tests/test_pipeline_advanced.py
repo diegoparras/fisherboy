@@ -186,6 +186,25 @@ def test_capture_api_branch_directo():
     assert out.anonimizado is False
 
 
+def test_capture_api_opaco_anonymizes_records_and_urls():
+    # En opaco, meta.records y meta.api_urls NO deben salir crudos (fuga de PII, auditoría).
+    eps = [{"url": "https://api.x.com/u?email=juan@x.com", "status": 200,
+            "content_type": "application/json", "bytes": 90,
+            "json": {"results": [{"name": "juan@x.com", "price": 10, "permalink": "https://x.com/a"}]}}]
+    sobre = _sobre(privacy_mode=PrivacyMode.OPACO)
+    sobre.meta["capture_api"] = True
+    # anonimizador de juguete: tapa el email
+    anon = lambda t: (t.replace("juan@x.com", "«EMAIL_1»"), 1)  # noqa: E731
+    deps = _base_deps(capture=lambda u, tier_hint=None, **kw: eps, anonymize_opaco=anon)
+    out = process_job(sobre, deps)
+    assert out.status.value == "ok"
+    assert out.anonimizado is True
+    blob = json.dumps(out.meta, ensure_ascii=False)
+    assert "juan@x.com" not in blob          # ni en records ni en api_urls
+    assert "EMAIL_1" in blob                 # enmascarado, no descartado
+    assert out.meta["records"][0]["title"] == "«EMAIL_1»"
+
+
 def test_capture_api_empty_errors():
     sobre = _sobre(privacy_mode=PrivacyMode.DIRECTO)
     sobre.meta["capture_api"] = True

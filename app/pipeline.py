@@ -375,6 +375,31 @@ def _json_branch(sobre: Sobre, combined_md: str, deps: PipelineDeps) -> None:
     sobre.content_json = extracted
 
 
+def _safe_meta_pii(deps: PipelineDeps, records: list | None, api_urls: list | None):
+    """Anonimiza records/api_urls para opaco/reversible. Fail-closed: si algo no se
+    puede enmascarar, se descarta (nunca se devuelve PII cruda en estos campos).
+
+    Antes de la auditoría 2026-06 estos dos campos salían CRUDOS aunque content_md
+    estuviera enmascarado: la descarga 'registros'/'datos' y el webhook filtraban PII.
+    """
+    safe_recs: list = []
+    safe_urls: list = []
+    if records:
+        try:
+            anon, _ = deps.anonymize_opaco(json.dumps(records, ensure_ascii=False))
+            loaded = json.loads(anon)
+            safe_recs = loaded if isinstance(loaded, list) else []
+        except Exception:  # noqa: BLE001 — si no se puede anonimizar, no se devuelve
+            safe_recs = []
+    if api_urls:
+        try:
+            anon, _ = deps.anonymize_opaco("\n".join(u or "" for u in api_urls))
+            safe_urls = [u for u in anon.split("\n") if u]
+        except Exception:  # noqa: BLE001
+            safe_urls = []
+    return safe_recs, safe_urls
+
+
 def _capture_branch(sobre: Sobre, deps: PipelineDeps) -> Sobre:
     """Captura los endpoints JSON/XHR ocultos y los entrega. Respeta privacy_mode."""
     url = str(sobre.source_url)
@@ -385,27 +410,31 @@ def _capture_branch(sobre: Sobre, deps: PipelineDeps) -> Sobre:
     _report(deps, sobre, f"{len(endpoints)} endpoints de datos capturados")
     sobre.tier_usado = FetchTier.BROWSER
     sobre.fetched_at = datetime.now(timezone.utc)
-    sobre.meta.update({
-        "api_endpoints": len(endpoints),
-        "api_urls": [e.get("url") for e in endpoints[:20]],
-    })
+    sobre.meta["api_endpoints"] = len(endpoints)
+    api_urls = [e.get("url") for e in endpoints[:20]]
     # Aplana el endpoint más jugoso (el primero, ya rankeado) a registros limpios.
+    records = []
     if endpoints and endpoints[0].get("json") is not None:
         from .extractors.records import flatten_records
-        recs = flatten_records(endpoints[0]["json"])
-        if recs:
-            sobre.meta["records"] = recs
+        records = flatten_records(endpoints[0]["json"])
     body = json.dumps(endpoints, ensure_ascii=False, indent=2)
 
     if sobre.privacy_mode is PrivacyMode.DIRECTO:
         sobre.content_json = {"endpoints": endpoints}
         sobre.content_md = body
         sobre.anonimizado = False
-    else:  # opaco/reversible: enmascara la representación (puede traer PII)
+        sobre.meta["api_urls"] = api_urls
+        if records:
+            sobre.meta["records"] = records
+    else:  # opaco/reversible: enmascara TODO lo que sale (content + records + api_urls)
         anon, n = deps.anonymize_opaco(body)
         sobre.content_md = anon
         sobre.anonimizado = True
         sobre.meta["entidades_anonimizadas"] = n
+        safe_recs, safe_urls = _safe_meta_pii(deps, records, api_urls)
+        sobre.meta["api_urls"] = safe_urls
+        if safe_recs:
+            sobre.meta["records"] = safe_recs
 
     sobre.status = JobStatus.OK if endpoints else JobStatus.ERROR
     if not endpoints:
@@ -511,18 +540,22 @@ def _tarantula_branch(sobre: Sobre, deps: PipelineDeps) -> Sobre:
                        "markdown_total_chars": total_md, "tree": _strip(tree)})
     # Registros de TODA la araña: junta los de cada nodo (ya aplanados arriba).
     all_recs = [r for u in order for r in nodes[u].get("records", [])]
-    if all_recs:
-        sobre.meta["records"] = all_recs
 
     full = json.dumps({"tree": tree}, ensure_ascii=False, indent=2)
     if sobre.privacy_mode is PrivacyMode.DIRECTO:
         sobre.content_json = {"tree": tree}        # datos crudos
         sobre.anonimizado = False
+        if all_recs:
+            sobre.meta["records"] = all_recs
     else:
         anon, n = deps.anonymize_opaco(full)        # enmascara la PII de los cuerpos
         sobre.content_md = anon
         sobre.anonimizado = True
         sobre.meta["entidades_anonimizadas"] = n
+        # records también enmascarados (fail-closed); el árbol de display ya va sin cuerpos.
+        safe_recs, _ = _safe_meta_pii(deps, all_recs, None)
+        if safe_recs:
+            sobre.meta["records"] = safe_recs
     sobre.status = JobStatus.OK
     if deps.persist is not None:
         deps.persist(sobre)
@@ -619,6 +652,9 @@ def process_job(sobre: Sobre, deps: PipelineDeps) -> Sobre:
         sobre.content_md = None
         sobre.content_json = None
         sobre.anonimizado = False
+        # También los campos derivados de meta que podrían llevar PII cruda.
+        for _k in ("records", "api_urls"):
+            sobre.meta.pop(_k, None)
         sobre.status = JobStatus.ERROR
         sobre.error = f"Anonimización falló, no se devuelve contenido: {e}"
         if deps.metrics is not None:
