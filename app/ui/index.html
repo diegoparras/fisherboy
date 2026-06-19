@@ -247,6 +247,8 @@
   .px-chip.bad { color: var(--err); background: color-mix(in srgb, var(--err) 10%, transparent); }
   .px-chip.run { color: var(--muted-2); background: var(--card); }
   .px-chip.run .ico { animation: spin 1s linear infinite; }
+  .px-ip { cursor: pointer; padding: 0 4px; border-radius: 4px; background: color-mix(in srgb, var(--err) 14%, transparent); font-family: var(--mono); }
+  .px-ip:hover { background: color-mix(in srgb, var(--err) 24%, transparent); }
   @keyframes spin { to { transform: rotate(360deg); } }
   .proxy-tools { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 10px; font-size: 12px; }
   .proxy-link { display: inline-flex; align-items: center; gap: 5px; font: inherit; font-size: 12px; color: var(--muted-2); background: none; border: 0; cursor: pointer; padding: 0; }
@@ -889,7 +891,10 @@ document.getElementById("proxy-test").addEventListener("click", async () => {
       const cc = (d.country_code || d.country) ? ` (${escapeHtml(d.country_code || d.country)})` : "";
       t.outerHTML = `<span class="px-chip ok">${PX_CHK}funciona · salís por <b>${escapeHtml(d.ip)}</b>${cc} · ${d.ms} ms</span>`;
     } else {
-      t.outerHTML = `<span class="px-chip bad">${PX_BAD}${escapeHtml(d.error || "no responde")}</span>`;
+      const ipHint = d.your_ip ? ` <b class="px-ip" title="Click para copiar">${escapeHtml(d.your_ip)}</b>` : "";
+      t.outerHTML = `<span class="px-chip bad">${PX_BAD}${escapeHtml(d.error || "no responde")}${ipHint}</span>`;
+      const ipEl = document.querySelector("#proxy-chips .px-ip");
+      if (ipEl) ipEl.addEventListener("click", () => { try { navigator.clipboard.writeText(ipEl.textContent); ipEl.textContent += " ✓"; } catch (e) {} });
     }
   } catch (e) {
     const t = document.getElementById("px-testing"); if (t) t.outerHTML = `<span class="px-chip bad">${PX_BAD}${escapeHtml(e.message)}</span>`;

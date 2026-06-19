@@ -271,6 +271,15 @@ def create_app(
         import time as _time
 
         import httpx
+
+        def _egress_ip() -> str:
+            """IP de salida REAL (sin proxy), para sugerirle al usuario qué autorizar."""
+            try:
+                rr = httpx.get("http://ip-api.com/json/?fields=query", timeout=6.0)
+                return (rr.json() or {}).get("query", "")
+            except Exception:  # noqa: BLE001
+                return ""
+
         # Echo de IP a través del proxy (destino fijo y seguro). ip-api da IP + país.
         t0 = _time.monotonic()
         try:
@@ -293,8 +302,17 @@ def create_app(
                     return {"ok": False, "error": "el proxy respondió pero no se pudo leer la IP de salida"}
                 return {"ok": True, "ip": ip, "country": data.get("country", ""),
                         "country_code": data.get("countryCode", ""), "ms": ms}
+        except httpx.ProxyError:
+            return {"ok": False, "kind": "auth",
+                    "error": "el proxy rechazó la autenticación — revisá usuario y clave."}
+        except (httpx.ConnectError, httpx.ConnectTimeout):
+            # El proxy no contesta a nivel TCP: caído, puerto mal, o (lo más común) tu IP
+            # no está autorizada. Muchos proveedores (InstantProxies, etc.) usan whitelist de IP.
+            return {"ok": False, "kind": "noconnect", "your_ip": _egress_ip(),
+                    "error": "no conecta con el proxy (timeout). Si tu proveedor autoriza por IP, "
+                             "habilitá tu IP de salida:"}
         except httpx.HTTPError as e:
-            return {"ok": False, "error": f"no se pudo conectar por el proxy ({type(e).__name__})"}
+            return {"ok": False, "error": f"falló por el proxy ({type(e).__name__})"}
         except Exception as e:  # noqa: BLE001
             return {"ok": False, "error": f"falló la prueba ({type(e).__name__})"}
 
