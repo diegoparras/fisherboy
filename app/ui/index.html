@@ -5,8 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Fisherboy · El papá de todos los scrapers</title>
 <meta name="theme-color" content="#f7faf9" />
+<!-- Destino de "Enviar a Escriba": el server lo inyecta desde ESCRIBA_WEB_URL. Vacío = "/" -->
+<meta name="fb-escriba-url" content="" />
 <!-- Anti-FOUC: aplicar el tema guardado ANTES de pintar (claro por defecto, ecosistema). -->
 <script>try{var t=localStorage.getItem("fb-theme")||"light";document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+<script src="/i18n.js"></script>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='15' fill='%230f8f6a'/%3E%3Cg fill='none' stroke='white' stroke-width='3' stroke-linecap='round'%3E%3Ccircle cx='32' cy='16' r='3.4' stroke-width='2.6'/%3E%3Cpath d='M32 19.4 V40 a9 9 0 0 1 -18 0 v-3'/%3E%3Cpath d='M14 39 l3.2 4.2 4.4 -2.4'/%3E%3C/g%3E%3C/svg%3E" />
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource-variable/inter/index.css" />
 <script src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js"></script>
@@ -188,6 +191,24 @@
   .editbtn:active { transform: scale(.97); }
   .editbtn .ico { width: 14px; height: 14px; }
   .dlcard .send-escriba { margin-left: 0; }
+
+  /* ===== Menú kebab (espejo de Escriba) ===== */
+  .menu-wrap { position: relative; }
+  .menu { position: absolute; right: 0; top: calc(100% + 8px); min-width: 220px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); padding: 6px; z-index: 60; display: flex; flex-direction: column; gap: 1px; animation: pop .14s cubic-bezier(.2,.8,.2,1); }
+  @keyframes pop { from { opacity: 0; transform: translateY(-6px) scale(.97); } }
+  .menu-head { padding: 4px 7px 6px; }
+  .menu-sep { height: 1px; background: var(--border); margin: 5px 4px; }
+  .menu-item { display: flex; align-items: center; gap: 11px; width: 100%; text-align: left; background: none; border: 0; color: var(--text); font-family: inherit; font-size: 14px; padding: 9px 11px; border-radius: 8px; cursor: pointer; transition: background .12s; }
+  .menu-item:hover { background: var(--card); }
+  .menu-item > span:first-child { width: 18px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; color: var(--muted-2); transition: color .12s; }
+  .menu-item:hover > span:first-child { color: var(--text); }
+  .mi-ico { width: 17px; height: 17px; }
+  .menu-item.danger:hover { color: var(--err); background: color-mix(in srgb, var(--err) 10%, transparent); }
+  .menu-item.danger:hover > span:first-child { color: var(--err); }
+  .lang-row { cursor: default; }
+  .lang-row:hover { background: none; }
+  .lang-row .langsel { margin-left: auto; font-family: inherit; font-size: 12.5px; color: var(--text); background: var(--card-2); border: 1px solid var(--border); border-radius: 7px; padding: 4px 7px; cursor: pointer; }
+  .lang-row .langsel:hover { border-color: var(--accent); }
 
   /* ===== Modal de descarga (detección de media) ===== */
   .dl-back { position: fixed; inset: 0; z-index: 130; display: grid; place-items: center; padding: 24px;
@@ -449,46 +470,58 @@
     </div>
     <div class="spacer"></div>
     <div class="topbar-actions">
-      <span class="status-chip"><span class="status-dot" id="healthDot"></span><span id="healthTxt">conectando…</span></span>
-      <span class="badge humano" id="roleBadge">humano</span>
-      <button class="icon-btn hidden" id="logoutBtn" title="Salir" aria-label="Salir">
-        <svg class="ico" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-      </button>
-      <button class="icon-btn" id="themeBtn" title="Cambiar tema" aria-label="Cambiar tema"></button>
+      <span class="status-chip"><span class="status-dot" id="healthDot"></span><span id="healthTxt" data-i18n="nav.connecting">conectando…</span></span>
+      <div class="menu-wrap">
+        <button class="icon-btn" id="menuBtn" data-i18n-title="nav.menu" title="Menú" aria-haspopup="menu" aria-expanded="false" aria-controls="headerMenu" style="font-size:20px;line-height:1">⋯</button>
+        <div class="menu hidden" id="headerMenu" role="menu">
+          <div class="menu-head"><span class="badge humano" id="roleBadge">humano</span></div>
+          <div class="menu-sep"></div>
+          <button class="menu-item" id="themeBtn" role="menuitem"><span id="themeIcon"></span><span data-i18n="nav.theme">Cambiar tema</span></button>
+          <div class="menu-item lang-row">
+            <span><svg class="mi-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20"/></svg></span>
+            <span data-i18n="nav.lang">Idioma</span>
+            <select class="langsel" id="langsel" aria-label="Idioma"></select>
+          </div>
+          <button class="menu-item" id="settingsBtn" role="menuitem"><span><svg class="mi-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span><span data-i18n="nav.settings">Configuración</span></button>
+          <button class="menu-item" id="aboutBtn" role="menuitem"><span><svg class="mi-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg></span><span data-i18n="nav.about">Acerca de</span></button>
+          <div class="menu-sep"></div>
+          <button class="menu-item danger hidden" id="logoutBtn" role="menuitem"><span><svg class="mi-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg></span><span data-i18n="nav.logout">Salir</span></button>
+        </div>
+      </div>
     </div>
   </div>
 
   <header class="hero">
-    <h1>Cualquier página de la web,<br/>lista para tu IA.</h1>
-    <p class="sub">Tu sidekick en la extracción de datos web.</p>
+    <h1 data-i18n-html="hero.title">Cualquier página de la web,<br/>lista para tu IA.</h1>
+    <p class="sub" data-i18n="hero.sub">Tu sidekick en la extracción de datos web.</p>
   </header>
 
   <div class="panel">
     <form id="job-form">
-      <label class="field-label" for="url">URL a extraer</label>
+      <label class="field-label" for="url" data-i18n="form.urlLabel">URL a extraer</label>
       <div class="url-row">
         <div class="cmd">
           <svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20"/></svg>
-          <input id="url" name="url" type="url" placeholder="https://ejemplo.com/articulo" required autocomplete="off" />
+          <input id="url" name="url" type="url" data-i18n-ph="form.urlPh" placeholder="https://ejemplo.com/articulo" required autocomplete="off" />
         </div>
       </div>
 
       <div class="controls-grid">
         <div class="field">
-          <label for="privacy_mode">Privacidad</label>
+          <label for="privacy_mode" data-i18n="form.privacy">Privacidad</label>
           <select id="privacy_mode" name="privacy_mode">
-            <option value="directo" selected>directo · crudo</option>
-            <option value="opaco">opaco · enmascara PII</option>
-            <option value="reversible">reversible · enmascara y re-hidrata</option>
+            <option value="directo" selected data-i18n="opt.directo">directo · crudo</option>
+            <option value="opaco" data-i18n="opt.opaco">opaco · enmascara PII</option>
+            <option value="reversible" data-i18n="opt.reversible">reversible · enmascara y re-hidrata</option>
           </select>
           <p class="help" id="privacy-help">Contenido crudo, sin enmascarar. Enmascarar es opcional.</p>
         </div>
         <div class="field">
-          <label for="output_format">Salida</label>
+          <label for="output_format" data-i18n="form.output">Salida</label>
           <select id="output_format" name="output_format">
-            <option value="markdown" selected>markdown</option>
-            <option value="llms_txt">llms.txt</option>
-            <option value="json">json · extracción LLM</option>
+            <option value="markdown" selected data-i18n="opt.markdown">markdown</option>
+            <option value="llms_txt" data-i18n="opt.llms">llms.txt</option>
+            <option value="json" data-i18n="opt.json">json · extracción LLM</option>
           </select>
           <p class="help" id="output-help">Markdown limpio del contenido principal.</p>
         </div>
@@ -496,131 +529,131 @@
 
       <button type="button" class="adv-toggle" id="adv-toggle" aria-expanded="false">
         <span class="caret"><svg class="ico" viewBox="0 0 24 24" style="width:15px;height:15px"><polyline points="9 18 15 12 9 6"/></svg></span>
-        Opciones avanzadas · fetch, evasión, recorrido
+        <span data-i18n="adv.toggle">Opciones avanzadas · fetch, evasión, recorrido</span>
       </button>
 
       <div class="adv-panel hidden" id="adv-panel">
         <section class="adv-section">
-          <div class="adv-head">Fetch &amp; evasión</div>
+          <div class="adv-head" data-i18n="adv.fetchHead">Fetch &amp; evasión</div>
           <div class="field">
-            <label for="tier">Tier de fetch</label>
+            <label for="tier" data-i18n="adv.tier">Tier de fetch</label>
             <select id="tier" name="tier">
-              <option value="" selected>auto · escala si lo bloquean</option>
-              <option value="0">0 · estático (httpx, el más rápido)</option>
-              <option value="1">1 · TLS (curl_cffi, fingerprint real)</option>
-              <option value="2">2 · stealth (browser indetectable)</option>
-              <option value="3">3 · browser (Chrome real, ejecuta JS)</option>
+              <option value="" selected data-i18n="tier.auto">auto · escala si lo bloquean</option>
+              <option value="0" data-i18n="tier.0">0 · estático (httpx, el más rápido)</option>
+              <option value="1" data-i18n="tier.1">1 · TLS (curl_cffi, fingerprint real)</option>
+              <option value="2" data-i18n="tier.2">2 · stealth (browser indetectable)</option>
+              <option value="3" data-i18n="tier.3">3 · browser (Chrome real, ejecuta JS)</option>
             </select>
-            <p class="help"><b>Auto</b> escala solo si la bloquean. Forzar <b>browser (3)</b> para páginas que cargan con JavaScript.</p>
+            <p class="help" data-i18n-html="adv.tierHelp"><b>Auto</b> escala solo si la bloquean. Forzar <b>browser (3)</b> para páginas que cargan con JavaScript.</p>
           </div>
           <div class="field" id="proxy-field">
-            <label for="proxy">Proxy de salida <span style="font-weight:400;color:var(--muted)">· opcional, para sitios duros</span></label>
+            <label for="proxy"><span data-i18n="adv.proxy">Proxy de salida</span> <span style="font-weight:400;color:var(--muted)" data-i18n="adv.proxyOpt">· opcional, para sitios duros</span></label>
             <div class="proxy-row">
               <div class="cmd proxy-cmd">
                 <svg class="ico" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                <input id="proxy" name="proxy" type="text" placeholder="pegá el proxy en cualquier formato — host:puerto · host:puerto:usuario:clave · usuario:clave@host:puerto · URL" autocomplete="off" spellcheck="false" />
+                <input id="proxy" name="proxy" type="text" data-i18n-ph="adv.proxyPh" placeholder="pegá el proxy en cualquier formato — host:puerto · host:puerto:usuario:clave · usuario:clave@host:puerto · URL" autocomplete="off" spellcheck="false" />
               </div>
               <button type="button" class="dlbtn proxy-test-btn" id="proxy-test">
                 <svg class="ico" viewBox="0 0 24 24"><path d="M9 3v6l-3 3v3a2 2 0 0 0 2 2h2M15 3v6l3 3v3a2 2 0 0 1-2 2h-2M9 21v-2M15 21v-2"/></svg>
-                Probar
+                <span data-i18n="adv.test">Probar</span>
               </button>
             </div>
             <div class="proxy-chips" id="proxy-chips"></div>
             <div class="proxy-tools">
-              <button type="button" class="proxy-link" id="proxy-fields-toggle"><svg class="ico" viewBox="0 0 24 24"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="9" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="9" cy="18" r="2"/></svg>campos separados</button>
-              <button type="button" class="proxy-link" id="proxy-save"><svg class="ico" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>guardar</button>
+              <button type="button" class="proxy-link" id="proxy-fields-toggle"><svg class="ico" viewBox="0 0 24 24"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="9" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="9" cy="18" r="2"/></svg><span data-i18n="adv.sepFields">campos separados</span></button>
+              <button type="button" class="proxy-link" id="proxy-save"><svg class="ico" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg><span data-i18n="adv.save">guardar</span></button>
               <span class="proxy-saved-lbl" id="proxy-saved-lbl"></span>
               <span class="proxy-saved" id="proxy-saved"></span>
             </div>
             <div class="proxy-fields hidden" id="proxy-fields">
               <div class="adv-grid">
-                <div class="field"><label for="px-host">Host</label><input id="px-host" type="text" placeholder="geo.proveedor.com" autocomplete="off" /></div>
-                <div class="field"><label for="px-port">Puerto</label><input id="px-port" type="number" min="1" max="65535" placeholder="8000" /></div>
+                <div class="field"><label for="px-host" data-i18n="px.host">Host</label><input id="px-host" type="text" placeholder="geo.proveedor.com" autocomplete="off" /></div>
+                <div class="field"><label for="px-port" data-i18n="px.port">Puerto</label><input id="px-port" type="number" min="1" max="65535" placeholder="8000" /></div>
               </div>
               <div class="adv-grid">
-                <div class="field"><label for="px-user">Usuario</label><input id="px-user" type="text" autocomplete="off" placeholder="opcional" /></div>
-                <div class="field"><label for="px-pass">Contraseña</label><input id="px-pass" type="password" autocomplete="off" placeholder="opcional" /></div>
+                <div class="field"><label for="px-user" data-i18n="px.user">Usuario</label><input id="px-user" type="text" autocomplete="off" data-i18n-ph="px.optional" placeholder="opcional" /></div>
+                <div class="field"><label for="px-pass" data-i18n="px.pass">Contraseña</label><input id="px-pass" type="password" autocomplete="off" data-i18n-ph="px.optional" placeholder="opcional" /></div>
               </div>
               <div class="px-type">
                 <button type="button" class="px-type-btn on" data-scheme="http">HTTP</button>
                 <button type="button" class="px-type-btn" data-scheme="socks5">SOCKS5</button>
               </div>
             </div>
-            <p class="help">Conviene uno <b>residencial</b> para sitios duros (ML, gobierno). Desde tu casa quizás no haga falta. Solo en este job · se guarda en tu navegador.</p>
+            <p class="help" data-i18n-html="adv.proxyHelp">Conviene uno <b>residencial</b> para sitios duros (ML, gobierno). Desde tu casa quizás no haga falta. Solo en este job · se guarda en tu navegador.</p>
           </div>
           <div class="field">
-            <label for="cookies">Cookies de sesión
-              <button type="button" id="cookies-import" class="mini-btn"><svg class="ico" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 9 12 4 17 9"/><line x1="12" y1="4" x2="12" y2="16"/></svg>importar cookies.txt</button>
-              <button type="button" id="cookies-eye" class="mini-btn" aria-label="Mostrar/ocultar"><svg class="ico" id="eye-ico" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>ver</button>
+            <label for="cookies"><span data-i18n="adv.cookies">Cookies de sesión</span>
+              <button type="button" id="cookies-import" class="mini-btn"><svg class="ico" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 9 12 4 17 9"/><line x1="12" y1="4" x2="12" y2="16"/></svg><span data-i18n="adv.importCookies">importar cookies.txt</span></button>
+              <button type="button" id="cookies-eye" class="mini-btn" aria-label="Mostrar/ocultar"><svg class="ico" id="eye-ico" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg><span data-i18n="adv.see">ver</span></button>
               <input type="file" id="cookies-file" accept=".txt,.json" class="hidden" />
             </label>
-            <textarea id="cookies" name="cookies" rows="3" placeholder="cookies — nombre=valor; …  ·  cookies.txt  ·  JSON" autocomplete="off" spellcheck="false"></textarea>
+            <textarea id="cookies" name="cookies" rows="3" data-i18n-ph="adv.cookiesPh" placeholder="cookies — nombre=valor; …  ·  cookies.txt  ·  JSON" autocomplete="off" spellcheck="false"></textarea>
             <div id="browser-cookies" class="bc-row">
-              <span class="bc-lbl">o usar las del navegador (sin extensión):</span>
+              <span class="bc-lbl" data-i18n="adv.browserCookies">o usar las del navegador (sin extensión):</span>
               <button type="button" class="mini-btn bc" data-b="chrome">Chrome</button>
               <button type="button" class="mini-btn bc" data-b="firefox">Firefox</button>
               <button type="button" class="mini-btn bc" data-b="edge">Edge</button>
               <button type="button" class="mini-btn bc" data-b="brave">Brave</button>
               <span class="bc-sel" id="bc-sel"></span>
             </div>
-            <p class="help">Para páginas tras login o ubicación. <b>Usar las del navegador</b> (Fisherboy las lee del perfil local, igual que la extensión), un <b>cookies.txt</b> exportado, o el formato <b>nombre=valor</b>. Solo en este job · leer del navegador requiere rol dios.</p>
+            <p class="help" data-i18n-html="adv.cookiesHelp">Para páginas tras login o ubicación. <b>Usar las del navegador</b> (Fisherboy las lee del perfil local, igual que la extensión), un <b>cookies.txt</b> exportado, o el formato <b>nombre=valor</b>. Solo en este job · leer del navegador requiere rol dios.</p>
           </div>
           <div class="adv-grid">
             <div class="field">
-              <label for="captcha_api_url">Anti-CAPTCHA · API URL</label>
+              <label for="captcha_api_url" data-i18n="adv.captchaUrl">Anti-CAPTCHA · API URL</label>
               <input id="captcha_api_url" name="captcha_api_url" type="text" placeholder="https://solver…" autocomplete="off" />
             </div>
             <div class="field">
-              <label for="captcha_api_key">Anti-CAPTCHA · API key</label>
+              <label for="captcha_api_key" data-i18n="adv.captchaKey">Anti-CAPTCHA · API key</label>
               <input id="captcha_api_key" name="captcha_api_key" type="password" placeholder="••••••" autocomplete="off" />
             </div>
           </div>
-          <p class="help">Solver externo (estilo 2captcha), último recurso. Sin esto, la defensa es escalar de tier.</p>
+          <p class="help" data-i18n-html="adv.captchaHelp">Solver externo (estilo 2captcha), último recurso. Sin esto, la defensa es escalar de tier.</p>
         </section>
 
         <section class="adv-section">
-          <div class="adv-head">Recorrido &amp; datos</div>
+          <div class="adv-head" data-i18n="adv.routeHead">Recorrido &amp; datos</div>
           <label class="switch">
             <input type="checkbox" id="capture_api" name="capture_api" />
             <span class="track"></span>
-            <span>Capturar API/XHR oculto</span>
+            <span data-i18n="adv.captureApi">Capturar API/XHR oculto</span>
           </label>
-          <p class="help">Trae el JSON que la página ya consume (SPAs, grids dinámicos). <b>Lo más confiable.</b></p>
+          <p class="help" data-i18n-html="adv.captureHelp">Trae el JSON que la página ya consume (SPAs, grids dinámicos). <b>Lo más confiable.</b></p>
           <label class="switch">
             <input type="checkbox" id="tarantula" name="tarantula" />
             <span class="track"></span>
-            <span>Araña profunda · tarántula</span>
+            <span data-i18n="adv.tarantula">Araña profunda · tarántula</span>
           </label>
-          <p class="help">Spider que <b>captura el API de cada nodo</b> → árbol de DATOS. Lenta (un browser por página) y solo rol dios. Usa profundidad + páginas máx.</p>
+          <p class="help" data-i18n-html="adv.tarantulaHelp">Spider que <b>captura el API de cada nodo</b> → árbol de DATOS. Lenta (un browser por página) y solo rol dios. Usa profundidad + páginas máx.</p>
           <label class="switch">
             <input type="checkbox" id="paginate" name="paginate" />
             <span class="track"></span>
-            <span>Barrer paginado</span>
+            <span data-i18n="adv.paginate">Barrer paginado</span>
           </label>
-          <p class="help">Recorre todas las páginas (postback ASP.NET · "siguiente" · ?page=) y junta los hipervínculos.</p>
+          <p class="help" data-i18n-html="adv.paginateHelp">Recorre todas las páginas (postback ASP.NET · "siguiente" · ?page=) y junta los hipervínculos.</p>
           <div class="adv-grid">
             <div class="field">
-              <label for="spider">Araña (profundidad)</label>
+              <label for="spider" data-i18n="adv.spider">Araña (profundidad)</label>
               <select id="spider" name="spider">
-                <option value="0" selected>off</option>
-                <option value="1">1 nivel</option>
-                <option value="2">2 niveles</option>
-                <option value="3">3 niveles</option>
+                <option value="0" selected data-i18n="spider.off">off</option>
+                <option value="1" data-i18n="spider.1">1 nivel</option>
+                <option value="2" data-i18n="spider.2">2 niveles</option>
+                <option value="3" data-i18n="spider.3">3 niveles</option>
               </select>
-              <p class="help">Sigue links internos en árbol hasta esa profundidad y arma la jerarquía.</p>
+              <p class="help" data-i18n="adv.spiderHelp">Sigue links internos en árbol hasta esa profundidad y arma la jerarquía.</p>
             </div>
             <div class="field">
-              <label for="max_pages">Páginas máximas</label>
+              <label for="max_pages" data-i18n="adv.maxPages">Páginas máximas</label>
               <input id="max_pages" name="max_pages" type="number" min="1" max="200" value="10" />
             </div>
           </div>
           <div class="field">
-            <label for="crawl_scope">Alcance del recorrido</label>
+            <label for="crawl_scope" data-i18n="adv.scope">Alcance del recorrido</label>
             <select id="crawl_scope" name="crawl_scope">
-              <option value="domain" selected>todo el dominio</option>
-              <option value="path">solo esta sección (path de la URL)</option>
+              <option value="domain" selected data-i18n="scope.domain">todo el dominio</option>
+              <option value="path" data-i18n="scope.path">solo esta sección (path de la URL)</option>
             </select>
-            <p class="help">"Sección" sigue solo links bajo el path de la URL (evita vagar por el menú). Siempre descarta navegación/chrome (login, carrito, términos…).</p>
+            <p class="help" data-i18n-html="adv.scopeHelp">"Sección" sigue solo links bajo el path de la URL (evita vagar por el menú). Siempre descarta navegación/chrome (login, carrito, términos…).</p>
           </div>
         </section>
       </div>
@@ -628,11 +661,11 @@
       <div class="actions">
         <button type="submit" class="btn-pill" id="submit-btn">
           <svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.6"/><path d="M12 6.6V15a4 4 0 0 1-8 0v-1.5"/><path d="m4 13 1.4 1.9 2-1"/></svg>
-          <span id="btn-label">Pescar</span>
+          <span id="btn-label" data-i18n="form.submit">Pescar</span>
         </button>
       </div>
 
-      <p class="hint" id="main-hint">Una URL alcanza para empezar. Para sitios con JavaScript, el <b>tier browser</b>; para SPAs, <b>Capturar API</b>. La privacidad se aplica antes de entregar.</p>
+      <p class="hint" id="main-hint" data-i18n-html="form.hint">Una URL alcanza para empezar. Para sitios con JavaScript, el <b>tier browser</b>; para SPAs, <b>Capturar API</b>. La privacidad se aplica antes de entregar.</p>
     </form>
 
     <div class="result hidden" id="result-wrap">
@@ -643,20 +676,20 @@
       <div class="dlcard hidden" id="dlcard">
         <span class="dlcard-lbl">
           <svg class="ico" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          Descargar
+          <span data-i18n="dl.label">Descargar</span>
         </span>
         <div class="dl-btns">
-          <button type="button" class="dlbtn" data-dl="full"><svg class="ico" viewBox="0 0 24 24"><path d="M14 3v5h5"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg>completo</button>
-          <button type="button" class="dlbtn" data-dl="data"><svg class="ico" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>datos</button>
-          <button type="button" class="dlbtn" data-dl="records"><svg class="ico" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>registros</button>
+          <button type="button" class="dlbtn" data-dl="full"><svg class="ico" viewBox="0 0 24 24"><path d="M14 3v5h5"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg><span data-i18n="dl.full">completo</span></button>
+          <button type="button" class="dlbtn" data-dl="data"><svg class="ico" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg><span data-i18n="dl.data">datos</span></button>
+          <button type="button" class="dlbtn" data-dl="records"><svg class="ico" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg><span data-i18n="dl.records">registros</span></button>
         </div>
         <button type="button" class="editbtn" id="edit-btn" title="Editar el resultado">
           <svg class="ico" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
-          Editar
+          <span data-i18n="dl.edit">Editar</span>
         </button>
         <button type="button" class="send-escriba hidden" id="send-escriba" title="Abrir este contenido en Escriba">
           <svg class="ico" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-          Enviar a Escriba
+          <span data-i18n="dl.sendEscriba">Enviar a Escriba</span>
         </button>
       </div>
       <div class="meta" id="meta"></div>
@@ -675,17 +708,17 @@
         </g>
       </svg>
       <h2>Fisherboy</h2>
-      <p>Tu clave de acceso</p>
+      <p data-i18n="gate.keyTitle">Tu clave de acceso</p>
       <input id="login-key" type="password" placeholder="••••••••••" autocomplete="current-password" />
-      <button type="submit" class="btn-pill" style="width:100%;margin-top:12px" id="login-btn">Entrar</button>
+      <button type="submit" class="btn-pill" style="width:100%;margin-top:12px" id="login-btn" data-i18n="gate.enter">Entrar</button>
       <div class="err" id="login-err"></div>
-      <p style="margin:8px 0 0;font-size:11px">tu clave define el rol — dios · ángel · humano</p>
+      <p style="margin:8px 0 0;font-size:11px" data-i18n="gate.roleHint">tu clave define el rol — dios · ángel · humano</p>
     </form>
   </div>
 
   <footer>
-    Fisherboy v1 · núcleo liviano · <a href="/docs">API REST</a> · modo standalone<br/>
-    httpx → Trafilatura → Anonimal → entrega · un job vive en un worker.
+    <span id="footer-line1">Fisherboy v1 · núcleo liviano · <a href="/docs">API REST</a> · modo standalone</span><br/>
+    <span data-i18n="footer.line2">httpx → Trafilatura → Anonimal → entrega · un job vive en un worker.</span>
   </footer>
 </div>
 
@@ -703,7 +736,7 @@
     <div class="dl-options" id="dl-options"></div>
     <button type="button" class="dl-scrape" id="dl-scrape">
       <svg class="ico" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-      o scrapear la página como texto
+      <span data-i18n="modal.scrapeInstead">o scrapear la página como texto</span>
     </button>
   </div>
 </div>
@@ -715,9 +748,30 @@
     <h3 class="warn-title" id="warn-title"></h3>
     <p class="warn-body" id="warn-body"></p>
     <div class="warn-row">
-      <button type="button" class="dl-btn" id="warn-cancel">Cancelar</button>
-      <button type="button" class="dl-btn primary" id="warn-ok">Continuar igual</button>
+      <button type="button" class="dl-btn" id="warn-cancel" data-i18n="warn.cancel">Cancelar</button>
+      <button type="button" class="dl-btn primary" id="warn-ok" data-i18n="warn.continue">Continuar igual</button>
     </div>
+  </div>
+</div>
+
+<!-- Modal: acerca de -->
+<div class="dl-back hidden" id="aboutModal">
+  <div class="warn-card" role="dialog" aria-modal="true" aria-label="Acerca de" style="text-align:center">
+    <button type="button" class="dl-x" id="about-close" aria-label="Cerrar"><svg class="ico" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    <svg class="logomark" viewBox="0 0 64 64" aria-hidden="true" style="width:54px;height:54px;margin:0 auto 14px">
+      <rect width="64" height="64" rx="15" fill="#0f8f6a"/>
+      <g fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="32" cy="16" r="3.4" stroke-width="2.6"/><path d="M32 19.4 V40 a9 9 0 0 1 -18 0 v-3"/><path d="M14 39 l3.2 4.2 4.4 -2.4"/>
+      </g>
+    </svg>
+    <h3 class="warn-title" data-i18n="about.title">Acerca de Fisherboy</h3>
+    <p class="warn-body" data-i18n="about.body">Tu sidekick en la extracción de datos web: cualquier página, lista para tu IA.</p>
+    <p class="dl-note" style="margin:-8px 0 16px" data-i18n="about.ecosystem">Parte de la familia Escriba.</p>
+    <a class="dl-btn" href="https://github.com/diegoparras/fisherboy" target="_blank" rel="noopener" style="justify-content:center">
+      <svg class="ico" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 2A10 10 0 0 0 8.8 21.5c.5.1.7-.2.7-.5v-1.7c-2.8.6-3.4-1.3-3.4-1.3-.5-1.2-1.1-1.5-1.1-1.5-.9-.6.1-.6.1-.6 1 .1 1.5 1 1.5 1 .9 1.5 2.3 1.1 2.9.8.1-.6.3-1.1.6-1.4-2.2-.2-4.6-1.1-4.6-5 0-1.1.4-2 1-2.7-.1-.3-.4-1.3.1-2.6 0 0 .8-.3 2.7 1a9.4 9.4 0 0 1 5 0c1.9-1.3 2.7-1 2.7-1 .5 1.3.2 2.3.1 2.6.6.7 1 1.6 1 2.7 0 3.9-2.4 4.8-4.6 5 .3.3.6.9.6 1.9v2.8c0 .3.2.6.7.5A10 10 0 0 0 12 2z"/></svg>
+      GitHub
+    </a>
+    <p class="dl-note" id="about-version" style="margin-top:14px"></p>
   </div>
 </div>
 
@@ -799,13 +853,42 @@ const ICO_MOON = `<svg class="ico" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1
 const ICO_SUN = `<svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.4 1.4M17.6 17.6 19 19M19 5l-1.4 1.4M6.4 17.6 5 19"/></svg>`;
 function applyTheme(t) {
   document.documentElement.setAttribute("data-theme", t);
-  themeBtn.innerHTML = t === "dark" ? ICO_SUN : ICO_MOON;
+  const ti = document.getElementById("themeIcon");
+  if (ti) ti.innerHTML = t === "dark" ? ICO_SUN : ICO_MOON;
   try { localStorage.setItem("fb-theme", t); } catch (e) {}
 }
 themeBtn.addEventListener("click", () => {
   const cur = document.documentElement.getAttribute("data-theme");
   applyTheme(cur === "dark" ? "light" : "dark");
 });
+
+/* ---------- menú kebab (abrir/cerrar + acciones) ---------- */
+const menuBtn = document.getElementById("menuBtn");
+const headerMenu = document.getElementById("headerMenu");
+function closeMenu() { headerMenu.classList.add("hidden"); menuBtn.setAttribute("aria-expanded", "false"); }
+menuBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  const open = headerMenu.classList.toggle("hidden") === false;
+  menuBtn.setAttribute("aria-expanded", String(open));
+});
+document.addEventListener("click", (e) => {
+  if (!headerMenu.classList.contains("hidden") && !headerMenu.contains(e.target) && e.target !== menuBtn) closeMenu();
+});
+window.addEventListener("keydown", (e) => { if (e.key === "Escape" && !headerMenu.classList.contains("hidden")) closeMenu(); });
+// Configuración → abre las opciones avanzadas y baja hasta ahí.
+document.getElementById("settingsBtn").addEventListener("click", () => {
+  closeMenu();
+  const advPanelEl = document.getElementById("adv-panel");
+  if (advPanelEl.classList.contains("hidden")) document.getElementById("adv-toggle").click();
+  advPanelEl.scrollIntoView({ behavior: "smooth", block: "center" });
+});
+// Acerca de → modal.
+const aboutModal = document.getElementById("aboutModal");
+function closeAbout() { aboutModal.classList.add("hidden"); }
+document.getElementById("aboutBtn").addEventListener("click", () => { closeMenu(); aboutModal.classList.remove("hidden"); });
+document.getElementById("about-close").addEventListener("click", closeAbout);
+aboutModal.addEventListener("click", (e) => { if (e.target === aboutModal) closeAbout(); });
+window.addEventListener("keydown", (e) => { if (e.key === "Escape" && !aboutModal.classList.contains("hidden")) closeAbout(); });
 try { applyTheme(localStorage.getItem("fb-theme") || "light"); } catch (e) { applyTheme("light"); }
 
 /* ---------- opciones avanzadas (toggle) ---------- */
@@ -817,20 +900,44 @@ advToggle.addEventListener("click", () => {
 });
 
 /* ---------- ayuda dinámica (privacidad / salida) ---------- */
-const PRIV_HELP = {
-  opaco: "Reemplaza la PII por «PERSONA_1», «CUIT_2»… (no se puede revertir).",
-  reversible: "Enmascara, el LLM razona sobre los marcadores y se re-hidrata el dato real local.",
-  directo: "Contenido CRUDO, sin pasar por Anonimal. Solo para data no sensible.",
-};
-const OUT_HELP = {
-  markdown: "Markdown limpio del contenido principal (Crawl4AI / Trafilatura).",
-  llms_txt: "Markdown con encabezado (título + fuente), listo para LLM.",
-  json: "Extracción estructurada por LLM según un schema (necesita LLM configurado).",
-};
+const T = (k, v) => (window.I18N ? window.I18N.t(k, v) : k);
 const privSel = document.getElementById("privacy_mode");
 const outSel = document.getElementById("output_format");
-privSel.addEventListener("change", () => { document.getElementById("privacy-help").textContent = PRIV_HELP[privSel.value]; });
-outSel.addEventListener("change", () => { document.getElementById("output-help").textContent = OUT_HELP[outSel.value]; });
+function syncHelps() {
+  document.getElementById("privacy-help").textContent = T("priv.help." + privSel.value);
+  document.getElementById("output-help").textContent = T("out.help." + outSel.value);
+}
+privSel.addEventListener("change", syncHelps);
+outSel.addEventListener("change", syncHelps);
+
+/* ---------- i18n: poblar selector, aplicar, cambiar de idioma ---------- */
+function syncFooter() {
+  const f = document.getElementById("footer-line1");
+  if (f) f.innerHTML = T("footer.line1", { api: '<a href="/docs">' + T("footer.apiLink") + "</a>" });
+}
+function reapplyI18n() {
+  if (!window.I18N) return;
+  I18N.apply(document);
+  syncHelps();
+  syncFooter();
+  const bl = document.getElementById("btn-label");
+  if (bl && !btn.disabled) bl.textContent = T("form.submit");
+  if (typeof currentSobre !== "undefined" && currentSobre) { try { render(currentSobre); } catch (e) {} }
+}
+(function initI18n() {
+  if (!window.I18N) return;
+  const sel = document.getElementById("langsel");
+  I18N.LANGS.forEach(l => {
+    const o = document.createElement("option");
+    o.value = l; o.textContent = I18N.NAMES[l];
+    if (l === I18N.lang) o.selected = true;
+    sel.appendChild(o);
+  });
+  sel.addEventListener("change", () => { I18N.setLang(sel.value); reapplyI18n(); });
+  I18N.apply(document);
+  syncHelps();
+  syncFooter();
+})();
 
 /* ---------- sesión / auth ---------- */
 const gate = document.getElementById("gate");
@@ -1061,7 +1168,8 @@ async function ping() {
     const r = await fetch("/healthz");
     const d = await r.json();
     dot.className = "status-dot ok";
-    txt.textContent = d.app_mode + " · v" + d.version;
+    txt.textContent = d.app_mode;
+    const av = document.getElementById("about-version"); if (av) av.textContent = "Fisherboy v" + d.version + " · " + d.app_mode;
   } catch (e) {
     dot.className = "status-dot crit";
     txt.textContent = "sin conexión";
@@ -1125,9 +1233,21 @@ sendEscribaBtn.addEventListener("click", () => {
     alt: recs && recs.length ? { csv: recordsToCsv(recs) } : undefined,
     ts: Date.now(),
   };
-  try { sessionStorage.setItem("escriba.handoff", JSON.stringify(handoff)); } catch (e) {}
-  let url = "/"; try { url = localStorage.getItem("fb-escriba-url") || "/"; } catch (e) {}
-  window.open(url, "_blank");
+  // Canal 1 (mismo origen): storage. localStorage se comparte al instante entre pestañas del mismo
+  // origen; sessionStorage es el contrato. Escriba lee cualquiera.
+  try { const str = JSON.stringify(handoff); localStorage.setItem("escriba.handoff", str); sessionStorage.setItem("escriba.handoff", str); } catch (e) {}
+  // Destino: override local > inyectado por ESCRIBA_WEB_URL (meta) > "/".
+  let url = ""; try { url = localStorage.getItem("fb-escriba-url") || ""; } catch (e) {}
+  if (!url) url = (document.querySelector('meta[name="fb-escriba-url"]') || {}).content || "";
+  url = url || "/";
+  // Canal 2 (CROSS-ORIGEN): postMessage. El storage no cruza orígenes distintos (Fisherboy y Escriba
+  // en subdominios distintos). Abro sin noopener; cuando Escriba avisa "ready" le mando el handoff.
+  let targetOrigin = "*"; try { targetOrigin = new URL(url, location.origin).origin; } catch (e) {}
+  let win = null;
+  const onMsg = (e) => { if (win && e.source === win && e.data && e.data.type === "escriba-ready") { try { win.postMessage({ type: "escriba-handoff", payload: handoff }, targetOrigin); } catch (er) {} } };
+  window.addEventListener("message", onMsg);
+  setTimeout(() => window.removeEventListener("message", onMsg), 120000);
+  win = window.open(url, "_blank");
   sendEscribaBtn.lastChild.textContent = " enviado";
   setTimeout(() => { sendEscribaBtn.lastChild.textContent = " Enviar a Escriba"; }, 1800);
 });
@@ -1160,10 +1280,10 @@ function renderTree(node, depth) {
   (node.children || []).forEach(c => { h += renderTree(c, node.depth >= 0 ? depth + 1 : depth); });
   return h;
 }
-const STATUS_LABEL = { pendiente: "en cola", en_proceso: "procesando", ok: "listo", error: "error" };
+const STATUS_LABEL = { pendiente: "en cola", en_proceso: "procesando", ok: "listo", error: "error" };  // fallback; ver T("status.*")
 function statusPill(status) {
   const cls = (status === "ok") ? "ok" : (status === "error") ? "crit" : "run";
-  return `<span class="status-dot ${cls}"></span>${STATUS_LABEL[status] || status}`;
+  return `<span class="status-dot ${cls}"></span>${T("status." + status) !== ("status." + status) ? T("status." + status) : (STATUS_LABEL[status] || status)}`;
 }
 
 let currentSobre = null;
@@ -1248,12 +1368,12 @@ function render(sobre) {
 
 /* ---------- Archivos y media (manifiesto descargable) ---------- */
 const FILE_CATS = [
-  ["document", "Documentos", `<svg class="ico" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>`],
-  ["archive",  "Comprimidos", `<svg class="ico" viewBox="0 0 24 24"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></svg>`],
-  ["audio",    "Audio", `<svg class="ico" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>`],
-  ["video",    "Video", `<svg class="ico" viewBox="0 0 24 24"><path d="m23 7-7 5 7 5zM1 5h15v14H1z"/></svg>`],
-  ["image",    "Imágenes", `<svg class="ico" viewBox="0 0 24 24"><path d="M3 3h18v18H3z"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>`],
-  ["embed",    "Embebidos", `<svg class="ico" viewBox="0 0 24 24"><path d="m16 18 6-6-6-6M8 6l-6 6 6 6"/></svg>`],
+  ["document", "files.cat.document", `<svg class="ico" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>`],
+  ["archive",  "files.cat.archive", `<svg class="ico" viewBox="0 0 24 24"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></svg>`],
+  ["audio",    "files.cat.audio", `<svg class="ico" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>`],
+  ["video",    "files.cat.video", `<svg class="ico" viewBox="0 0 24 24"><path d="m23 7-7 5 7 5zM1 5h15v14H1z"/></svg>`],
+  ["image",    "files.cat.image", `<svg class="ico" viewBox="0 0 24 24"><path d="M3 3h18v18H3z"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>`],
+  ["embed",    "files.cat.embed", `<svg class="ico" viewBox="0 0 24 24"><path d="m16 18 6-6-6-6M8 6l-6 6 6 6"/></svg>`],
 ];
 const DL_ICO = `<svg class="ico" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>`;
 const EXT_ICO = `<svg class="ico" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3"/></svg>`;
@@ -1281,7 +1401,7 @@ function renderFiles(files) {
       const nm = escapeHtml(it.name || it.url);
       const ext = it.ext ? `<span class="fx">${escapeHtml(it.ext)}</span>` : "";
       const via = it.via ? `<span class="fvia" title="origen">${escapeHtml(it.via)}</span>` : "";
-      if (masked) return `<div class="frow"><span class="fname">${nm}</span>${ext}${via}<span class="fmask">enmascarado</span></div>`;
+      if (masked) return `<div class="frow"><span class="fname">${nm}</span>${ext}${via}<span class="fmask">${T("files.masked.tag")}</span></div>`;
       const safeUrl = escapeHtml(it.url);
       let actions = `<a class="fbtn ghost" href="${safeUrl}" target="_blank" rel="noopener" title="Abrir en pestaña">${EXT_ICO}</a>`;
       if (isEmbed && VIDEO_DL && it.dl_video) {
@@ -1294,21 +1414,21 @@ function renderFiles(files) {
       }
       if (isEmbed && GALLERY_DL && it.dl_gallery)
         actions += `<button class="fbtn alt" onclick="dlGallery('${encodeURIComponent(it.url)}', this)" title="Descargar las imágenes (ZIP)">${GAL_ICO}<span>Descargar galería</span></button>`;
-      if (!isEmbed && direct) actions += `<a class="fbtn" href="${safeUrl}" download="${escapeHtml(it.name || '')}" title="Descarga directa">${DL_ICO}<span>Directo</span></a>`;
+      if (!isEmbed && direct) actions += `<a class="fbtn" href="${safeUrl}" download="${escapeHtml(it.name || '')}" title="Descarga directa">${DL_ICO}<span>${T("files.btn.direct")}</span></a>`;
       if (!isEmbed && viaFb) {
-        actions += `<button class="fbtn alt" onclick="dlVia('${encodeURIComponent(it.url)}')" title="Bajar a través de Fisherboy">${DL_ICO}<span>Fisherboy</span></button>`;
+        actions += `<button class="fbtn alt" onclick="dlVia('${encodeURIComponent(it.url)}')" title="Bajar a través de Fisherboy">${DL_ICO}<span>${T("files.btn.fisherboy")}</span></button>`;
         zipUrls.push(it.url);
       }
       return `<div class="frow"><span class="fname">${nm}</span>${ext}${via}<span class="facts">${actions}</span></div>`;
     }).join("");
-    body += `<details class="fcat"${collapsed ? "" : " open"}><summary>${ico}<b>${label}</b><span class="fcount">${items.length}</span></summary><div class="flist">${rows}</div></details>`;
+    body += `<details class="fcat"${collapsed ? "" : " open"}><summary>${ico}<b>${T(label)}</b><span class="fcount">${items.length}</span></summary><div class="flist">${rows}</div></details>`;
   }
 
-  let head = `<div class="flabel">Archivos y media${masked ? ' · <span class="fmask">URLs enmascaradas (modo opaco/reversible)</span>' : ""}</div>`;
+  let head = `<div class="flabel">${T("files.label")}${masked ? ' · <span class="fmask">' + T("files.masked") + '</span>' : ""}</div>`;
   let zipBtn = "";
   if (viaFb && zipUrls.length > 1) {
     window.__zipUrls = zipUrls;
-    zipBtn = `<button class="fbtn alt zipall" onclick="dlZipAll()">${DL_ICO}<span>Descargar todo (ZIP · ${zipUrls.length})</span></button>`;
+    zipBtn = `<button class="fbtn alt zipall" onclick="dlZipAll()">${DL_ICO}<span>${T("msg.zipAll",{n:zipUrls.length})}</span></button>`;
   }
   return `<div class="files-panel">${head}${zipBtn}${body}</div>`;
 }
@@ -1322,7 +1442,7 @@ function dlVia(encodedUrl) {
 async function dlMedia(encodedUrl, btn, audio) {
   const prev = btn ? btn.innerHTML : "";
   const ico = audio ? MUSIC_ICO : DL_ICO;
-  if (btn) { btn.disabled = true; btn.innerHTML = `${ico}<span>${audio ? "Bajando audio…" : "Bajando video…"}</span>`; }
+  if (btn) { btn.disabled = true; btn.innerHTML = `${ico}<span>${audio ? T("msg.dlAudio") : T("msg.dlVideo")}</span>`; }
   try {
     let q = "best";
     const sel = btn && btn.parentElement && btn.parentElement.querySelector(".qsel");
@@ -1340,7 +1460,7 @@ async function dlMedia(encodedUrl, btn, audio) {
     document.body.appendChild(a); a.click();
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
   } catch (e) {
-    alert((audio ? "Descarga de audio: " : "Descarga de video: ") + e.message);
+    alert((audio ? T("err.audio") : T("err.video")) + e.message);
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = prev; }
   }
@@ -1369,12 +1489,12 @@ async function dlInstagram(encodedUrl, btn, kind) {
     const d = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(d.detail || "no se pudo traer");
     const items = d.items || [];
-    if (!items.length) { alert("No vino ningún dato (¿privado o sin permiso?)."); return; }
+    if (!items.length) { alert(T("msg.noData")); return; }
     const base = "instagram-" + kind + "-" + items.length;
     _downloadBlob(_toCsv(items), "text/csv", base + ".csv");
     _downloadBlob(JSON.stringify(items, null, 2), "application/json", base + ".json");
   } catch (e) {
-    alert("Instagram: " + e.message);
+    alert(T("err.instagram") + e.message);
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = prev; }
   }
@@ -1396,37 +1516,43 @@ window.addEventListener("keydown", (e) => { if (e.key === "Escape" && !warnModal
 
 // Seguidores/seguidos de IG: confirma primero (riesgo de cuenta).
 function igFollows(u, btn, which) {
-  warnModal("Bajar " + (which === "followees" ? "seguidos" : "seguidores"),
-    "Instagram vigila fuerte esta operación y puede limitar o marcar tu cuenta si abusás. Se baja de a tandas. ¿Seguir igual?",
-    () => dlInstagram(u, btn, which));
+  warnModal(T("warn.followTitle", { which: which === "followees" ? T("modal.followees") : T("modal.followers") }),
+    T("warn.followBody"), () => dlInstagram(u, btn, which));
 }
 
 // Comentarios: si la plataforma es experimental, avisa antes.
 function dlComments(u, btn, experimental) {
   const run = () => _fetchComments(u, btn);
-  if (experimental) warnModal("Comentarios experimentales",
-    "X y TikTok cerraron/limitaron sus APIs y cambian seguido; esto puede no traer nada o fallar. ¿Probar igual?", run);
+  if (experimental) warnModal(T("warn.commentsTitle"), T("warn.commentsBody"), run);
   else run();
 }
 async function _fetchComments(encodedUrl, btn) {
   const prev = btn ? btn.innerHTML : "";
-  if (btn) { btn.disabled = true; btn.innerHTML = `${CHAT_ICO}<span>Trayendo…</span>`; }
+  if (btn) { btn.disabled = true; btn.innerHTML = `${CHAT_ICO}<span>${T("msg.fetching")}</span>`; }
   try {
-    const r = await fetch("/api/comments?url=" + encodedUrl);
+    const cookies = ((document.getElementById("cookies") || {}).value || "").trim();
+    const r = await fetch("/api/comments", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: decodeURIComponent(encodedUrl), cookies }),
+    });
     const d = await r.json().catch(() => ({}));
+    if (r.status === 422 && d.needs_cookies) {
+      alert(d.had_cookies ? T("err.cookiesStale") : T("err.cookiesNeeded"));
+      return;
+    }
     if (!r.ok) throw new Error(d.detail || "no se pudo traer");
     const items = d.items || [];
-    if (!items.length) { alert("No vino ningún comentario (¿sin comentarios, privado, o la plataforma cambió?)."); return; }
+    if (!items.length) { alert(T("msg.noComments")); return; }
     const base = "comentarios-" + (d.platform || "x") + "-" + items.length;
     _downloadBlob(_toCsv(items), "text/csv", base + ".csv");
     _downloadBlob(JSON.stringify(items, null, 2), "application/json", base + ".json");
-  } catch (e) { alert("Comentarios: " + e.message); }
+  } catch (e) { alert(T("err.comments") + e.message); }
   finally { if (btn) { btn.disabled = false; btn.innerHTML = prev; } }
 }
 
 async function dlGallery(encodedUrl, btn) {
   const prev = btn ? btn.innerHTML : "";
-  if (btn) { btn.disabled = true; btn.innerHTML = `${GAL_ICO}<span>Bajando galería…</span>`; }
+  if (btn) { btn.disabled = true; btn.innerHTML = `${GAL_ICO}<span>${T("msg.dlGallery")}</span>`; }
   try {
     const r = await fetch("/api/download/gallery?url=" + encodedUrl);
     if (!r.ok) { let d = {}; try { d = await r.json(); } catch (e) {} throw new Error(d.detail || "no se pudo bajar"); }
@@ -1436,7 +1562,7 @@ async function dlGallery(encodedUrl, btn) {
     document.body.appendChild(a); a.click();
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
   } catch (e) {
-    alert("Descarga de galería: " + e.message);
+    alert(T("err.gallery") + e.message);
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = prev; }
   }
@@ -1447,7 +1573,7 @@ async function dlZipAll() {
   if (!urls.length) return;
   const btn = document.querySelector(".zipall");
   const prev = btn ? btn.innerHTML : "";
-  if (btn) { btn.disabled = true; btn.innerHTML = `${DL_ICO}<span>Empaquetando…</span>`; }
+  if (btn) { btn.disabled = true; btn.innerHTML = `${DL_ICO}<span>${T("msg.zipping")}</span>`; }
   try {
     const r = await fetch("/api/download/zip", {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -1460,7 +1586,7 @@ async function dlZipAll() {
     document.body.appendChild(a); a.click();
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
   } catch (e) {
-    alert("ZIP: " + e.message);
+    alert(T("err.zip") + e.message);
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = prev; }
   }
@@ -1474,11 +1600,11 @@ async function poll(jobId) {
     render(sobre);
     if (sobre.status === "ok" || sobre.status === "error") {
       clearInterval(polling); polling = null;
-      btn.disabled = false; document.getElementById("btn-label").textContent = "Pescar";
+      btn.disabled = false; document.getElementById("btn-label").textContent = T("form.submit");
     }
   } catch (e) {
     clearInterval(polling); polling = null;
-    btn.disabled = false; document.getElementById("btn-label").textContent = "Pescar";
+    btn.disabled = false; document.getElementById("btn-label").textContent = T("form.submit");
     wrap.classList.remove("hidden");
     bodyEl.innerHTML = `<div class="err-box">${escapeHtml(e.message)}</div>`;
   }
@@ -1540,43 +1666,42 @@ function openMediaModal(d) {
   if (d.thumb) hero.innerHTML = `<img src="${escapeHtml(d.thumb)}" alt="" onerror="dlHeroFallback(this)">`;
   else hero.innerHTML = glyph;
   hero.dataset.glyph = glyph;
-  const kindTxt = (canVideo && canGallery) ? `Media de ${d.name}`
-    : canVideo ? `Video de ${d.name}` : `Galería de ${d.name}`;
+  const kindTxt = (canVideo && canGallery) ? T("modal.kindMedia", { p: d.name })
+    : canVideo ? T("modal.kindVideo", { p: d.name }) : T("modal.kindGallery", { p: d.name });
   document.getElementById("dl-kind").textContent = kindTxt;
   document.getElementById("dl-url").textContent = d.url;
 
   const u = encodeURIComponent(d.url);
   let opt = "";
   if (canVideo) {
-    const hd = FFMPEG_OK ? "" : " title=\"Sin ffmpeg en el server: baja ~360p\"";
-    const mp3t = FFMPEG_OK ? "Solo el audio en mp3" : "Sin ffmpeg: audio en formato nativo";
-    opt += `<div class="dl-opt"><span class="dl-opt-label">Video</span><div class="dl-row">
-      <select class="dl-qsel qsel"${hd}><option value="best">Mejor calidad</option><option value="1080">1080p</option><option value="720">720p</option><option value="480">480p</option><option value="360">360p</option></select>
-      <button class="dl-btn primary" onclick="dlMedia('${u}', this, false)">${DL_ICO}<span>Descargar video</span></button>
-      <button class="dl-btn" onclick="dlMedia('${u}', this, true)" title="${mp3t}">${MUSIC_ICO}<span>MP3</span></button>
+    const hd = FFMPEG_OK ? "" : ` title="${T("modal.qualityHd")}"`;
+    const mp3t = FFMPEG_OK ? T("modal.mp3Hd") : T("modal.mp3Native");
+    opt += `<div class="dl-opt"><span class="dl-opt-label">${T("modal.lblVideo")}</span><div class="dl-row">
+      <select class="dl-qsel qsel"${hd}><option value="best">${T("modal.bestQuality")}</option><option value="1080">1080p</option><option value="720">720p</option><option value="480">480p</option><option value="360">360p</option></select>
+      <button class="dl-btn primary" onclick="dlMedia('${u}', this, false)">${DL_ICO}<span>${T("modal.downloadVideo")}</span></button>
+      <button class="dl-btn" onclick="dlMedia('${u}', this, true)" title="${mp3t}">${MUSIC_ICO}<span>${T("modal.mp3")}</span></button>
     </div></div>`;
   }
   if (canGallery) {
-    opt += `<div class="dl-opt"><span class="dl-opt-label">Imágenes</span><div class="dl-row">
-      <button class="dl-btn primary" onclick="dlGallery('${u}', this)">${GAL_ICO}<span>Descargar galería (ZIP)</span></button>
-    </div><span class="dl-note">Si el contenido es privado/gateado, cargá tus cookies de sesión en Opciones avanzadas.</span></div>`;
+    opt += `<div class="dl-opt"><span class="dl-opt-label">${T("modal.lblImages")}</span><div class="dl-row">
+      <button class="dl-btn primary" onclick="dlGallery('${u}', this)">${GAL_ICO}<span>${T("modal.downloadGallery")}</span></button>
+    </div><span class="dl-note">${T("modal.galleryNote")}</span></div>`;
   }
   if (IG_DATA && d.igKind === "post") {
-    opt += `<div class="dl-opt"><span class="dl-opt-label">Datos del post</span><div class="dl-row">
-      <button class="dl-btn" onclick="dlInstagram('${u}', this, 'comments')">${CHAT_ICO}<span>Comentarios</span></button>
+    opt += `<div class="dl-opt"><span class="dl-opt-label">${T("modal.lblPostData")}</span><div class="dl-row">
+      <button class="dl-btn" onclick="dlInstagram('${u}', this, 'comments')">${CHAT_ICO}<span>${T("modal.comments")}</span></button>
     </div></div>`;
   }
   if (IG_DATA && d.igKind === "profile") {
-    opt += `<div class="dl-opt"><span class="dl-opt-label">Datos del perfil</span><div class="dl-row">
-      <button class="dl-btn" onclick="igFollows('${u}', this, 'followers')">${USERS_ICO}<span>Seguidores</span></button>
-      <button class="dl-btn" onclick="igFollows('${u}', this, 'followees')">${USERS_ICO}<span>Seguidos</span></button>
-    </div><span class="dl-note">Instagram vigila esto: va a cuentagotas. Puede marcar tu cuenta si abusás.</span></div>`;
+    opt += `<div class="dl-opt"><span class="dl-opt-label">${T("modal.lblProfileData")}</span><div class="dl-row">
+      <button class="dl-btn" onclick="igFollows('${u}', this, 'followers')">${USERS_ICO}<span>${T("modal.followers")}</span></button>
+      <button class="dl-btn" onclick="igFollows('${u}', this, 'followees')">${USERS_ICO}<span>${T("modal.followees")}</span></button>
+    </div><span class="dl-note">${T("modal.igFollowNote")}</span></div>`;
   }
   if (COMMENTS_DL && d.comments) {
-    const tag = d.commentsExp ? " (experimental)" : "";
-    opt += `<div class="dl-opt"><span class="dl-opt-label">Comentarios</span><div class="dl-row">
-      <button class="dl-btn" onclick="dlComments('${u}', this, ${d.commentsExp})">${CHAT_ICO}<span>Comentarios${tag}</span></button>
-    </div>${d.commentsExp ? '<span class="dl-note">X y TikTok cambian seguido y cerraron sus APIs: esto es experimental y puede no traer nada.</span>' : ''}</div>`;
+    opt += `<div class="dl-opt"><span class="dl-opt-label">${T("modal.lblComments")}</span><div class="dl-row">
+      <button class="dl-btn" onclick="dlComments('${u}', this, ${d.commentsExp})">${CHAT_ICO}<span>${d.commentsExp ? T("modal.commentsExp") : T("modal.comments")}</span></button>
+    </div>${d.commentsExp ? '<span class="dl-note">' + T("modal.commentsExpNote") + '</span>' : ''}</div>`;
   }
   document.getElementById("dl-options").innerHTML = opt;
   dlModal.classList.remove("hidden");
@@ -1598,7 +1723,7 @@ form.addEventListener("submit", (ev) => {
 
 async function runScrape() {
   if (polling) clearInterval(polling);
-  btn.disabled = true; document.getElementById("btn-label").textContent = "Lanzando…";
+  btn.disabled = true; document.getElementById("btn-label").textContent = T("form.submitting");
   wrap.classList.remove("hidden");
   pill.innerHTML = statusPill("pendiente");
   jobChip.textContent = "";
@@ -1644,7 +1769,7 @@ async function runScrape() {
     polling = setInterval(() => poll(data.job_id), 1200);
     poll(data.job_id);
   } catch (e) {
-    btn.disabled = false; document.getElementById("btn-label").textContent = "Pescar";
+    btn.disabled = false; document.getElementById("btn-label").textContent = T("form.submit");
     pill.innerHTML = statusPill("error");
     bodyEl.innerHTML = `<div class="err-box">${escapeHtml(e.message)}</div>`;
   }

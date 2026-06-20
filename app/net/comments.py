@@ -15,6 +15,32 @@ from urllib.parse import urlsplit
 
 _UA = "Fisherboy/1.0 (+comentarios; uso personal)"
 
+
+class CommentsAuthRequired(RuntimeError):
+    """La plataforma exige sesión: hacen falta cookies (o las cargadas vencieron)."""
+
+
+# Marcas que yt-dlp/YouTube tira cuando el problema es de sesión y unas cookies lo resuelven.
+# Comparación en minúsculas. No incluye "private video" puro (cookies no siempre alcanzan).
+_AUTH_WALL = (
+    "sign in to confirm",
+    "confirm you're not a bot",
+    "confirm you are not a bot",
+    "use --cookies",
+    "cookies-from-browser",
+    "sign in to view",
+    "login required",
+    "this video may be inappropriate",
+    "age-restricted",
+    "members-only",
+    "join this channel",
+)
+
+
+def _is_auth_wall(msg: str) -> bool:
+    low = (msg or "").lower()
+    return any(m in low for m in _AUTH_WALL)
+
 # Plataforma por host y su confiabilidad.
 _PLATFORM_HOSTS = {
     "youtube": ("youtube.com", "youtu.be"),
@@ -106,8 +132,13 @@ def _ytdlp_comments(url: str, *, max_items: int, proxy: str = "", cookiefile: st
         opts["proxy"] = proxy
     if cookiefile:
         opts["cookiefile"] = cookiefile
-    with yt_dlp.YoutubeDL(opts) as y:
-        info = y.extract_info(url, download=False)
+    try:
+        with yt_dlp.YoutubeDL(opts) as y:
+            info = y.extract_info(url, download=False)
+    except Exception as e:  # noqa: BLE001 — yt-dlp lanza tipos varios
+        if _is_auth_wall(str(e)):
+            raise CommentsAuthRequired(str(e).splitlines()[0][:160]) from e
+        raise
     comments = info.get("comments") or []
     out: list[dict] = []
     for c in comments[:max_items]:

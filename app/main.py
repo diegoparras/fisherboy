@@ -621,17 +621,31 @@ def create_app(
         which = "followees" if which == "followees" else "followers"
         return await _ig_data(request, url, instagram.get_follows, "profile", which=which)
 
-    @app.get("/api/comments")
-    async def comments_ep(request: Request, url: str):
-        """Comentarios de Reddit/YouTube (confiable) o X/TikTok (experimental, puede fallar)."""
+    @app.post("/api/comments")
+    async def comments_ep(request: Request):
+        """Comentarios de Reddit/YouTube (confiable) o X/TikTok (experimental, puede fallar).
+
+        Body JSON {url, cookies?}. Las cookies que el usuario cargó en la UI ganan sobre el
+        YT_COOKIES del servidor: se escriben a un cookiefile temporal Netscape (secreto efímero,
+        se borra al terminar). Si la plataforma pide sesión y no alcanzan, devuelve needs_cookies.
+        """
         role, _ = auth.identity_from_request(request)
         if role is None:
             raise HTTPException(status_code=401, detail="Necesitás iniciar sesión.")
         if not auth.caps_for(role).get("capture"):
             raise HTTPException(status_code=403, detail=f"Tu rol '{role}' no habilita traer comentarios.")
         _download_enabled()
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            body = {}
+        url = (body.get("url") or "").strip()
+        raw_cookies = body.get("cookies") or ""
+        if not url:
+            raise HTTPException(status_code=400, detail="Falta la URL.")
         from .net import comments as cmod
         from .net import media
+        from .security import cookies as cookmod
         plat = cmod.comment_platform(url)
         if not plat:
             raise HTTPException(status_code=400, detail="Plataforma sin soporte de comentarios.")
@@ -641,15 +655,42 @@ def create_app(
         if not ratelimit.allow(_queue()._r, f"cmt:{client_ip}", limit=settings.max_jobs_per_min):
             raise HTTPException(status_code=429, detail="Demasiados pedidos; probá en un minuto.")
 
+        # Cookies de la UI (este job) > YT_COOKIES del server. Cookiefile temporal, se borra abajo.
+        import os
+        import tempfile
+        from urllib.parse import urlsplit
+        host = (urlsplit(url).hostname or "").lower()
+        dom = ("." + (host[4:] if host.startswith("www.") else host)) if host else ".youtube.com"
+        netscape = cookmod.to_netscape(raw_cookies, dom) if raw_cookies else ""
+        tmp_cookiefile = ""
+        if netscape:
+            fd, tmp_cookiefile = tempfile.mkstemp(prefix="fb-cmt-", suffix=".txt")
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(netscape)
+        cookiefile = tmp_cookiefile or settings.yt_cookies
+        had_cookies = bool(tmp_cookiefile or settings.yt_cookies)
+
         from starlette.concurrency import run_in_threadpool
         try:
             items = await run_in_threadpool(
                 cmod.get_comments, url, max_items=settings.ig_max_items,
                 timeout_s=int(settings.fetch_timeout_s),
-                proxy=settings.yt_proxy, cookiefile=settings.yt_cookies)
+                proxy=settings.yt_proxy, cookiefile=cookiefile)
+        except cmod.CommentsAuthRequired as e:
+            # La plataforma pide sesión: el front muestra el modal de cookies (distinto si ya
+            # había cookies cargadas → entonces están vencidas/inválidas).
+            return JSONResponse(status_code=422, content={
+                "needs_cookies": True, "had_cookies": had_cookies,
+                "platform": plat, "detail": str(e)})
         except Exception as e:  # noqa: BLE001
             reason = str(e).splitlines()[0][:160] if str(e) else type(e).__name__
             raise HTTPException(status_code=502, detail=f"No se pudieron traer los comentarios: {reason}")
+        finally:
+            if tmp_cookiefile:
+                try:
+                    os.unlink(tmp_cookiefile)
+                except OSError:
+                    pass
         return JSONResponse({"count": len(items), "items": items, "platform": plat,
                              "experimental": plat in cmod.EXPERIMENTAL})
 
@@ -667,7 +708,7 @@ def create_app(
     if settings.is_standalone:
         from .ui.router import build_ui_router
 
-        app.include_router(build_ui_router())
+        app.include_router(build_ui_router(settings.escriba_web_url))
 
     return app
 
