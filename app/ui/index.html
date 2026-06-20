@@ -189,6 +189,52 @@
   .editbtn .ico { width: 14px; height: 14px; }
   .dlcard .send-escriba { margin-left: 0; }
 
+  /* ===== Modal de descarga (detección de media) ===== */
+  .dl-back { position: fixed; inset: 0; z-index: 130; display: grid; place-items: center; padding: 24px;
+    background: color-mix(in srgb, var(--bg) 50%, rgba(0,0,0,.55)); backdrop-filter: blur(6px); animation: reveal .18s; }
+  .dl-card { position: relative; width: min(460px, 94vw); background: var(--panel); border: 1px solid var(--border);
+    border-radius: 18px; box-shadow: var(--shadow); padding: 0 0 20px; overflow: hidden; animation: dl-pop .22s cubic-bezier(.2,.9,.3,1.2); }
+  @keyframes dl-pop { from { opacity: 0; transform: translateY(10px) scale(.97); } to { opacity: 1; transform: none; } }
+  .dl-x { position: absolute; top: 12px; right: 12px; z-index: 2; display: grid; place-items: center; width: 32px; height: 32px;
+    border-radius: 9px; border: 1px solid var(--border); background: color-mix(in srgb, var(--panel) 70%, transparent); color: var(--muted-2); cursor: pointer; }
+  .dl-x:hover { color: var(--text); border-color: var(--accent); }
+  .dl-x .ico { width: 16px; height: 16px; }
+  .dl-hero { aspect-ratio: 16 / 9; width: 100%; background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 22%, var(--card)), var(--card-2));
+    display: grid; place-items: center; overflow: hidden; border-bottom: 1px solid var(--border); }
+  .dl-hero img { width: 100%; height: 100%; object-fit: cover; }
+  .dl-hero .glyph { width: 64px; height: 64px; color: var(--accent); opacity: .9; }
+  .dl-info { padding: 16px 20px 4px; display: flex; flex-direction: column; gap: 5px; }
+  .dl-kind { font-size: 16px; font-weight: 700; color: var(--text); letter-spacing: -.01em; }
+  .dl-url { font-family: var(--mono); font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dl-options { padding: 12px 20px 4px; display: flex; flex-direction: column; gap: 14px; }
+  .dl-opt { display: flex; flex-direction: column; gap: 8px; }
+  .dl-opt-label { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .dl-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .dl-note { font-size: 11.5px; color: var(--muted); line-height: 1.45; }
+  .dl-btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; font-family: inherit; font-size: 13px; font-weight: 500;
+    padding: 9px 15px; border-radius: 10px; border: 1px solid var(--border); background: var(--card-2); color: var(--text); cursor: pointer; flex: 1; min-width: 130px; }
+  .dl-btn:hover { border-color: var(--accent); }
+  .dl-btn .ico { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; }
+  .dl-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .dl-btn.primary:hover { filter: brightness(1.06); }
+  .dl-btn:disabled { opacity: .55; cursor: default; }
+  .dl-qsel { font-family: inherit; font-size: 13px; color: var(--text); background: var(--card-2); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; cursor: pointer; }
+  .dl-qsel:hover { border-color: var(--accent); }
+  .dl-scrape { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 16px 20px 0; padding: 9px; width: calc(100% - 40px);
+    background: transparent; border: 1px dashed var(--border); border-radius: 10px; color: var(--muted-2); font-family: inherit; font-size: 12.5px; cursor: pointer; }
+  .dl-scrape:hover { color: var(--accent); border-color: var(--accent); }
+  .dl-scrape .ico { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+
+  /* ===== Modal de aviso ===== */
+  .warn-card { position: relative; width: min(420px, 94vw); background: var(--panel); border: 1px solid var(--border);
+    border-radius: 18px; box-shadow: var(--shadow); padding: 26px 24px 20px; text-align: center; animation: dl-pop .22s cubic-bezier(.2,.9,.3,1.2); }
+  .warn-ico { width: 52px; height: 52px; margin: 0 auto 14px; display: grid; place-items: center; border-radius: 50%;
+    background: color-mix(in srgb, var(--warn, #d98a00) 16%, transparent); color: var(--warn, #d98a00); }
+  .warn-ico svg { width: 26px; height: 26px; }
+  .warn-title { margin: 0 0 8px; font-size: 16px; font-weight: 700; color: var(--text); }
+  .warn-body { margin: 0 0 20px; font-size: 13px; line-height: 1.55; color: var(--muted-2); }
+  .warn-row { display: flex; gap: 10px; }
+
   /* ===== Editor modal: Markdown · JSON · Tabla (un solo modal con pestañas) ===== */
   .ed-back { position: fixed; inset: 0; z-index: 120; display: grid; place-items: center; padding: 24px;
     background: color-mix(in srgb, var(--bg) 55%, rgba(0,0,0,.55)); animation: reveal .18s; }
@@ -299,6 +345,31 @@
   .tnode a { color: var(--muted-2); text-decoration: none; word-break: break-all; }
   .tnode a:hover { color: var(--accent); }
   .tnode .tmeta { color: var(--muted); font-size: 11px; flex-shrink: 0; opacity: .8; }
+  /* Archivos y media */
+  .files-panel { margin-top: 18px; border-top: 1px solid var(--border); padding-top: 14px; }
+  .fcat { margin-bottom: 8px; }
+  .fcat > summary { cursor: pointer; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); padding: 7px 2px; list-style: none; }
+  .fcat > summary::-webkit-details-marker { display: none; }
+  .fcat > summary .ico { width: 15px; height: 15px; stroke: var(--accent); fill: none; stroke-width: 2; }
+  .fcat > summary b { font-weight: 600; }
+  .fcount { font-family: var(--mono); font-size: 11px; color: var(--muted); background: var(--card); border: 1px solid var(--border); border-radius: 20px; padding: 1px 8px; }
+  .flist { display: flex; flex-direction: column; gap: 5px; padding: 4px 0 8px; max-height: 360px; overflow: auto; }
+  .frow { display: flex; align-items: center; gap: 9px; font-size: 12.5px; color: var(--text); background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; }
+  .frow .fname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .frow .fx { font-family: var(--mono); font-size: 10px; text-transform: uppercase; color: var(--muted-2); background: var(--card-2); border-radius: 4px; padding: 1px 5px; flex-shrink: 0; }
+  .frow .fvia { font-size: 10.5px; color: var(--muted); flex-shrink: 0; }
+  .frow .fmask { font-size: 10.5px; color: var(--muted); font-style: italic; flex-shrink: 0; }
+  .facts { display: flex; gap: 6px; flex-shrink: 0; }
+  .fbtn { display: inline-flex; align-items: center; gap: 5px; font-family: inherit; font-size: 11.5px; color: var(--accent); background: var(--card-2); border: 1px solid var(--border); border-radius: 7px; padding: 4px 9px; cursor: pointer; text-decoration: none; white-space: nowrap; }
+  .fbtn:hover { border-color: var(--accent); }
+  .fbtn .ico { width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 2; }
+  .fbtn.ghost { padding: 4px 7px; color: var(--muted-2); }
+  .fbtn.alt { color: #fff; background: var(--accent); border-color: var(--accent); }
+  .fbtn.alt:hover { filter: brightness(1.06); }
+  .fbtn.zipall { margin: 2px 0 12px; }
+  .qsel { font-family: inherit; font-size: 11.5px; color: var(--text); background: var(--card-2); border: 1px solid var(--border); border-radius: 7px; padding: 4px 6px; cursor: pointer; }
+  .qsel:hover { border-color: var(--accent); }
+  .fbtn:disabled { opacity: .6; cursor: default; }
   .placeholder { color: var(--muted); font-size: 14px; text-align: center; padding: 40px 20px; }
   .prog { display: flex; flex-direction: column; gap: 7px; padding: 6px 2px; }
   .pstep { display: flex; align-items: center; gap: 9px; font-size: 13px; color: var(--muted); transition: color .2s; }
@@ -406,11 +477,11 @@
         <div class="field">
           <label for="privacy_mode">Privacidad</label>
           <select id="privacy_mode" name="privacy_mode">
-            <option value="opaco" selected>opaco · enmascara PII</option>
+            <option value="directo" selected>directo · crudo</option>
+            <option value="opaco">opaco · enmascara PII</option>
             <option value="reversible">reversible · enmascara y re-hidrata</option>
-            <option value="directo">directo · crudo</option>
           </select>
-          <p class="help" id="privacy-help">Reemplaza la PII por «PERSONA_1», «CUIT_2»…</p>
+          <p class="help" id="privacy-help">Contenido crudo, sin enmascarar. Enmascarar es opcional.</p>
         </div>
         <div class="field">
           <label for="output_format">Salida</label>
@@ -618,6 +689,38 @@
   </footer>
 </div>
 
+<!-- Modal de descarga (detección de media) -->
+<div class="dl-back hidden" id="dlmodal">
+  <div class="dl-card" role="dialog" aria-modal="true" aria-label="Descargar media">
+    <button type="button" class="dl-x" id="dl-close" aria-label="Cerrar">
+      <svg class="ico" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+    <div class="dl-hero" id="dl-hero"></div>
+    <div class="dl-info">
+      <span class="dl-kind" id="dl-kind"></span>
+      <span class="dl-url" id="dl-url"></span>
+    </div>
+    <div class="dl-options" id="dl-options"></div>
+    <button type="button" class="dl-scrape" id="dl-scrape">
+      <svg class="ico" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+      o scrapear la página como texto
+    </button>
+  </div>
+</div>
+
+<!-- Modal de aviso (confirmación para cosas frágiles/riesgosas) -->
+<div class="dl-back hidden" id="warnmodal">
+  <div class="warn-card" role="alertdialog" aria-modal="true">
+    <div class="warn-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
+    <h3 class="warn-title" id="warn-title"></h3>
+    <p class="warn-body" id="warn-body"></p>
+    <div class="warn-row">
+      <button type="button" class="dl-btn" id="warn-cancel">Cancelar</button>
+      <button type="button" class="dl-btn primary" id="warn-ok">Continuar igual</button>
+    </div>
+  </div>
+</div>
+
 <!-- Editor modal: Markdown · JSON · Tabla -->
 <div class="ed-back hidden" id="editor">
   <div class="ed-modal" role="dialog" aria-modal="true" aria-label="Editor del resultado">
@@ -683,6 +786,12 @@ const btn = document.getElementById("submit-btn");
 const roleBadge = document.getElementById("roleBadge");
 let polling = null;
 let CAPS = null;
+let DLMODE = "both";   // FILE_DOWNLOAD_MODE: both|direct|proxy|off (lo dice /api/me)
+let VIDEO_DL = false;  // ¿hay yt-dlp + rol con permiso? → botón "Descargar video" en embeds
+let FFMPEG_OK = false; // ¿hay ffmpeg en el server? → HD real + mp3 (si no, 360p y audio nativo)
+let GALLERY_DL = false; // ¿hay gallery-dl + rol con permiso? → botón "Descargar galería"
+let IG_DATA = false;    // ¿hay instaloader + IG_SESSIONID + dios? → datos de Instagram
+let COMMENTS_DL = false; // ¿rol con permiso? → comentarios (Reddit/YouTube/X/TikTok)
 
 /* ---------- tema (íconos SVG, claro por defecto · ecosistema) ---------- */
 const themeBtn = document.getElementById("themeBtn");
@@ -764,6 +873,18 @@ function applyCaps(role, caps, authEnabled) {
   });
 }
 
+// Modos de privacidad permitidos por el rol: deshabilita los prohibidos y, si el
+// seleccionado (directo por defecto) no está habilitado, cae al mejor permitido.
+function applyAllowedModes(modes) {
+  if (!Array.isArray(modes) || !modes.length) return;
+  const sel = document.getElementById("privacy_mode");
+  [...sel.options].forEach(o => { o.disabled = !modes.includes(o.value); });
+  if (!modes.includes(sel.value)) {
+    sel.value = modes.includes("opaco") ? "opaco" : modes[0];
+    sel.dispatchEvent(new Event("change"));
+  }
+}
+
 function showLogin() { gate.classList.remove("hidden"); loginForm.classList.remove("hidden"); }
 async function checkSession() {
   try {
@@ -771,7 +892,14 @@ async function checkSession() {
     if (r.status === 401) { showLogin(); return; }
     const d = await r.json();
     gate.classList.add("hidden");          // hay sesión → revelar la app (sin flash de login)
+    if (d.download_mode) DLMODE = d.download_mode;
+    VIDEO_DL = !!d.video_download;
+    FFMPEG_OK = !!d.ffmpeg;
+    GALLERY_DL = !!d.gallery_download;
+    IG_DATA = !!d.instagram_data;
+    COMMENTS_DL = !!d.comments_download;
     applyCaps(d.role, d.caps, d.auth_enabled);
+    applyAllowedModes(d.allowed_modes);
   } catch (e) { showLogin(); }
 }
 
@@ -1113,7 +1241,229 @@ function render(sobre) {
     html += `<details class="links"><summary>${m.hyperlinks_total} hipervínculos recuperados</summary>` +
       `<div class="eplist">` + links.slice(0, 200).map(u => `<a class="ep" href="${escapeHtml(u)}" target="_blank" rel="noopener">${escapeHtml(u)}</a>`).join("") + `</div></details>`;
   }
+  // Archivos y media descargables
+  html += renderFiles(m.files);
   bodyEl.innerHTML = html;
+}
+
+/* ---------- Archivos y media (manifiesto descargable) ---------- */
+const FILE_CATS = [
+  ["document", "Documentos", `<svg class="ico" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>`],
+  ["archive",  "Comprimidos", `<svg class="ico" viewBox="0 0 24 24"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></svg>`],
+  ["audio",    "Audio", `<svg class="ico" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>`],
+  ["video",    "Video", `<svg class="ico" viewBox="0 0 24 24"><path d="m23 7-7 5 7 5zM1 5h15v14H1z"/></svg>`],
+  ["image",    "Imágenes", `<svg class="ico" viewBox="0 0 24 24"><path d="M3 3h18v18H3z"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>`],
+  ["embed",    "Embebidos", `<svg class="ico" viewBox="0 0 24 24"><path d="m16 18 6-6-6-6M8 6l-6 6 6 6"/></svg>`],
+];
+const DL_ICO = `<svg class="ico" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>`;
+const EXT_ICO = `<svg class="ico" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3"/></svg>`;
+const MUSIC_ICO = `<svg class="ico" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>`;
+const GAL_ICO = `<svg class="ico" viewBox="0 0 24 24"><path d="M3 3h18v18H3z"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>`;
+const CHAT_ICO = `<svg class="ico" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`;
+const USERS_ICO = `<svg class="ico" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>`;
+
+function renderFiles(files) {
+  if (!files || DLMODE === "off") return "";
+  const total = files.total || 0;
+  if (!total) return "";
+  const masked = !!files.masked;
+  const direct = (DLMODE === "both" || DLMODE === "direct") && !masked;
+  const viaFb = (DLMODE === "both" || DLMODE === "proxy") && !masked;
+
+  let body = "";
+  const zipUrls = [];
+  for (const [key, label, ico] of FILE_CATS) {
+    const items = files[key] || [];
+    if (!items.length) continue;
+    const isEmbed = key === "embed";
+    const collapsed = key === "image" || items.length > 12;   // imágenes y listas largas: plegadas
+    const rows = items.map(it => {
+      const nm = escapeHtml(it.name || it.url);
+      const ext = it.ext ? `<span class="fx">${escapeHtml(it.ext)}</span>` : "";
+      const via = it.via ? `<span class="fvia" title="origen">${escapeHtml(it.via)}</span>` : "";
+      if (masked) return `<div class="frow"><span class="fname">${nm}</span>${ext}${via}<span class="fmask">enmascarado</span></div>`;
+      const safeUrl = escapeHtml(it.url);
+      let actions = `<a class="fbtn ghost" href="${safeUrl}" target="_blank" rel="noopener" title="Abrir en pestaña">${EXT_ICO}</a>`;
+      if (isEmbed && VIDEO_DL && it.dl_video) {
+        const u = encodeURIComponent(it.url);
+        const hd = FFMPEG_OK ? "" : " title=\"Sin ffmpeg en el server: el video baja en ~360p\"";
+        actions += `<select class="qsel"${hd}><option value="best">Mejor</option><option value="1080">1080p</option><option value="720">720p</option><option value="480">480p</option><option value="360">360p</option></select>`;
+        actions += `<button class="fbtn alt" onclick="dlMedia('${u}', this, false)" title="Descargar el video (mp4)">${DL_ICO}<span>Video</span></button>`;
+        const mp3t = FFMPEG_OK ? "Bajar solo el audio (mp3)" : "Sin ffmpeg: baja el audio en formato nativo (m4a)";
+        actions += `<button class="fbtn" onclick="dlMedia('${u}', this, true)" title="${mp3t}">${MUSIC_ICO}<span>MP3</span></button>`;
+      }
+      if (isEmbed && GALLERY_DL && it.dl_gallery)
+        actions += `<button class="fbtn alt" onclick="dlGallery('${encodeURIComponent(it.url)}', this)" title="Descargar las imágenes (ZIP)">${GAL_ICO}<span>Descargar galería</span></button>`;
+      if (!isEmbed && direct) actions += `<a class="fbtn" href="${safeUrl}" download="${escapeHtml(it.name || '')}" title="Descarga directa">${DL_ICO}<span>Directo</span></a>`;
+      if (!isEmbed && viaFb) {
+        actions += `<button class="fbtn alt" onclick="dlVia('${encodeURIComponent(it.url)}')" title="Bajar a través de Fisherboy">${DL_ICO}<span>Fisherboy</span></button>`;
+        zipUrls.push(it.url);
+      }
+      return `<div class="frow"><span class="fname">${nm}</span>${ext}${via}<span class="facts">${actions}</span></div>`;
+    }).join("");
+    body += `<details class="fcat"${collapsed ? "" : " open"}><summary>${ico}<b>${label}</b><span class="fcount">${items.length}</span></summary><div class="flist">${rows}</div></details>`;
+  }
+
+  let head = `<div class="flabel">Archivos y media${masked ? ' · <span class="fmask">URLs enmascaradas (modo opaco/reversible)</span>' : ""}</div>`;
+  let zipBtn = "";
+  if (viaFb && zipUrls.length > 1) {
+    window.__zipUrls = zipUrls;
+    zipBtn = `<button class="fbtn alt zipall" onclick="dlZipAll()">${DL_ICO}<span>Descargar todo (ZIP · ${zipUrls.length})</span></button>`;
+  }
+  return `<div class="files-panel">${head}${zipBtn}${body}</div>`;
+}
+
+function dlVia(encodedUrl) {
+  const a = document.createElement("a");
+  a.href = "/api/download?url=" + encodedUrl;
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
+async function dlMedia(encodedUrl, btn, audio) {
+  const prev = btn ? btn.innerHTML : "";
+  const ico = audio ? MUSIC_ICO : DL_ICO;
+  if (btn) { btn.disabled = true; btn.innerHTML = `${ico}<span>${audio ? "Bajando audio…" : "Bajando video…"}</span>`; }
+  try {
+    let q = "best";
+    const sel = btn && btn.parentElement && btn.parentElement.querySelector(".qsel");
+    if (sel) q = sel.value || "best";
+    let url = "/api/download/video?url=" + encodedUrl + "&quality=" + encodeURIComponent(q);
+    if (audio) url += "&audio=true";
+    const r = await fetch(url);
+    if (!r.ok) { let d = {}; try { d = await r.json(); } catch (e) {} throw new Error(d.detail || "no se pudo bajar"); }
+    const blob = await r.blob();
+    const cd = r.headers.get("content-disposition") || "";
+    const m = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(cd);
+    const name = m ? decodeURIComponent(m[1]) : (audio ? "audio.mp3" : "video.mp4");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  } catch (e) {
+    alert((audio ? "Descarga de audio: " : "Descarga de video: ") + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = prev; }
+  }
+}
+
+function _toCsv(items) {
+  if (!items.length) return "";
+  const cols = Object.keys(items[0]);
+  const esc = v => { const s = String(v == null ? "" : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  return cols.join(",") + "\n" + items.map(r => cols.map(c => esc(r[c])).join(",")).join("\n");
+}
+function _downloadBlob(content, type, name) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([content], { type })); a.download = name;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+async function dlInstagram(encodedUrl, btn, kind) {
+  const prev = btn ? btn.innerHTML : "";
+  const ico = kind === "comments" ? CHAT_ICO : USERS_ICO;
+  if (btn) { btn.disabled = true; btn.innerHTML = `${ico}<span>Trayendo…</span>`; }
+  try {
+    const ep = kind === "comments" ? "/api/instagram/comments?url=" + encodedUrl
+      : "/api/instagram/follows?which=" + kind + "&url=" + encodedUrl;
+    const r = await fetch(ep);
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.detail || "no se pudo traer");
+    const items = d.items || [];
+    if (!items.length) { alert("No vino ningún dato (¿privado o sin permiso?)."); return; }
+    const base = "instagram-" + kind + "-" + items.length;
+    _downloadBlob(_toCsv(items), "text/csv", base + ".csv");
+    _downloadBlob(JSON.stringify(items, null, 2), "application/json", base + ".json");
+  } catch (e) {
+    alert("Instagram: " + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = prev; }
+  }
+}
+
+// Modal de aviso genérico (confirmar antes de algo frágil/riesgoso).
+const warnModalEl = document.getElementById("warnmodal");
+let _warnOk = null;
+function warnModal(title, body, onOk) {
+  document.getElementById("warn-title").textContent = title;
+  document.getElementById("warn-body").textContent = body;
+  _warnOk = onOk; warnModalEl.classList.remove("hidden");
+}
+function closeWarn() { warnModalEl.classList.add("hidden"); _warnOk = null; }
+document.getElementById("warn-cancel").addEventListener("click", closeWarn);
+document.getElementById("warn-ok").addEventListener("click", () => { const f = _warnOk; closeWarn(); if (f) f(); });
+warnModalEl.addEventListener("click", (e) => { if (e.target === warnModalEl) closeWarn(); });
+window.addEventListener("keydown", (e) => { if (e.key === "Escape" && !warnModalEl.classList.contains("hidden")) closeWarn(); });
+
+// Seguidores/seguidos de IG: confirma primero (riesgo de cuenta).
+function igFollows(u, btn, which) {
+  warnModal("Bajar " + (which === "followees" ? "seguidos" : "seguidores"),
+    "Instagram vigila fuerte esta operación y puede limitar o marcar tu cuenta si abusás. Se baja de a tandas. ¿Seguir igual?",
+    () => dlInstagram(u, btn, which));
+}
+
+// Comentarios: si la plataforma es experimental, avisa antes.
+function dlComments(u, btn, experimental) {
+  const run = () => _fetchComments(u, btn);
+  if (experimental) warnModal("Comentarios experimentales",
+    "X y TikTok cerraron/limitaron sus APIs y cambian seguido; esto puede no traer nada o fallar. ¿Probar igual?", run);
+  else run();
+}
+async function _fetchComments(encodedUrl, btn) {
+  const prev = btn ? btn.innerHTML : "";
+  if (btn) { btn.disabled = true; btn.innerHTML = `${CHAT_ICO}<span>Trayendo…</span>`; }
+  try {
+    const r = await fetch("/api/comments?url=" + encodedUrl);
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.detail || "no se pudo traer");
+    const items = d.items || [];
+    if (!items.length) { alert("No vino ningún comentario (¿sin comentarios, privado, o la plataforma cambió?)."); return; }
+    const base = "comentarios-" + (d.platform || "x") + "-" + items.length;
+    _downloadBlob(_toCsv(items), "text/csv", base + ".csv");
+    _downloadBlob(JSON.stringify(items, null, 2), "application/json", base + ".json");
+  } catch (e) { alert("Comentarios: " + e.message); }
+  finally { if (btn) { btn.disabled = false; btn.innerHTML = prev; } }
+}
+
+async function dlGallery(encodedUrl, btn) {
+  const prev = btn ? btn.innerHTML : "";
+  if (btn) { btn.disabled = true; btn.innerHTML = `${GAL_ICO}<span>Bajando galería…</span>`; }
+  try {
+    const r = await fetch("/api/download/gallery?url=" + encodedUrl);
+    if (!r.ok) { let d = {}; try { d = await r.json(); } catch (e) {} throw new Error(d.detail || "no se pudo bajar"); }
+    const blob = await r.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = "fisherboy-galeria.zip";
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  } catch (e) {
+    alert("Descarga de galería: " + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = prev; }
+  }
+}
+
+async function dlZipAll() {
+  const urls = window.__zipUrls || [];
+  if (!urls.length) return;
+  const btn = document.querySelector(".zipall");
+  const prev = btn ? btn.innerHTML : "";
+  if (btn) { btn.disabled = true; btn.innerHTML = `${DL_ICO}<span>Empaquetando…</span>`; }
+  try {
+    const r = await fetch("/api/download/zip", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ urls }),
+    });
+    if (!r.ok) { let d = {}; try { d = await r.json(); } catch (e) {} throw new Error(d.detail || "no se pudo armar el ZIP"); }
+    const blob = await r.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = "fisherboy-archivos.zip";
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  } catch (e) {
+    alert("ZIP: " + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = prev; }
+  }
 }
 
 async function poll(jobId) {
@@ -1134,8 +1484,119 @@ async function poll(jobId) {
   }
 }
 
-form.addEventListener("submit", async (ev) => {
+/* ===== Detección de media + modal de descarga ===== */
+const DL_VIDEO_HOSTS = ["youtube.com","youtu.be","youtube-nocookie.com","vimeo.com","dailymotion.com","dai.ly","twitch.tv","tiktok.com","twitter.com","x.com","facebook.com","fb.watch","instagram.com","soundcloud.com","bandcamp.com","streamable.com","rumble.com","odysee.com"];
+const DL_GALLERY_HOSTS = ["instagram.com","twitter.com","x.com","nitter.net","reddit.com","redd.it","pinterest.com","pin.it","tumblr.com","flickr.com","deviantart.com","imgur.com","artstation.com","behance.net","weibo.com","vk.com","500px.com"];
+const PROVIDER_NAMES = { "youtube.com":"YouTube","youtu.be":"YouTube","youtube-nocookie.com":"YouTube","vimeo.com":"Vimeo","dailymotion.com":"Dailymotion","dai.ly":"Dailymotion","twitch.tv":"Twitch","tiktok.com":"TikTok","twitter.com":"X (Twitter)","x.com":"X (Twitter)","facebook.com":"Facebook","fb.watch":"Facebook","instagram.com":"Instagram","soundcloud.com":"SoundCloud","bandcamp.com":"Bandcamp","streamable.com":"Streamable","rumble.com":"Rumble","odysee.com":"Odysee","reddit.com":"Reddit","redd.it":"Reddit","pinterest.com":"Pinterest","pin.it":"Pinterest","tumblr.com":"Tumblr","flickr.com":"Flickr","deviantart.com":"DeviantArt","imgur.com":"Imgur","artstation.com":"ArtStation","behance.net":"Behance","weibo.com":"Weibo","vk.com":"VK","500px.com":"500px","nitter.net":"Nitter" };
+function _hostMatches(host, list) { return list.some(h => host === h || host.endsWith("." + h)); }
+function _providerName(host) {
+  for (const h in PROVIDER_NAMES) if (host === h || host.endsWith("." + h)) return PROVIDER_NAMES[h];
+  return host.replace(/^www\./, "");
+}
+function _youtubeId(url) {
+  const m = url.match(/(?:youtube(?:-nocookie)?\.com\/(?:watch\?v=|embed\/|shorts\/|live\/)|youtu\.be\/)([\w-]{11})/);
+  return m ? m[1] : null;
+}
+const IG_RESERVED = ["p","reel","reels","tv","explore","stories","accounts","direct","about","developer","legal","directory"];
+function _igKind(rawUrl, host) {
+  if (!(host === "instagram.com" || host.endsWith(".instagram.com"))) return null;
+  let segs = []; try { segs = new URL(rawUrl).pathname.split("/").filter(Boolean); } catch (e) { return null; }
+  if (!segs.length) return null;
+  if (["p","reel","reels","tv"].includes(segs[0])) return "post";
+  if (IG_RESERVED.includes(segs[0])) return null;
+  return "profile";
+}
+const CMT_RELIABLE = { "youtube.com":1,"youtu.be":1 };
+const CMT_EXPERIMENTAL = { "reddit.com":1,"redd.it":1,"twitter.com":1,"x.com":1,"tiktok.com":1 };
+function _commentPlatform(host) {
+  for (const h in CMT_RELIABLE) if (host === h || host.endsWith("." + h)) return { plat: h, exp: false };
+  for (const h in CMT_EXPERIMENTAL) if (host === h || host.endsWith("." + h)) return { plat: h, exp: true };
+  return null;
+}
+function detectMedia(rawUrl) {
+  let host = ""; try { host = new URL(rawUrl).hostname.toLowerCase(); } catch (e) { return null; }
+  const isVideo = _hostMatches(host, DL_VIDEO_HOSTS);
+  const isGallery = _hostMatches(host, DL_GALLERY_HOSTS);
+  if (!isVideo && !isGallery) return null;
+  const ytId = _youtubeId(rawUrl);
+  const cmt = _commentPlatform(host);
+  return { url: rawUrl, name: _providerName(host), isVideo, isGallery, ytId,
+           igKind: _igKind(rawUrl, host),
+           comments: !!cmt, commentsExp: cmt ? cmt.exp : false,
+           thumb: ytId ? `https://i.ytimg.com/vi/${ytId}/hqdefault.jpg` : null };
+}
+
+const dlModal = document.getElementById("dlmodal");
+function dlHeroFallback(img) { const h = img.parentElement; h.innerHTML = h.dataset.glyph || ""; }
+function closeDlModal() { dlModal.classList.add("hidden"); }
+function openMediaModal(d) {
+  const canVideo = d.isVideo && VIDEO_DL;
+  const canGallery = d.isGallery && GALLERY_DL;
+  // Hero: thumbnail de YouTube si lo hay, si no un glifo de la plataforma.
+  const hero = document.getElementById("dl-hero");
+  const glyph = (canGallery && !canVideo)
+    ? `<svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>`
+    : `<svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m23 7-7 5 7 5zM1 5h15v14H1z"/></svg>`;
+  if (d.thumb) hero.innerHTML = `<img src="${escapeHtml(d.thumb)}" alt="" onerror="dlHeroFallback(this)">`;
+  else hero.innerHTML = glyph;
+  hero.dataset.glyph = glyph;
+  const kindTxt = (canVideo && canGallery) ? `Media de ${d.name}`
+    : canVideo ? `Video de ${d.name}` : `Galería de ${d.name}`;
+  document.getElementById("dl-kind").textContent = kindTxt;
+  document.getElementById("dl-url").textContent = d.url;
+
+  const u = encodeURIComponent(d.url);
+  let opt = "";
+  if (canVideo) {
+    const hd = FFMPEG_OK ? "" : " title=\"Sin ffmpeg en el server: baja ~360p\"";
+    const mp3t = FFMPEG_OK ? "Solo el audio en mp3" : "Sin ffmpeg: audio en formato nativo";
+    opt += `<div class="dl-opt"><span class="dl-opt-label">Video</span><div class="dl-row">
+      <select class="dl-qsel qsel"${hd}><option value="best">Mejor calidad</option><option value="1080">1080p</option><option value="720">720p</option><option value="480">480p</option><option value="360">360p</option></select>
+      <button class="dl-btn primary" onclick="dlMedia('${u}', this, false)">${DL_ICO}<span>Descargar video</span></button>
+      <button class="dl-btn" onclick="dlMedia('${u}', this, true)" title="${mp3t}">${MUSIC_ICO}<span>MP3</span></button>
+    </div></div>`;
+  }
+  if (canGallery) {
+    opt += `<div class="dl-opt"><span class="dl-opt-label">Imágenes</span><div class="dl-row">
+      <button class="dl-btn primary" onclick="dlGallery('${u}', this)">${GAL_ICO}<span>Descargar galería (ZIP)</span></button>
+    </div><span class="dl-note">Si el contenido es privado/gateado, cargá tus cookies de sesión en Opciones avanzadas.</span></div>`;
+  }
+  if (IG_DATA && d.igKind === "post") {
+    opt += `<div class="dl-opt"><span class="dl-opt-label">Datos del post</span><div class="dl-row">
+      <button class="dl-btn" onclick="dlInstagram('${u}', this, 'comments')">${CHAT_ICO}<span>Comentarios</span></button>
+    </div></div>`;
+  }
+  if (IG_DATA && d.igKind === "profile") {
+    opt += `<div class="dl-opt"><span class="dl-opt-label">Datos del perfil</span><div class="dl-row">
+      <button class="dl-btn" onclick="igFollows('${u}', this, 'followers')">${USERS_ICO}<span>Seguidores</span></button>
+      <button class="dl-btn" onclick="igFollows('${u}', this, 'followees')">${USERS_ICO}<span>Seguidos</span></button>
+    </div><span class="dl-note">Instagram vigila esto: va a cuentagotas. Puede marcar tu cuenta si abusás.</span></div>`;
+  }
+  if (COMMENTS_DL && d.comments) {
+    const tag = d.commentsExp ? " (experimental)" : "";
+    opt += `<div class="dl-opt"><span class="dl-opt-label">Comentarios</span><div class="dl-row">
+      <button class="dl-btn" onclick="dlComments('${u}', this, ${d.commentsExp})">${CHAT_ICO}<span>Comentarios${tag}</span></button>
+    </div>${d.commentsExp ? '<span class="dl-note">X y TikTok cambian seguido y cerraron sus APIs: esto es experimental y puede no traer nada.</span>' : ''}</div>`;
+  }
+  document.getElementById("dl-options").innerHTML = opt;
+  dlModal.classList.remove("hidden");
+}
+dlModal.addEventListener("click", (e) => { if (e.target === dlModal) closeDlModal(); });
+document.getElementById("dl-close").addEventListener("click", closeDlModal);
+document.getElementById("dl-scrape").addEventListener("click", () => { closeDlModal(); runScrape(); });
+window.addEventListener("keydown", (e) => { if (e.key === "Escape" && !dlModal.classList.contains("hidden")) closeDlModal(); });
+
+form.addEventListener("submit", (ev) => {
   ev.preventDefault();
+  const media = detectMedia(form.url.value.trim());
+  if (media && ((media.isVideo && VIDEO_DL) || (media.isGallery && GALLERY_DL))) {
+    openMediaModal(media);
+    return;
+  }
+  runScrape();
+});
+
+async function runScrape() {
   if (polling) clearInterval(polling);
   btn.disabled = true; document.getElementById("btn-label").textContent = "Lanzando…";
   wrap.classList.remove("hidden");
@@ -1187,7 +1648,7 @@ form.addEventListener("submit", async (ev) => {
     pill.innerHTML = statusPill("error");
     bodyEl.innerHTML = `<div class="err-box">${escapeHtml(e.message)}</div>`;
   }
-});
+}
 
 /* ================= Editor modal (Markdown · JSON · Tabla) ================= */
 const ED = { tab: "md", preview: true, src: {}, tableArr: null, cols: [] };

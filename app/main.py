@@ -14,7 +14,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from .config import Settings, get_settings
@@ -36,6 +36,11 @@ class LoginRequest(BaseModel):
 
 class ProxyTestRequest(BaseModel):
     proxy: str
+
+
+class DownloadZipRequest(BaseModel):
+    urls: list[str]
+    name: str | None = None
 
 
 def create_app(
@@ -92,7 +97,8 @@ def create_app(
 
     @app.get("/healthz")
     async def healthz():
-        return {"status": "ok", "app_mode": settings.app_mode.value, "version": "1.0.0"}
+        return {"status": "ok", "app_mode": settings.app_mode.value, "version": "1.0.0",
+                "download_mode": settings.file_download_mode}
 
     # --- Auth (espejo de Escriba): login por rol, cookie + Bearer ---------------
     @app.post("/api/login")
@@ -118,7 +124,20 @@ def create_app(
         role = auth.role_from_request(request)
         if role is None:
             raise HTTPException(status_code=401, detail="Necesitás iniciar sesión.")
-        return {"role": role, "caps": auth.caps_for(role), "auth_enabled": auth.auth_enabled()}
+        from .net import gallery, instagram, media
+        proxy_modes = settings.file_download_mode in ("both", "proxy")
+        can_capture = bool(auth.caps_for(role).get("capture"))
+        video_ok = proxy_modes and media.ytdlp_available() and can_capture
+        gallery_ok = proxy_modes and gallery.gallerydl_available() and can_capture
+        ig_ok = (proxy_modes and role == "dios" and instagram.instaloader_available()
+                 and bool(settings.ig_sessionid))
+        allowed_modes = sorted(m.value for m in app.state.policy.allowed_modes(Rol(role)))
+        return {"role": role, "caps": auth.caps_for(role), "auth_enabled": auth.auth_enabled(),
+                "download_mode": settings.file_download_mode,
+                "video_download": video_ok, "ffmpeg": media.ffmpeg_available(),
+                "gallery_download": gallery_ok, "instagram_data": ig_ok,
+                "comments_download": proxy_modes and can_capture,
+                "allowed_modes": allowed_modes, "default_mode": app.state.policy._default.value}
 
     def _effective_role(request: Request, body_rol, session: str | None = None) -> str:
         """Rol de sesión; si el body pide un rol IGUAL o MENOR, se respeta (downgrade).
@@ -315,6 +334,324 @@ def create_app(
             return {"ok": False, "error": f"falló por el proxy ({type(e).__name__})"}
         except Exception as e:  # noqa: BLE001
             return {"ok": False, "error": f"falló la prueba ({type(e).__name__})"}
+
+    # --- Descarga de archivos vía Fisherboy (proxy stream) ----------------------
+    def _download_enabled() -> None:
+        if settings.file_download_mode in ("off", "direct"):
+            raise HTTPException(status_code=403,
+                                detail="La descarga vía Fisherboy está deshabilitada (FILE_DOWNLOAD_MODE).")
+
+    @app.get("/api/download")
+    async def download(request: Request, url: str):
+        """Baja un archivo remoto a través de Fisherboy (stream SSRF-seguro, tope de tamaño).
+
+        Útil para hotlink-protection o para usar el egress del server. Gateado a sesión
+        y rate-limited. La URL se valida contra la denylist SSRF en cada salto."""
+        role, _ = auth.identity_from_request(request)
+        if role is None:
+            raise HTTPException(status_code=401, detail="Necesitás iniciar sesión.")
+        _download_enabled()
+        client_ip = request.client.host if request.client else "?"
+        if not ratelimit.allow(_queue()._r, f"dl:{client_ip}", limit=settings.max_jobs_per_min):
+            raise HTTPException(status_code=429, detail="Demasiadas descargas; probá en un minuto.")
+
+        from .fetchers.base import FetchError
+        from .net.download import open_stream, safe_filename
+        from .security.ssrf import SSRFError
+        try:
+            dl_client, resp = open_stream(url, allow_private=settings.allow_private_targets,
+                                          timeout_s=settings.fetch_timeout_s)
+        except SSRFError as e:
+            raise HTTPException(status_code=400, detail=f"URL no permitida: {e}")
+        except FetchError as e:
+            raise HTTPException(status_code=502, detail=str(e))
+
+        ctype = resp.headers.get("content-type", "application/octet-stream")
+        clen = resp.headers.get("content-length")
+        if clen and clen.isdigit() and int(clen) > settings.download_max_bytes:
+            resp.close()
+            dl_client.close()
+            raise HTTPException(status_code=413,
+                                detail=f"El archivo supera el límite de {settings.download_max_bytes} bytes.")
+        fname = safe_filename(url, resp.headers.get("content-disposition", ""), ctype)
+        cap = settings.download_max_bytes
+
+        def _gen():
+            total = 0
+            try:
+                for chunk in resp.iter_bytes():
+                    total += len(chunk)
+                    if total > cap:
+                        break   # corta el stream si excede el tope (sin content-length previo)
+                    yield chunk
+            finally:
+                resp.close()
+                dl_client.close()
+
+        from urllib.parse import quote
+        disp = f"attachment; filename*=UTF-8''{quote(fname)}"
+        return StreamingResponse(_gen(), media_type=ctype, headers={"Content-Disposition": disp})
+
+    @app.post("/api/download/zip")
+    async def download_zip(req: DownloadZipRequest, request: Request):
+        """Empaqueta varios archivos remotos en un ZIP (a memoria, con tope total)."""
+        role, _ = auth.identity_from_request(request)
+        if role is None:
+            raise HTTPException(status_code=401, detail="Necesitás iniciar sesión.")
+        _download_enabled()
+        client_ip = request.client.host if request.client else "?"
+        if not ratelimit.allow(_queue()._r, f"dlzip:{client_ip}", limit=settings.max_jobs_per_min):
+            raise HTTPException(status_code=429, detail="Demasiadas descargas; probá en un minuto.")
+        urls = [u for u in (req.urls or []) if isinstance(u, str) and u.strip()][:100]
+        if not urls:
+            raise HTTPException(status_code=400, detail="No hay URLs para empaquetar.")
+
+        import io
+        import zipfile
+
+        from .fetchers.base import FetchError
+        from .net.download import fetch_bytes
+        from .security.ssrf import SSRFError
+
+        buf = io.BytesIO()
+        budget = settings.download_max_bytes
+        used = 0
+        added = 0
+        seen_names: set[str] = set()
+        errors: list[str] = []
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for u in urls:
+                remaining = budget - used
+                if remaining <= 0:
+                    errors.append("tope total alcanzado")
+                    break
+                try:
+                    data, name, _ct = fetch_bytes(
+                        u, max_bytes=remaining,
+                        allow_private=settings.allow_private_targets,
+                        timeout_s=settings.fetch_timeout_s)
+                except (SSRFError, FetchError) as e:
+                    errors.append(f"{u}: {e}")
+                    continue
+                used += len(data)
+                base = name or "archivo"
+                final = base
+                i = 1
+                while final in seen_names:   # evita colisiones de nombre en el zip
+                    stem, dot, ext = base.rpartition(".")
+                    final = f"{stem}_{i}.{ext}" if dot else f"{base}_{i}"
+                    i += 1
+                seen_names.add(final)
+                zf.writestr(final, data)
+                added += 1
+            if added == 0:
+                raise HTTPException(status_code=502,
+                                    detail="No se pudo bajar ningún archivo. " + (errors[0] if errors else ""))
+        buf.seek(0)
+        headers = {"Content-Disposition": "attachment; filename=fisherboy-archivos.zip"}
+        return StreamingResponse(iter([buf.getvalue()]), media_type="application/zip", headers=headers)
+
+    @app.get("/api/download/video")
+    async def download_video(request: Request, url: str, quality: str = "best", audio: bool = False):
+        """Baja un video (mp4) o solo el audio (mp3) de YouTube/Vimeo/etc. con yt-dlp.
+
+        `quality`: 'best' o altura ('1080','720','480','360'); el server la capa a
+        VIDEO_MAX_HEIGHT. `audio=true`: solo audio (mp3 si hay ffmpeg, si no nativo).
+        Fisherboy standalone, sin Escriba. Gateado a rol con capacidad (ángel/dios),
+        rate-limited, y la URL se restringe a plataformas conocidas (no es un proxy
+        genérico). Tope de tamaño por formato. ffmpeg opcional (HD + mp3)."""
+        role, _ = auth.identity_from_request(request)
+        if role is None:
+            raise HTTPException(status_code=401, detail="Necesitás iniciar sesión.")
+        if not auth.caps_for(role).get("capture"):   # ángel/dios (operación cara)
+            raise HTTPException(status_code=403, detail=f"Tu rol '{role}' no habilita descargar video.")
+        _download_enabled()
+        from .net import media
+        if not media.ytdlp_available():
+            raise HTTPException(status_code=503, detail="yt-dlp no está instalado en el servidor.")
+        if not media.host_allowed(url):
+            raise HTTPException(status_code=400,
+                                detail="Solo se pueden bajar videos de plataformas conocidas (YouTube, Vimeo, etc.).")
+        client_ip = request.client.host if request.client else "?"
+        if not ratelimit.allow(_queue()._r, f"dlvid:{client_ip}", limit=settings.max_jobs_per_min):
+            raise HTTPException(status_code=429, detail="Demasiadas descargas; probá en un minuto.")
+
+        import shutil
+        import tempfile
+
+        from starlette.concurrency import run_in_threadpool
+
+        quality = quality if quality in media.QUALITIES else "best"
+        tmpdir = tempfile.mkdtemp(prefix="fbvid_")
+        try:
+            path, name = await run_in_threadpool(
+                media.download_video, url, tmpdir=tmpdir,
+                max_bytes=settings.download_max_bytes, max_height=settings.video_max_height,
+                quality=quality, audio_only=bool(audio),
+                proxy=settings.yt_proxy, cookiefile=settings.yt_cookies,
+                timeout_s=int(settings.fetch_timeout_s),
+            )
+        except Exception as e:  # noqa: BLE001 — yt-dlp lanza tipos varios
+            shutil.rmtree(tmpdir, ignore_errors=True)
+            reason = str(e).splitlines()[0][:160] if str(e) else type(e).__name__
+            raise HTTPException(status_code=502, detail=f"No se pudo bajar: {reason}")
+
+        def _gen():
+            try:
+                with open(path, "rb") as fh:
+                    while True:
+                        chunk = fh.read(65536)
+                        if not chunk:
+                            break
+                        yield chunk
+            finally:
+                shutil.rmtree(tmpdir, ignore_errors=True)
+
+        import mimetypes
+        from urllib.parse import quote
+        ctype = mimetypes.guess_type(name)[0] or ("audio/mpeg" if audio else "video/mp4")
+        disp = f"attachment; filename*=UTF-8''{quote(name)}"
+        return StreamingResponse(_gen(), media_type=ctype,
+                                 headers={"Content-Disposition": disp})
+
+    @app.get("/api/download/gallery")
+    async def download_gallery(request: Request, url: str):
+        """Baja las imágenes/galería de Instagram/X/Reddit/etc. con gallery-dl → ZIP.
+
+        Gemelo del de video. Gateado a rol con capacidad (ángel/dios), rate-limited, y la
+        URL se restringe a plataformas conocidas. Tope de cantidad y de bytes total."""
+        role, _ = auth.identity_from_request(request)
+        if role is None:
+            raise HTTPException(status_code=401, detail="Necesitás iniciar sesión.")
+        if not auth.caps_for(role).get("capture"):   # ángel/dios
+            raise HTTPException(status_code=403, detail=f"Tu rol '{role}' no habilita descargar galerías.")
+        _download_enabled()
+        from .net import gallery
+        if not gallery.gallerydl_available():
+            raise HTTPException(status_code=503, detail="gallery-dl no está instalado en el servidor.")
+        if not gallery.gallery_host_allowed(url):
+            raise HTTPException(status_code=400,
+                                detail="Solo se pueden bajar galerías de plataformas conocidas (Instagram, X, Reddit, etc.).")
+        client_ip = request.client.host if request.client else "?"
+        if not ratelimit.allow(_queue()._r, f"dlgal:{client_ip}", limit=settings.max_jobs_per_min):
+            raise HTTPException(status_code=429, detail="Demasiadas descargas; probá en un minuto.")
+
+        import io
+        import os
+        import shutil
+        import tempfile
+        import zipfile
+
+        from starlette.concurrency import run_in_threadpool
+
+        tmpdir = tempfile.mkdtemp(prefix="fbgal_")
+        try:
+            files = await run_in_threadpool(
+                gallery.download_gallery, url, tmpdir=tmpdir, max_files=50,
+                proxy=settings.yt_proxy, cookiefile=settings.yt_cookies,
+                timeout_s=max(60, int(settings.fetch_timeout_s) * 6),
+            )
+            buf = io.BytesIO()
+            budget = settings.download_max_bytes
+            used = 0
+            seen: set[str] = set()
+            with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+                for fp in files:
+                    size = os.path.getsize(fp)
+                    if used + size > budget:
+                        break
+                    used += size
+                    base = os.path.basename(fp)
+                    final, i = base, 1
+                    while final in seen:
+                        stem, dot, ext = base.rpartition(".")
+                        final = f"{stem}_{i}.{ext}" if dot else f"{base}_{i}"
+                        i += 1
+                    seen.add(final)
+                    zf.write(fp, final)
+            payload = buf.getvalue()
+        except RuntimeError as e:
+            raise HTTPException(status_code=502, detail=f"No se pudo bajar la galería: {e}")
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+        return StreamingResponse(iter([payload]), media_type="application/zip",
+                                 headers={"Content-Disposition": "attachment; filename=fisherboy-galeria.zip"})
+
+    # --- Datos de Instagram (instaloader): comentarios + seguidores/seguidos -----
+    async def _ig_data(request: Request, url: str, fetch_fn, expect_kind: str, **fn_kw):
+        role, _ = auth.identity_from_request(request)
+        if role is None:
+            raise HTTPException(status_code=401, detail="Necesitás iniciar sesión.")
+        if role != "dios":   # usa la sesión personal de IG → solo dios
+            raise HTTPException(status_code=403, detail="Los datos de Instagram son solo para el rol dios.")
+        _download_enabled()
+        from .net import instagram
+        if not instagram.instaloader_available():
+            raise HTTPException(status_code=503, detail="instaloader no está instalado en el servidor.")
+        if not settings.ig_sessionid:
+            raise HTTPException(status_code=503,
+                                detail="Falta IG_SESSIONID (el cookie de sesión de Instagram) en la config.")
+        if instagram.url_kind(url) != expect_kind:
+            raise HTTPException(status_code=400,
+                                detail=f"La URL no es un {'post' if expect_kind == 'post' else 'perfil'} de Instagram.")
+        client_ip = request.client.host if request.client else "?"
+        if not ratelimit.allow(_queue()._r, f"ig:{client_ip}", limit=settings.max_jobs_per_min):
+            raise HTTPException(status_code=429, detail="Demasiados pedidos; probá en un minuto.")
+
+        from starlette.concurrency import run_in_threadpool
+        try:
+            items = await run_in_threadpool(fetch_fn, url, settings.ig_sessionid,
+                                            max_items=settings.ig_max_items, **fn_kw)
+        except RuntimeError as e:
+            raise HTTPException(status_code=502, detail=str(e))
+        except Exception as e:  # noqa: BLE001 — instaloader lanza tipos varios
+            raise HTTPException(status_code=502,
+                                detail=f"Instagram falló: {str(e).splitlines()[0][:160] if str(e) else type(e).__name__}")
+        return JSONResponse({"count": len(items), "items": items})
+
+    @app.get("/api/instagram/comments")
+    async def ig_comments(request: Request, url: str):
+        from .net import instagram
+        return await _ig_data(request, url, instagram.get_comments, "post")
+
+    @app.get("/api/instagram/follows")
+    async def ig_follows(request: Request, url: str, which: str = "followers"):
+        from .net import instagram
+        which = "followees" if which == "followees" else "followers"
+        return await _ig_data(request, url, instagram.get_follows, "profile", which=which)
+
+    @app.get("/api/comments")
+    async def comments_ep(request: Request, url: str):
+        """Comentarios de Reddit/YouTube (confiable) o X/TikTok (experimental, puede fallar)."""
+        role, _ = auth.identity_from_request(request)
+        if role is None:
+            raise HTTPException(status_code=401, detail="Necesitás iniciar sesión.")
+        if not auth.caps_for(role).get("capture"):
+            raise HTTPException(status_code=403, detail=f"Tu rol '{role}' no habilita traer comentarios.")
+        _download_enabled()
+        from .net import comments as cmod
+        from .net import media
+        plat = cmod.comment_platform(url)
+        if not plat:
+            raise HTTPException(status_code=400, detail="Plataforma sin soporte de comentarios.")
+        if plat != "reddit" and not media.ytdlp_available():
+            raise HTTPException(status_code=503, detail="yt-dlp no está instalado en el servidor.")
+        client_ip = request.client.host if request.client else "?"
+        if not ratelimit.allow(_queue()._r, f"cmt:{client_ip}", limit=settings.max_jobs_per_min):
+            raise HTTPException(status_code=429, detail="Demasiados pedidos; probá en un minuto.")
+
+        from starlette.concurrency import run_in_threadpool
+        try:
+            items = await run_in_threadpool(
+                cmod.get_comments, url, max_items=settings.ig_max_items,
+                timeout_s=int(settings.fetch_timeout_s),
+                proxy=settings.yt_proxy, cookiefile=settings.yt_cookies)
+        except Exception as e:  # noqa: BLE001
+            reason = str(e).splitlines()[0][:160] if str(e) else type(e).__name__
+            raise HTTPException(status_code=502, detail=f"No se pudieron traer los comentarios: {reason}")
+        return JSONResponse({"count": len(items), "items": items, "platform": plat,
+                             "experimental": plat in cmod.EXPERIMENTAL})
 
     @app.get("/metrics", include_in_schema=False)
     async def metrics(request: Request):

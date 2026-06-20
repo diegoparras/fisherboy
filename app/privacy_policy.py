@@ -34,21 +34,35 @@ class PrivacyPolicy:
     def allowed_modes(self, rol: Rol) -> set[PrivacyMode]:
         return self._allowed.get(rol, set())
 
-    def resolve_mode(self, rol: Rol, requested: PrivacyMode | None) -> PrivacyMode:
-        """Resuelve el modo efectivo y valida contra el rol. Lanza PolicyDenied si no.
+    # Orden de preferencia al caer desde el default: del MÁS privado al menos. Caer hacia
+    # un modo MÁS privado nunca filtra (directo es el menos privado), así que es seguro.
+    _FALLBACK_ORDER = (PrivacyMode.OPACO, PrivacyMode.REVERSIBLE, PrivacyMode.DIRECTO)
 
-        Si `requested` es None, usa el default de la matriz — pero igual lo valida
-        contra el rol, así un default mal configurado no abre un agujero.
+    def resolve_mode(self, rol: Rol, requested: PrivacyMode | None) -> PrivacyMode:
+        """Resuelve el modo efectivo y valida contra el rol.
+
+        - Pedido EXPLÍCITO no habilitado → PolicyDenied (403). Nunca se baja en silencio un
+          pedido explícito: respeta la elección del usuario y corta la escalada.
+        - Sin pedido (None) → usa el default de la matriz; si el rol no lo habilita, cae a su
+          mejor modo permitido (preferencia: el más privado). Caer hacia más privacidad nunca
+          filtra, así que el default global 'directo' no expone PII a un rol que solo hace opaco.
         """
-        mode = requested if requested is not None else self._default
         allowed = self.allowed_modes(rol)
-        if mode not in allowed:
-            permitidos = ", ".join(sorted(m.value for m in allowed)) or "ninguno"
-            raise PolicyDenied(
-                f"El rol '{rol.value}' no habilita el modo '{mode.value}'. "
-                f"Permitidos: {permitidos}."
-            )
-        return mode
+        if requested is not None:
+            if requested not in allowed:
+                permitidos = ", ".join(sorted(m.value for m in allowed)) or "ninguno"
+                raise PolicyDenied(
+                    f"El rol '{rol.value}' no habilita el modo '{requested.value}'. "
+                    f"Permitidos: {permitidos}."
+                )
+            return requested
+        # Default (sin pedido): el global si lo habilita, si no el mejor permitido.
+        if self._default in allowed:
+            return self._default
+        for fallback in self._FALLBACK_ORDER:
+            if fallback in allowed:
+                return fallback
+        raise PolicyDenied(f"El rol '{rol.value}' no habilita ningún modo de privacidad.")
 
 
 def load_policy(path: str) -> PrivacyPolicy:
