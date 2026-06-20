@@ -26,10 +26,19 @@ def test_role_allowed_mode_enqueues(client_factory):
 
 
 def test_default_mode_validated_against_role(client_factory):
-    # Sin privacy_mode → default de la matriz (opaco), permitido para humano.
+    # Sin privacy_mode → default de la matriz (directo); humano no lo habilita, así que
+    # cae con gracia a su mejor modo permitido (opaco). No 403: el default nunca filtra.
     client = client_factory()
     resp = client.post("/api/jobs", json={"url": "https://1.1.1.1/", "rol": "humano"})
     assert resp.status_code == 202
+
+
+def test_explicit_disallowed_mode_still_denied(client_factory):
+    # Pedido EXPLÍCITO de un modo no habilitado → 403 (no se baja en silencio).
+    client = client_factory()
+    resp = client.post("/api/jobs", json={"url": "https://1.1.1.1/", "rol": "humano",
+                                          "privacy_mode": "directo"})
+    assert resp.status_code == 403
 
 
 def test_build_opaco_stable_typed_markers():

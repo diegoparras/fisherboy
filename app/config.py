@@ -125,6 +125,32 @@ class Settings:
             (e.get("COOKIE_SECURE", "1") or "1").strip().lower() in ("1", "true", "yes", "on")
         )
 
+        # Archivos y media (manifiesto de descargables). 'both' = ofrecer link directo
+        # Y descarga vía Fisherboy (proxy); 'direct' = solo link directo; 'proxy' = solo
+        # vía Fisherboy; 'off' = no harvestear archivos. La detección siempre corre salvo
+        # 'off'; el modo solo cambia qué botones muestra la UI.
+        self.file_download_mode = (
+            (e.get("FILE_DOWNLOAD_MODE", "both") or "both").strip().lower()
+        )
+        if self.file_download_mode not in ("both", "direct", "proxy", "off"):
+            self.file_download_mode = "both"
+        # Tope de tamaño para la descarga vía Fisherboy (proxy stream). Protege RAM/ancho
+        # de banda del worker. La descarga directa no pasa por acá (la hace el navegador).
+        self.download_max_bytes = int(e.get("DOWNLOAD_MAX_BYTES", str(200 * 1024 * 1024)))
+        # Descarga de video (yt-dlp): mp4 de YouTube/Vimeo/etc. Para sitios que bloquean
+        # por IP, YT_PROXY enruta los pedidos y YT_COOKIES (ruta a un cookies.txt Netscape)
+        # da una sesión logueada. Mismos nombres que Escriba para reusar config.
+        self.yt_proxy = e.get("YT_PROXY", "") or ""
+        self.yt_cookies = e.get("YT_COOKIES", "") or ""   # ruta a cookies.txt
+        # Altura máxima del video (calidad). En Docker con ffmpeg sube hasta acá muxeando;
+        # sin ffmpeg cae al mejor progresivo (un solo archivo), típicamente ≤360p.
+        self.video_max_height = int(e.get("VIDEO_MAX_HEIGHT", "1080"))
+        # Datos de Instagram (instaloader): comentarios de un post + seguidores/seguidos.
+        # IG_SESSIONID = cookie de sesión de una cuenta logueada (sin él no hay datos).
+        # IG_MAX_ITEMS = tope de items por pedido (protege la cuenta del rate-limit de IG).
+        self.ig_sessionid = e.get("IG_SESSIONID", "") or ""
+        self.ig_max_items = int(e.get("IG_MAX_ITEMS", "500"))
+
         # Límites anti-DoS (auditoría 2026-06).
         # Rate-limit de admisión de jobs (ventana fija por minuto, por IP). 0 = sin límite.
         self.max_jobs_per_min = int(e.get("MAX_JOBS_PER_MIN", "60"))

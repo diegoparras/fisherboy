@@ -29,6 +29,17 @@ playwright>=1.47
 # --- Conversión LLM-ready RECOMENDADA (Capa 5). Si falta, cae a Trafilatura.
 crawl4ai>=0.4            # markdown "fit" (poda nav/boilerplate por densidad) — lo mejor para LLM
 browser-cookie3>=0.19   # leer cookies del navegador local (reemplaza la extensión; solo standalone)
+
+# --- Descarga de video (mp4) de YouTube/Vimeo/etc. (standalone, sin Escriba).
+#   ffmpeg (binario del sistema, ver Dockerfile) es OPCIONAL: mejora la calidad muxeando
+#   video+audio; sin él cae al mejor progresivo (un solo archivo).
+yt-dlp>=2024.1.0
+#   gallery-dl: el gemelo de yt-dlp para imágenes/galerías (Instagram, X, Reddit, Pinterest,
+#   Tumblr, Flickr, DeviantArt, etc.). Python puro, sin binarios.
+gallery-dl>=1.26
+#   instaloader: DATOS de Instagram (comentarios de un post + seguidores/seguidos), no media.
+#   Necesita IG_SESSIONID (cookie de sesión). Solo rol dios. Python puro.
+instaloader>=4.14
 # scrapling>=0.2         # parsing adaptivo + stealth fetcher (alternativa a parsing/adaptive.py)
 
 # --- Capa 7 opcional. El sistema degrada sin ella.

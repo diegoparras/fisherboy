@@ -11,8 +11,10 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /app
 
 # Dependencias del sistema mínimas para httpx/lxml (Trafilatura usa lxml) + healthcheck.
+# ffmpeg: lo usa yt-dlp para muxear video+audio en alta calidad (mp4). Es opcional —
+# sin él, la descarga de video cae al mejor progresivo — pero en el server lo queremos.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && apt-get install -y --no-install-recommends ca-certificates curl ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

@@ -57,6 +57,7 @@ class PipelineDeps:
     index_content: Callable[[Sobre], bool] | None = None        # embeddings → vector store
     metrics: object | None = None
     progress: Callable[[Sobre], None] | None = None             # persiste el sobre en cada paso (UI en vivo)
+    file_download_mode: str = "both"                            # both|direct|proxy|off (FILE_DOWNLOAD_MODE)
 
 
 def _report(deps: "PipelineDeps", sobre: Sobre, msg: str) -> None:
@@ -172,6 +173,7 @@ def build_default_deps(settings, *, redis_client=None) -> PipelineDeps:
         post=_post,
         capture=_capture,
         capture_page=_capture_page,
+        file_download_mode=settings.file_download_mode,
     )
 
     # Sub-pipeline documental: delega PDFs/docs a Escriba si ESCRIBA_URL está.
@@ -409,6 +411,91 @@ def _safe_meta_pii(deps: PipelineDeps, records: list | None, api_urls: list | No
     return safe_recs, safe_urls
 
 
+_FILE_KINDS = ("document", "archive", "audio", "video", "image", "embed")
+_FILE_CAP = {"document": 200, "archive": 200, "audio": 200, "video": 200, "image": 300, "embed": 100}
+
+
+def _mask_files(deps: PipelineDeps, manifest: dict) -> None:
+    """Enmascara url + name de cada archivo para opaco/reversible. Fail-closed: si no se
+    puede anonimizar, vacía las listas (nunca devuelve una URL cruda con un token dentro)."""
+    items = [it for k in _FILE_KINDS for it in manifest.get(k, [])]
+    if not items:
+        return
+
+    def _anon_block(values: list[str]) -> list[str] | None:
+        try:
+            anon, _ = deps.anonymize_opaco("\n".join(v or "" for v in values))
+            out = anon.split("\n")
+            return out if len(out) == len(values) else None
+        except Exception:  # noqa: BLE001
+            return None
+
+    urls = _anon_block([it.get("url", "") for it in items])
+    names = _anon_block([it.get("name", "") for it in items])
+    if urls is None or names is None:   # fail-closed
+        for k in _FILE_KINDS:
+            manifest[k] = []
+        return
+    for it, u, nm in zip(items, urls, names):
+        it["url"] = u
+        it["name"] = nm or it.get("name", "")
+
+
+def _harvest_files(deps: PipelineDeps, sobre: Sobre, pages: list[FetchResult]) -> None:
+    """Olfatea archivos/media de las páginas traídas → sobre.meta['files'].
+
+    Respeta privacy_mode: en `directo` las URLs van crudas (descargables); en
+    opaco/reversible se enmascaran (fail-closed) y la descarga directa queda
+    inhabilitada (la UI lo avisa). Se apaga con FILE_DOWNLOAD_MODE=off.
+    """
+    if getattr(deps, "file_download_mode", "both") == "off":
+        return
+    from .extractors.assets import harvest_assets
+
+    merged: dict[str, list] = {k: [] for k in _FILE_KINDS}
+    seen: set = set()
+    for p in pages:
+        try:
+            man = harvest_assets(p.text or "", p.url)
+        except Exception:  # noqa: BLE001 — una página que no parsea no corta el job
+            continue
+        for kind in _FILE_KINDS:
+            for item in man.get(kind, []):
+                if item["url"] in seen or len(merged[kind]) >= _FILE_CAP[kind]:
+                    continue
+                seen.add(item["url"])
+                merged[kind].append(item)
+
+    # Si la URL semilla del job ES de una plataforma de video o de galería (le pegaste un
+    # link de YouTube/Instagram directo, no embebido), ofrecé ese media como descargable.
+    seed = str(sobre.source_url)
+    from .net.gallery import gallery_provider
+    from .net.media import video_provider
+    vprov = video_provider(seed)
+    if vprov and not any(e.get("url") == seed for e in merged["embed"]):
+        merged["embed"].insert(0, {
+            "url": seed, "name": f"Video de {vprov.capitalize()}",
+            "provider": vprov, "dl_video": True,
+        })
+    gprov = gallery_provider(seed)
+    if gprov and not any(e.get("url") == seed and e.get("dl_gallery") for e in merged["embed"]):
+        merged["embed"].insert(0, {
+            "url": seed, "name": f"Galería de {gprov.capitalize()}",
+            "provider": gprov, "dl_gallery": True,
+        })
+
+    total = sum(len(merged[k]) for k in _FILE_KINDS)
+    if not total:
+        return
+    if sobre.privacy_mode is not PrivacyMode.DIRECTO:
+        _mask_files(deps, merged)
+        merged["masked"] = True
+        total = sum(len(merged[k]) for k in _FILE_KINDS)
+    merged["total"] = total
+    if total:
+        sobre.meta["files"] = merged
+
+
 def _capture_branch(sobre: Sobre, deps: PipelineDeps) -> Sobre:
     """Captura los endpoints JSON/XHR ocultos y los entrega. Respeta privacy_mode."""
     url = str(sobre.source_url)
@@ -627,6 +714,10 @@ def process_job(sobre: Sobre, deps: PipelineDeps) -> Sobre:
             if len(sections) > 1 and sobre.privacy_mode is PrivacyMode.DIRECTO:
                 sobre.content_json = {"pages": [{"url": u, "markdown": md} for u, md in sections]}
 
+        # Manifiesto de archivos/media descargables (FILE_DOWNLOAD_MODE).
+        _report(deps, sobre, "Buscando archivos y media descargables…")
+        _harvest_files(deps, sobre, pages)
+
         sobre.status = JobStatus.OK
         sobre.meta.update(
             {
@@ -662,7 +753,7 @@ def process_job(sobre: Sobre, deps: PipelineDeps) -> Sobre:
         sobre.content_json = None
         sobre.anonimizado = False
         # También los campos derivados de meta que podrían llevar PII cruda.
-        for _k in ("records", "api_urls"):
+        for _k in ("records", "api_urls", "files"):
             sobre.meta.pop(_k, None)
         sobre.status = JobStatus.ERROR
         sobre.error = f"Anonimización falló, no se devuelve contenido: {e}"
