@@ -38,6 +38,9 @@ class Settings:
         self.redis_url = e.get("REDIS_URL", "redis://fisherboy-redis:6379/0")
         self.anonimal_url = (e.get("ANONIMAL_URL", "") or "").rstrip("/")
         self.escriba_url = (e.get("ESCRIBA_URL", "") or "").rstrip("/")
+        # Sitio PÚBLICO de Escriba (para el botón "Enviar a Escriba" de la UI). Distinto del
+        # ESCRIBA_URL de arriba, que es la API interna que usa el backend para convertir docs.
+        self.escriba_web_url = (e.get("ESCRIBA_WEB_URL", "") or "").strip()
         self.anonimal_token = e.get("ANONIMAL_TOKEN", "")  # ADR-003 (v2): auth de servicio
         self.escriba_token = e.get("ESCRIBA_TOKEN", "")    # auth de servicio hacia Escriba (pendiente)
 

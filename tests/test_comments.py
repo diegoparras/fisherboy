@@ -72,14 +72,14 @@ def _as_role(monkeypatch, role):
 def test_comments_endpoint_humano_forbidden(client_factory, monkeypatch):
     _as_role(monkeypatch, "humano")
     c = client_factory(FILE_DOWNLOAD_MODE="both")
-    r = c.get("/api/comments", params={"url": "https://youtube.com/watch?v=x"})
+    r = c.post("/api/comments", json={"url": "https://youtube.com/watch?v=x"})
     assert r.status_code == 403
 
 
 def test_comments_endpoint_unknown_platform(client_factory, monkeypatch):
     _as_role(monkeypatch, "dios")
     c = client_factory(FILE_DOWNLOAD_MODE="both")
-    r = c.get("/api/comments", params={"url": "https://example.com/x"})
+    r = c.post("/api/comments", json={"url": "https://example.com/x"})
     assert r.status_code == 400
 
 
@@ -95,3 +95,27 @@ def test_me_comments_false_for_humano(client_factory, monkeypatch):
     c = client_factory(FILE_DOWNLOAD_MODE="both")
     d = c.get("/api/me").json()
     assert d["comments_download"] is False
+
+
+def test_auth_wall_detection():
+    assert cmod._is_auth_wall("ERROR: Sign in to confirm you're not a bot. Use --cookies") is True
+    assert cmod._is_auth_wall("This video is age-restricted") is True
+    assert cmod._is_auth_wall("HTTP Error 404: Not Found") is False
+    assert cmod._is_auth_wall("") is False
+    assert issubclass(cmod.CommentsAuthRequired, RuntimeError)
+
+
+def test_cookies_to_netscape():
+    from app.security.cookies import to_netscape
+    # header "k=v; k2=v2" -> dos líneas con el dominio dado
+    ns = to_netscape("SID=abc; HSID=def", ".youtube.com")
+    assert ns.startswith("# Netscape")
+    assert ns.count(".youtube.com\tTRUE") == 2 and "SID\tabc" in ns
+    # JSON array
+    assert "tok\tXYZ" in to_netscape('[{"name":"tok","value":"XYZ"}]')
+    # ya-Netscape: verbatim, conserva el dominio real
+    raw = ".example.com\tTRUE\t/\tTRUE\t99\tLOGIN\tzzz"
+    out = to_netscape(raw)
+    assert "LOGIN\tzzz" in out and ".example.com" in out
+    # vacío
+    assert to_netscape("") == "" and to_netscape(None) == ""
