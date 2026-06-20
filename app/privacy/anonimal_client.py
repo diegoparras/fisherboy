@@ -13,9 +13,10 @@ pasada determinística de detectors.py (ADR-005 punto 4).
 FALLA CERRADO (ADR-004 punto 1): si Anonimal falla, da timeout o responde algo
 inválido, se lanza AnonimalError y el llamador NUNCA devuelve el texto crudo.
 
-NOTA contrato reversible (ADR-003): `POST /privacy/process` y `/privacy/revert` con
-auth de servicio todavía NO existen en Anonimal; se diseñan e implementan en v2.
-Este cliente queda estructurado para sumarlos sin reescribir el armado de salida.
+NOTA (2026-06): Anonimal YA tiene auth de servicio (require_auth: `X-Anonimal-Token`
+o Bearer) — este cliente la usa cuando hay `ANONIMAL_TOKEN`. Los endpoints reversibles
+dedicados (`/privacy/process` y `/privacy/revert`) siguen sin existir en Anonimal; el
+reversible se arma client-side (`build_reversible`) desde los spans de `/anonymize`.
 """
 from __future__ import annotations
 
@@ -148,8 +149,8 @@ class AnonimalClient:
         if not self.base_url:
             raise AnonimalError("Anonimización no configurada (ANONIMAL_URL vacío).")
         headers = {}
-        if self.service_token:  # ADR-003: auth de servicio (cuando Anonimal la exponga)
-            headers["X-Service-Token"] = self.service_token
+        if self.service_token:  # token de servicio de Anonimal (require_auth: X-Anonimal-Token / Bearer)
+            headers["X-Anonimal-Token"] = self.service_token
         try:
             resp = httpx.post(
                 f"{self.base_url}/anonymize",
