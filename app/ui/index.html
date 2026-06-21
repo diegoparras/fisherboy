@@ -97,18 +97,23 @@
   .gate { position: fixed; inset: 0; display: grid; place-items: center; z-index: 100; padding: 20px;
     background: color-mix(in srgb, var(--bg) 55%, transparent);
     -webkit-backdrop-filter: blur(12px) saturate(1.1); backdrop-filter: blur(12px) saturate(1.1); }
-  .gate-card { width: 100%; max-width: 340px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 28px 26px; text-align: center; box-shadow: var(--shadow); animation: cardpop .2s cubic-bezier(.2,.8,.2,1); }
+  .gate-card { width: 100%; max-width: 384px; background: var(--panel); border: 1px solid var(--border); border-radius: 20px; padding: 38px 34px 30px; text-align: center; box-shadow: var(--shadow); animation: cardpop .2s cubic-bezier(.2,.8,.2,1); }
   @keyframes cardpop { from { opacity: 0; transform: translateY(8px) scale(.98); } }
-  .gate .logomark { width: 44px; height: 44px; margin: 0 auto 12px; }
-  .gate h2 { font-size: 18px; margin: 0 0 4px; font-weight: 600; }
-  .gate p { color: var(--muted); font-size: 13px; margin: 0 0 18px; }
-  .gate input { text-align: center; }
+  .gate .logomark { width: 56px; height: 56px; margin: 0 auto 16px; }
+  .gate h2 { font-size: 22px; margin: 0 0 5px; font-weight: 700; letter-spacing: -.01em; }
+  .gate p { color: var(--muted); font-size: 13.5px; margin: 0 0 22px; }
+  .gate input { width: 100%; box-sizing: border-box; background: var(--card-2); border: 1px solid var(--border); color: var(--text);
+    border-radius: 11px; padding: 13px 16px; font: inherit; font-size: 16px; text-align: center; letter-spacing: .18em;
+    outline: none; transition: border-color .15s, box-shadow .15s, background .15s; }
+  .gate input:focus { border-color: var(--accent); box-shadow: var(--ring); background: var(--bg-2); }
+  .gate .btn-pill { width: 100%; margin-top: 14px; font-size: 15.5px; padding: 13px 26px; }
   .gate .err { color: var(--err); font-size: 12.5px; margin-top: 10px; min-height: 16px; }
+  .gate .role-hint { margin: 16px 0 0; font-size: 11.5px; color: var(--muted); letter-spacing: .02em; }
   .switch input:disabled + .track { opacity: .4; }
   .field.locked { opacity: .5; }
   .lockmsg { font-size: 11px; color: var(--warn); margin-top: 4px; }
 
-  .btn-pill { border: 0; cursor: pointer; border-radius: 999px; padding: 12px 26px; font-size: 15px; font-weight: 600; color: var(--on-accent); background: var(--blue); transition: background .2s, transform .08s, filter .2s; white-space: nowrap; }
+  .btn-pill { border: 0; cursor: pointer; border-radius: 999px; padding: 12px 26px; font-size: 15px; font-weight: 600; color: var(--on-accent); background: var(--blue); transition: background .2s, transform .08s, filter .2s; white-space: nowrap; text-align: center; }
   .btn-pill:hover { background: var(--blue-press); }
   .btn-pill:active { transform: translateY(1px); }
   .btn-pill:disabled { opacity: .55; cursor: not-allowed; }
@@ -407,7 +412,7 @@
   /* === Pulido: íconos SVG de línea (sin emojis), command bar, reveal, markdown === */
   .ico { width: 17px; height: 17px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; display: block; }
   .icon-btn { transition: background .2s, border-color .2s, color .2s; }
-  .btn-pill { display: inline-flex; align-items: center; gap: 8px; }
+  .btn-pill { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
   .btn-pill .ico { width: 16px; height: 16px; }
   .adv-toggle { display: flex; align-items: center; gap: 9px; }
   .adv-toggle .caret { transition: transform .18s; color: var(--accent); display: inline-flex; }
@@ -710,9 +715,9 @@
       <h2>Fisherboy</h2>
       <p data-i18n="gate.keyTitle">Tu clave de acceso</p>
       <input id="login-key" type="password" placeholder="••••••••••" autocomplete="current-password" />
-      <button type="submit" class="btn-pill" style="width:100%;margin-top:12px" id="login-btn" data-i18n="gate.enter">Entrar</button>
+      <button type="submit" class="btn-pill" id="login-btn" data-i18n="gate.enter">Entrar</button>
       <div class="err" id="login-err"></div>
-      <p style="margin:8px 0 0;font-size:11px" data-i18n="gate.roleHint">tu clave define el rol — dios · ángel · humano</p>
+      <p class="role-hint" data-i18n="gate.roleHint">tu clave define el rol — dios · ángel · humano</p>
     </form>
   </div>
 
