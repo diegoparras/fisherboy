@@ -10,6 +10,15 @@ def _as_role(monkeypatch, role):
     monkeypatch.setattr(auth, "role_from_request", lambda req: role)
 
 
+def test_login_rate_limited(client_factory, monkeypatch):
+    """Anti fuerza-bruta: superar MAX_LOGINS_PER_MIN devuelve 429 (cuenta intentos fallidos)."""
+    monkeypatch.setattr(auth, "_PASSWORDS", {"dios": "zeus", "angel": None, "humano": None})
+    client = client_factory(MAX_LOGINS_PER_MIN=3)
+    codes = [client.post("/api/login", json={"key": "mal"}).status_code for _ in range(4)]
+    assert codes[:3] == [401, 401, 401]   # los 3 primeros pasan el rate-limit (clave inválida)
+    assert codes[3] == 429                # el 4º se frena por rate-limit
+
+
 # --------------------------------------------------------------------------- token / password
 def test_token_roundtrip():
     tok = auth.make_token("angel")

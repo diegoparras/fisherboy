@@ -76,6 +76,11 @@ class PostgresStore:
             self.ensure_schema()
         import json
 
+        # Nunca persistir los secretos por-job (proxy con credenciales, API key de
+        # CAPTCHA, cookies de sesión): el store durable es un sink "hacia afuera".
+        # Reusamos public_dump() — misma lista que la API y el webhook. Ver auditoría 2026-06.
+        safe_meta = sobre.public_dump(mode="json").get("meta", {})
+
         try:
             with self._connect() as conn, conn.cursor() as cur:
                 cur.execute(
@@ -91,7 +96,7 @@ class PostgresStore:
                         sobre.job_id, str(sobre.source_url), sobre.status.value,
                         sobre.rol.value, sobre.privacy_mode.value,
                         int(sobre.tier_usado) if sobre.tier_usado is not None else None,
-                        sobre.content_md, json.dumps(sobre.meta, ensure_ascii=False),
+                        sobre.content_md, json.dumps(safe_meta, ensure_ascii=False),
                     ),
                 )
                 conn.commit()
