@@ -14,7 +14,12 @@ from urllib.parse import unquote, urlsplit
 import httpx
 
 from ..fetchers.base import FetchError
-from ..security.ssrf import SSRFError, resolve_and_validate, validate_scheme_and_host
+from ..security.ssrf import (
+    SSRFError,
+    guarded_client,
+    resolve_and_validate,
+    validate_scheme_and_host,
+)
 
 _UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -66,9 +71,10 @@ def open_stream(
     headers = {"User-Agent": _UA, "Accept": "*/*"}
     if cookies:
         headers["Cookie"] = "; ".join(f"{k}={v}" for k, v in cookies.items())
-    client = httpx.Client(
+    client = guarded_client(
+        allow_private=allow_private, proxy=proxy,
         follow_redirects=False, timeout=timeout_s, headers=headers,
-        proxy=proxy if proxy else None, limits=httpx.Limits(max_connections=4),
+        limits=httpx.Limits(max_connections=4),
     )
     current = url
     try:

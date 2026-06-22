@@ -15,6 +15,8 @@ import ipaddress
 import socket
 from urllib.parse import urlsplit
 
+import httpx
+
 ALLOWED_SCHEMES = frozenset({"http", "https"})
 
 # Rangos extra a bloquear más allá de los que ya marca ipaddress como privados.
@@ -101,6 +103,55 @@ def resolve_and_validate(url: str, *, allow_private: bool = False) -> list[str]:
     if not ips:
         raise SSRFError(f"El host {host!r} no resolvió a ninguna IP utilizable.")
     return ips
+
+
+class SSRFGuardTransport(httpx.HTTPTransport):
+    """Transport que valida SSRF y PINEA la IP validada en la conexión real.
+
+    Cierra la ventana TOCTOU / DNS-rebinding: resolver+validar y después dejar que
+    httpx vuelva a resolver el hostname permitía que un atacante con DNS de TTL bajo
+    devolviera una IP pública para pasar el chequeo y una interna (169.254.169.254,
+    10.x, ...) al conectar. Acá resolvemos+validamos UNA vez y conectamos a esa IP
+    exacta; el Host header y la SNI/verificación de certificado siguen por el hostname
+    original. Falla cerrado (SSRFError). Se re-evalúa en cada request (cada redirect es
+    un request nuevo). Ver auditoría 2026-06 / ADR-004.
+    """
+
+    def __init__(self, *, allow_private: bool = False, **kwargs):
+        super().__init__(**kwargs)
+        self._allow_private = allow_private
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        host = request.url.host
+        ips = resolve_and_validate(str(request.url), allow_private=self._allow_private)
+        try:
+            ipaddress.ip_address(host)
+            is_literal = True
+        except ValueError:
+            is_literal = False
+        if not is_literal:
+            # SNI + verificación de cert por el hostname; Host header ya quedó seteado
+            # por httpx al construir el request. Conectamos a la IP ya validada.
+            request.extensions = {**request.extensions, "sni_hostname": host}
+            request.url = request.url.copy_with(host=ips[0])
+        return super().handle_request(request)
+
+
+def guarded_client(
+    *, allow_private: bool = False, proxy: str | None = None, **kwargs
+) -> httpx.Client:
+    """httpx.Client con defensa SSRF + pin de IP validada (anti DNS-rebinding).
+
+    Sin proxy: usa SSRFGuardTransport (pinea la IP). Con proxy: el destino lo resuelve
+    el proxy, no se puede pinear localmente; se confía en validate_proxy_url + el
+    pre-chequeo resolve_and_validate del llamador. Ver auditoría 2026-06 / ADR-004.
+    """
+    if proxy:
+        return httpx.Client(proxy=proxy, **kwargs)
+    limits = kwargs.pop("limits", None)
+    t_kwargs = {"limits": limits} if limits is not None else {}
+    transport = SSRFGuardTransport(allow_private=allow_private, **t_kwargs)
+    return httpx.Client(transport=transport, **kwargs)
 
 
 _PROXY_SCHEMES = frozenset({"http", "https", "socks5", "socks5h"})

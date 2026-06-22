@@ -9,7 +9,12 @@ from __future__ import annotations
 import httpx
 
 from ..net import captcha
-from ..security.ssrf import SSRFError, resolve_and_validate, validate_scheme_and_host
+from ..security.ssrf import (
+    SSRFError,
+    guarded_client,
+    resolve_and_validate,
+    validate_scheme_and_host,
+)
 from .base import (
     BlockedError,
     CaptchaError,
@@ -60,10 +65,9 @@ class StaticFetcher:
             headers=headers,
             limits=httpx.Limits(max_connections=4),
         )
-        if ctx.proxy:
-            client_kwargs["proxy"] = ctx.proxy
 
-        with httpx.Client(**client_kwargs) as client:
+        # guarded_client pinea la IP validada (anti DNS-rebinding) cuando no hay proxy.
+        with guarded_client(allow_private=ctx.allow_private, proxy=ctx.proxy, **client_kwargs) as client:
             for _hop in range(ctx.max_redirects + 1):
                 try:
                     with client.stream("GET", current) as resp:
@@ -142,13 +146,11 @@ def fetch_post(
     if cookies:
         headers["Cookie"] = "; ".join(f"{k}={v}" for k, v in cookies.items())
     client_kwargs = dict(follow_redirects=False, timeout=timeout_s, headers=headers)
-    if proxy:
-        client_kwargs["proxy"] = proxy
 
     current = url
     method = "POST"
     try:
-        with httpx.Client(**client_kwargs) as client:
+        with guarded_client(allow_private=allow_private, proxy=proxy, **client_kwargs) as client:
             for _hop in range(max_redirects + 1):
                 # El body solo viaja en el POST inicial; tras un redirect se hace GET sin body.
                 stream = (client.stream("POST", current, data=data) if method == "POST"

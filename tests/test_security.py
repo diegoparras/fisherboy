@@ -35,6 +35,44 @@ def test_inbound_public_ip_ok():
     assert resolve_and_validate("https://1.1.1.1/", allow_private=False) == ["1.1.1.1"]
 
 
+def test_ssrf_transport_pins_validated_ip(monkeypatch):
+    """Anti DNS-rebinding: el transport conecta a la IP validada y mantiene Host+SNI por hostname."""
+    import httpx
+
+    from app.security import ssrf
+
+    captured = {}
+
+    def fake_super(self, request):
+        captured["host"] = request.url.host
+        captured["sni"] = request.extensions.get("sni_hostname")
+        captured["hosthdr"] = request.headers.get("host")
+        return httpx.Response(200, request=request)
+
+    # Resolución determinística (sin red) + interceptar la conexión real.
+    monkeypatch.setattr(ssrf, "resolve_and_validate",
+                        lambda url, allow_private=False: ["93.184.216.34"])
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", fake_super)
+
+    t = ssrf.SSRFGuardTransport()
+    resp = t.handle_request(httpx.Request("GET", "https://example.com/path"))
+    assert resp.status_code == 200
+    assert captured["host"] == "93.184.216.34"   # conecta a la IP ya validada (no re-resuelve)
+    assert captured["sni"] == "example.com"       # TLS SNI + verificación de cert por hostname
+    assert captured["hosthdr"] == "example.com"   # Host header preservado (vhost correcto)
+
+
+def test_ssrf_transport_blocks_internal_target():
+    """El transport falla cerrado ante un destino interno (metadata de cloud)."""
+    import httpx
+
+    from app.security.ssrf import SSRFGuardTransport
+
+    t = SSRFGuardTransport()
+    with pytest.raises(SSRFError):
+        t.handle_request(httpx.Request("GET", "http://169.254.169.254/latest/meta-data/"))
+
+
 def test_outbound_callback_ssrf_blocked_endpoint(client_factory):
     client = client_factory()
     resp = client.post(

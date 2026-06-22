@@ -10,7 +10,7 @@ import httpx
 
 from .logging import get_logger
 from .models import Sobre
-from .security.ssrf import SSRFError, validate_callback_url
+from .security.ssrf import SSRFError, guarded_client, validate_callback_url
 
 log = get_logger("fisherboy.callback")
 
@@ -38,7 +38,10 @@ def post_callback(
     # (proxy con credenciales, API key de CAPTCHA, cookies de sesión). Auditoría 2026-06.
     payload = sobre.public_dump(mode="json")
     try:
-        resp = httpx.post(callback_url, json=payload, timeout=timeout_s, follow_redirects=False)
+        # guarded_client pinea la IP validada del callback (anti DNS-rebinding del SSRF de salida).
+        with guarded_client(allow_private=allow_private, timeout=timeout_s,
+                            follow_redirects=False) as client:
+            resp = client.post(callback_url, json=payload)
         ok = resp.is_success
         log.info(
             "callback entregado" if ok else "callback rechazado",
