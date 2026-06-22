@@ -157,6 +157,8 @@ class Settings:
         # Límites anti-DoS (auditoría 2026-06).
         # Rate-limit de admisión de jobs (ventana fija por minuto, por IP). 0 = sin límite.
         self.max_jobs_per_min = int(e.get("MAX_JOBS_PER_MIN", "60"))
+        # Rate-limit de intentos de login por IP (anti fuerza-bruta de claves de rol). 0 = sin límite.
+        self.max_logins_per_min = int(e.get("MAX_LOGINS_PER_MIN", "10"))
         # Tope DURO de páginas por job (crawl/paginado). Acota RAM/tiempo del worker.
         self.crawl_max_pages = int(e.get("CRAWL_MAX_PAGES", "100"))
         # Tope de bytes ACUMULADOS por job (además del cap por página). 0 = sin tope.

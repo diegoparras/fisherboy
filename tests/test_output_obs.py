@@ -49,3 +49,52 @@ def test_postgres_unavailable_without_dsn():
     from app.models import PrivacyMode, Rol, Sobre
     s = Sobre(job_id="x", source_url="https://x.com/a", privacy_mode=PrivacyMode.OPACO, rol=Rol.DIOS)
     assert store.save_sobre(s) is False
+
+
+class _FakeCur:
+    def __init__(self):
+        self.params = None
+    def __enter__(self):
+        return self
+    def __exit__(self, *a):
+        return False
+    def execute(self, sql, params):
+        self.params = params
+
+
+class _FakeConn:
+    def __init__(self, cur):
+        self._cur = cur
+    def __enter__(self):
+        return self
+    def __exit__(self, *a):
+        return False
+    def cursor(self):
+        return self._cur
+    def commit(self):
+        pass
+
+
+def test_postgres_no_persiste_secretos_por_job(monkeypatch):
+    """El store durable NUNCA debe guardar proxy-creds/captcha-key/cookies (auditoría 2026-06)."""
+    from app.models import PrivacyMode, Rol, Sobre
+    store = PostgresStore("postgres://x")
+    cur = _FakeCur()
+    monkeypatch.setattr(store, "available", lambda: True)
+    store._checked = True  # saltear ensure_schema
+    monkeypatch.setattr(store, "_connect", lambda: _FakeConn(cur))
+
+    s = Sobre(job_id="j1", source_url="https://x.com/a", privacy_mode=PrivacyMode.OPACO, rol=Rol.DIOS)
+    s.meta.update({
+        "proxy": "http://user:s3cr3t@1.2.3.4:8080",
+        "captcha_api_key": "CAPTCHA-SECRET-KEY",
+        "cookies": {"sid": "abc123"},
+        "max_tier": 3,          # control NO sensible: se conserva
+    })
+    assert store.save_sobre(s) is True
+    meta_json = store and cur.params[-1]   # último param = json.dumps(safe_meta)
+    assert "s3cr3t" not in meta_json
+    assert "CAPTCHA-SECRET-KEY" not in meta_json
+    assert "captcha_api_key" not in meta_json
+    assert "cookies" not in meta_json
+    assert "max_tier" in meta_json         # la metadata de control no-secreta se mantiene

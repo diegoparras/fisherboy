@@ -102,7 +102,14 @@ def create_app(
 
     # --- Auth (espejo de Escriba): login por rol, cookie + Bearer ---------------
     @app.post("/api/login")
-    async def login(body: LoginRequest):
+    async def login(body: LoginRequest, request: Request):
+        # Anti fuerza-bruta: rate-limit por IP sobre los intentos de login (falla
+        # abierto si no hay Redis, igual que el resto). Cuenta TODOS los intentos,
+        # válidos o no, para que un atacante no pueda sondear claves sin freno.
+        client_ip = request.client.host if request.client else "?"
+        if not ratelimit.allow(_queue()._r, f"login:{client_ip}",
+                               limit=settings.max_logins_per_min):
+            raise HTTPException(status_code=429, detail="Demasiados intentos; probá en un minuto.")
         role = auth.role_for_password(body.key)
         if role is None:
             raise HTTPException(status_code=401, detail="Clave inválida.")
