@@ -14,6 +14,7 @@ Necesita patchright o playwright. Import perezoso; si no están, no disponible.
 from __future__ import annotations
 
 import importlib.util
+import ipaddress
 import json
 import re
 from urllib.parse import urlsplit
@@ -88,6 +89,20 @@ def _sync_playwright():
     return sync_playwright
 
 
+def _resolver_pin_arg(url: str, ips: list[str]) -> str | None:
+    """Arg de Chromium que fija la resolución del host de ENTRADA a su IP ya validada
+    (anti DNS-rebinding del tier browser). Solo dominios; una IP literal no se mapea.
+    Chromium conecta a esa IP pero mantiene el hostname para SNI/verificación de cert."""
+    host = urlsplit(url).hostname or ""
+    if not host or not ips:
+        return None
+    try:
+        ipaddress.ip_address(host)
+        return None  # ya es IP literal: nada que mapear
+    except ValueError:
+        return f"--host-resolver-rules=MAP {host} {ips[0]}"
+
+
 def capture_xhr(url: str, ctx: FetchContext, *, max_endpoints: int = 40,
                 min_bytes: int = 0) -> list[dict]:
     """Renderiza `url` y captura las respuestas XHR/fetch JSON. Devuelve endpoints."""
@@ -103,7 +118,7 @@ def capture_page(url: str, ctx: FetchContext, *, max_endpoints: int = 40,
     """
     if not available():  # pragma: no cover
         raise FetchError("Captura de API no disponible: instalá patchright o playwright.")
-    resolve_and_validate(url, allow_private=ctx.allow_private)
+    ips = resolve_and_validate(url, allow_private=ctx.allow_private)
 
     sync_playwright = _sync_playwright()
     captured: list[dict] = []
@@ -135,6 +150,17 @@ def capture_page(url: str, ctx: FetchContext, *, max_endpoints: int = 40,
             return
 
     launch: dict = {"headless": ctx.headless}
+    # Pin anti DNS-rebinding del host de entrada a su IP ya validada (solo sin proxy: con
+    # proxy el DNS lo resuelve el proxy). El route-guard de abajo cubre redirects/subrecursos.
+    # El cierre COMPLETO del tier browser es filtrar el egress a rangos privados a nivel de
+    # red/contenedor (ver docs/DEPLOY.md → egress firewall) — ningún código de app lo garantiza solo. Auditoría 2026-06.
+    args: list[str] = []
+    if not ctx.allow_private and not ctx.proxy:
+        pin = _resolver_pin_arg(url, ips)
+        if pin:
+            args.append(pin)
+    if args:
+        launch["args"] = args
     if ctx.proxy:
         launch["proxy"] = {"server": ctx.proxy}
 
