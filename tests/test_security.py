@@ -62,6 +62,15 @@ def test_ssrf_transport_pins_validated_ip(monkeypatch):
     assert captured["hosthdr"] == "example.com"   # Host header preservado (vhost correcto)
 
 
+def test_capture_resolver_pin_arg():
+    """Tier browser: pin del host de entrada a su IP validada (anti DNS-rebinding)."""
+    from app.fetchers.capture import _resolver_pin_arg
+    assert _resolver_pin_arg("https://example.com/x", ["93.184.216.34"]) == \
+        "--host-resolver-rules=MAP example.com 93.184.216.34"
+    assert _resolver_pin_arg("https://1.2.3.4/x", ["1.2.3.4"]) is None   # IP literal: no se mapea
+    assert _resolver_pin_arg("https://example.com/x", []) is None        # sin IPs: nada que pinear
+
+
 def test_ssrf_transport_blocks_internal_target():
     """El transport falla cerrado ante un destino interno (metadata de cloud)."""
     import httpx
