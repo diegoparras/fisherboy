@@ -260,6 +260,16 @@
   /* Barra de progreso de descarga (inyectada bajo el botón) */
   .dlprog { width: 100%; height: 5px; margin-top: 8px; border-radius: 4px; background: var(--card-2); overflow: hidden; }
   .dlprog > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s ease; }
+  /* Modal de error */
+  .err-back { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 20px; background: rgba(0,0,0,.45); }
+  .err-back.hidden { display: none; }
+  .err-card { width: 100%; max-width: 440px; text-align: center; padding: 28px 26px; border-radius: 16px;
+    background: var(--card); border: 1px solid var(--border); box-shadow: 0 24px 64px rgba(0,0,0,.45); }
+  .err-face { width: 56px; height: 56px; margin: 0 auto 14px; color: var(--err); }
+  .err-face svg { width: 100%; height: 100%; }
+  .err-title { margin: 0 0 9px; font-size: 16px; font-weight: 600; color: var(--text); }
+  .err-msg { margin: 0 0 20px; font-size: 13px; line-height: 1.55; color: var(--muted); word-break: break-word; white-space: pre-wrap; text-align: left; }
+  .err-ok { min-width: 130px; }
   .dl-scrape { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 16px 20px 0; padding: 9px; width: calc(100% - 40px);
     background: transparent; border: 1px dashed var(--border); border-radius: 10px; color: var(--muted-2); font-family: inherit; font-size: 12.5px; cursor: pointer; }
   .dl-scrape:hover { color: var(--accent); border-color: var(--accent); }
@@ -1516,6 +1526,30 @@ function dlVia(encodedUrl) {
   document.body.appendChild(a); a.click(); a.remove();
 }
 
+/* Modal de error reutilizable (reemplaza alert para los errores del server). */
+const SAD_SVG = `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="24" cy="24" r="20"/><path d="M16 32 Q24 25 32 32"/><line x1="16.5" y1="20" x2="20.5" y2="20"/><line x1="27.5" y1="20" x2="31.5" y2="20"/></svg>`;
+function showError(msg, title) {
+  let m = document.getElementById("err-modal");
+  if (!m) {
+    m = document.createElement("div");
+    m.id = "err-modal"; m.className = "err-back hidden";
+    m.innerHTML = `<div class="err-card" role="alertdialog" aria-modal="true">
+      <div class="err-face">${SAD_SVG}</div>
+      <h3 class="err-title" id="err-title"></h3>
+      <p class="err-msg" id="err-msg"></p>
+      <button type="button" class="btn-pill err-ok" id="err-ok">Aceptar</button></div>`;
+    document.body.appendChild(m);
+    const close = () => m.classList.add("hidden");
+    m.querySelector("#err-ok").addEventListener("click", close);
+    m.addEventListener("click", (e) => { if (e.target === m) close(); });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !m.classList.contains("hidden")) close(); });
+  }
+  m.querySelector("#err-title").textContent = title || "Tu servidor muestra este error:";
+  m.querySelector("#err-msg").textContent = msg || "";
+  m.classList.remove("hidden");
+  m.querySelector("#err-ok").focus();
+}
+
 async function dlMedia(encodedUrl, btn, audio) {
   const prev = btn ? btn.innerHTML : "";
   const ico = audio ? MUSIC_ICO : DL_ICO;
@@ -1553,7 +1587,7 @@ async function dlMedia(encodedUrl, btn, audio) {
       if (p.status === "downloading") { setBtn(`${p.percent || 0}%`); setBar(p.percent); }
       else if (p.status === "procesando") { setBtn("procesando…"); setBar(99); }
       else if (p.status === "error") {
-        if (p.needs_cookies) { alert(p.had_cookies ? T("err.cookiesStale") : T("err.cookiesNeeded")); return; }
+        if (p.needs_cookies) { showError(p.had_cookies ? T("err.cookiesStale") : T("err.cookiesNeeded"), "Cookies de YouTube"); return; }
         throw new Error(p.error || "no se pudo bajar");
       } else if (p.status === "done") {
         setBtn("100%"); setBar(100);
@@ -1564,7 +1598,7 @@ async function dlMedia(encodedUrl, btn, audio) {
       }
     }
   } catch (e) {
-    alert((audio ? T("err.audio") : T("err.video")) + e.message);
+    showError(e.message);
   } finally {
     killBar();
     if (btn) { btn.disabled = false; btn.innerHTML = prev; }

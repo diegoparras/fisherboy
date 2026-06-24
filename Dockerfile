@@ -13,9 +13,16 @@ WORKDIR /app
 # Dependencias del sistema mínimas para httpx/lxml (Trafilatura usa lxml) + healthcheck.
 # ffmpeg: lo usa yt-dlp para muxear video+audio en alta calidad (mp4). Es opcional —
 # sin él, la descarga de video cae al mejor progresivo — pero en el server lo queremos.
+# unzip: para instalar deno (abajo).
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl ffmpeg \
+    && apt-get install -y --no-install-recommends ca-certificates curl ffmpeg unzip \
     && rm -rf /var/lib/apt/lists/*
+
+# Runtime de JavaScript (deno) para yt-dlp: YouTube ya NO entrega los formatos completos sin
+# un JS runtime (el cliente "android vr" devuelve formatos mochos → "Requested format is not
+# available"). yt-dlp autodetecta deno en el PATH. Se instala system-wide (/usr/local/bin).
+RUN curl -fsSL https://deno.land/install.sh | DENO_INSTALL=/usr/local sh \
+    && /usr/local/bin/deno --version
 
 COPY requirements.txt .
 RUN pip install -r requirements.txt
