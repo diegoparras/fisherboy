@@ -11,10 +11,12 @@ Orden de validación en POST /api/jobs (no negociable, ADR-004):
 """
 from __future__ import annotations
 
+import html
+import time
 import uuid
 
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel
 
 from .config import Settings, get_settings
@@ -28,6 +30,19 @@ from .security.ssrf import SSRFError, validate_callback_url, validate_proxy_url
 log = get_logger("fisherboy.api")
 
 _RANK = {"humano": 0, "angel": 1, "dios": 2}
+
+# Cookie de transacción OIDC (verifier/state/nonce) en modo federado.
+_OIDC_COOKIE = "fb_oidc"
+# Mapeo del rol que asigna Lockatus → rol interno de Fisherboy. Si el hub ya declara el
+# catálogo real (dios/angel/humano) se usa tal cual; si declara los genéricos se traduce;
+# cualquier otra cosa cae a 'humano' (menor privilegio, fail-safe).
+_LK_ROLE_MAP = {"admin": "dios", "editor": "angel", "lector": "humano"}
+
+
+def _fb_role_from_lockatus(lk_role: str | None) -> str:
+    if lk_role in auth.ROLE_CAPS:
+        return lk_role
+    return _LK_ROLE_MAP.get(lk_role or "", "humano")
 
 
 class LoginRequest(BaseModel):
@@ -61,7 +76,7 @@ def create_app(
         if _w:
             log.warning("SEGURIDAD: %s", _w)
 
-    app = FastAPI(title="Fisherboy", version="1.0.0")
+    app = FastAPI(title="Fisherboy", version="1.0.1")
     app.state.settings = settings
     app.state.queue = queue
     app.state.policy = policy or get_policy(settings.privacy_matrix_path)
@@ -70,6 +85,16 @@ def create_app(
         if app.state.queue is None:  # construcción perezosa: el worker/redis no hace falta en tests
             app.state.queue = get_queue(settings)
         return app.state.queue
+
+    # Cliente OIDC hacia Lockatus (solo modo federado; construcción perezosa).
+    app.state.lk = None
+
+    def _lk():
+        if app.state.lk is None:
+            from .security.lockatus_client import Lockatus
+            app.state.lk = Lockatus(settings.lockatus_issuer, settings.lockatus_client_id,
+                                    settings.lockatus_redirect_uri, auth.SECRET_KEY)
+        return app.state.lk
 
     app.state.reversible = None
     app.state.reversible_built = False
@@ -97,7 +122,7 @@ def create_app(
 
     @app.get("/healthz")
     async def healthz():
-        return {"status": "ok", "app_mode": settings.app_mode.value, "version": "1.0.0",
+        return {"status": "ok", "app_mode": settings.app_mode.value, "version": "1.0.1",
                 "download_mode": settings.file_download_mode}
 
     # --- Auth (espejo de Escriba): login por rol, cookie + Bearer ---------------
@@ -124,6 +149,50 @@ def create_app(
         resp = JSONResponse({"ok": True})
         resp.delete_cookie(auth.COOKIE_NAME, path="/", samesite="lax",
                            secure=settings.cookie_secure)
+        return resp
+
+    # --- SSO federado con Lockatus (solo si AUTH_MODE=federado) ------------------
+    # /auth/login delega el login en el hub; /auth/callback canjea el código, verifica
+    # los tokens RS256 contra el JWKS (offline), mapea el rol y siembra la MISMA cookie
+    # fb_session → el resto del gate por rol no cambia. En modo local, ambas redirigen a /.
+    @app.get("/auth/login", include_in_schema=False)
+    def auth_login():
+        if settings.auth_mode != "federado":
+            return RedirectResponse("/", status_code=302)
+        lk = _lk()
+        verifier, challenge = lk.pkce()
+        state, nonce = lk.random_id(), lk.random_id()
+        tx = lk.sign({"verifier": verifier, "state": state, "nonce": nonce, "exp": (time.time() + 600) * 1000})
+        resp = RedirectResponse(lk.authorize_url(state, nonce, challenge), status_code=302)
+        resp.set_cookie(_OIDC_COOKIE, tx, httponly=True, secure=settings.cookie_secure,
+                        samesite="lax", max_age=600, path="/")
+        return resp
+
+    @app.get("/auth/callback", include_in_schema=False)
+    def auth_callback(request: Request):
+        if settings.auth_mode != "federado":
+            return RedirectResponse("/", status_code=302)
+        if request.query_params.get("error"):
+            return HTMLResponse(
+                f"Acceso denegado por Lockatus: {html.escape(request.query_params['error'])}",
+                status_code=403)
+        lk = _lk()
+        tx = lk.unsign(request.cookies.get(_OIDC_COOKIE, ""))
+        code, state = request.query_params.get("code"), request.query_params.get("state")
+        if not tx or not code or state != tx["state"]:
+            return RedirectResponse("/auth/login", status_code=302)
+        try:
+            tok = lk.exchange(code, tx["verifier"])
+            lk.verify_jwt(tok["id_token"], audience=settings.lockatus_client_id, nonce=tx["nonce"])
+            claims = lk.verify_jwt(tok["access_token"], audience=settings.lockatus_client_id)
+        except Exception:  # noqa: BLE001 — token inválido = sin sesión
+            return RedirectResponse("/?login=error", status_code=302)
+        role = _fb_role_from_lockatus(claims.get("role"))
+        resp = RedirectResponse("/", status_code=302)
+        resp.delete_cookie(_OIDC_COOKIE, path="/")
+        resp.set_cookie(auth.COOKIE_NAME, auth.make_token(role), httponly=True,
+                        secure=settings.cookie_secure, samesite="lax",
+                        max_age=auth.SESSION_TTL, path="/")
         return resp
 
     @app.get("/api/me")
@@ -761,7 +830,7 @@ def create_app(
     if settings.is_standalone:
         from .ui.router import build_ui_router
 
-        app.include_router(build_ui_router(settings.escriba_web_url))
+        app.include_router(build_ui_router(settings.escriba_web_url, auth_mode=settings.auth_mode))
 
     return app
 
