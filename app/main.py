@@ -19,6 +19,7 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel
 
+from . import __version__
 from .config import Settings, get_settings
 from .logging import get_logger, setup_logging
 from .models import JobRequest, JobStatus, Rol, RevertRequest, Sobre
@@ -76,7 +77,7 @@ def create_app(
         if _w:
             log.warning("SEGURIDAD: %s", _w)
 
-    app = FastAPI(title="Fisherboy", version="1.0.1")
+    app = FastAPI(title="Fisherboy", version=__version__)
     app.state.settings = settings
     app.state.queue = queue
     app.state.policy = policy or get_policy(settings.privacy_matrix_path)
@@ -122,7 +123,7 @@ def create_app(
 
     @app.get("/healthz")
     async def healthz():
-        return {"status": "ok", "app_mode": settings.app_mode.value, "version": "1.0.1",
+        return {"status": "ok", "app_mode": settings.app_mode.value, "version": __version__,
                 "download_mode": settings.file_download_mode}
 
     # --- Auth (espejo de Escriba): login por rol, cookie + Bearer ---------------
@@ -567,19 +568,20 @@ def create_app(
         if not ratelimit.allow(_queue()._r, f"dlvid:{client_ip}", limit=settings.max_jobs_per_min):
             raise HTTPException(status_code=429, detail="Demasiadas descargas; probá en un minuto.")
 
+        import json
+        import mimetypes
         import os
         import shutil
         import tempfile
+        import threading
         from urllib.parse import urlsplit
-
-        from starlette.concurrency import run_in_threadpool
 
         from .security import cookies as cookmod
 
         quality = quality if quality in media.QUALITIES else "best"
 
         # Cookies de la UI (este job) > YT_COOKIES del server. Cookiefile temporal Netscape,
-        # se borra abajo. El proxy de la UI gana sobre YT_PROXY del server.
+        # se borra al terminar. El proxy de la UI gana sobre YT_PROXY del server.
         host = (urlsplit(url).hostname or "").lower()
         dom = ("." + (host[4:] if host.startswith("www.") else host)) if host else ".youtube.com"
         netscape = cookmod.to_netscape(raw_cookies, dom) if raw_cookies else ""
@@ -592,31 +594,111 @@ def create_app(
         had_cookies = bool(tmp_cookiefile or settings.yt_cookies)
         proxy = req_proxy or settings.yt_proxy
 
+        # La descarga corre en background; el progreso vive en Redis bajo un token efímero.
+        token = uuid.uuid4().hex
+        prog_key = f"fbdl:{token}"
+        r = _queue()._r
+
+        def _set(d):
+            try:
+                r.set(prog_key, json.dumps(d), ex=900)   # best-effort; 15 min de TTL
+            except Exception:  # noqa: BLE001
+                pass
+
+        _set({"status": "downloading", "percent": 0})
+
+        def _hook(d):   # yt-dlp lo llama por fragmento/archivo (corre en el threadpool)
+            st = d.get("status")
+            if st == "downloading":
+                total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
+                done = d.get("downloaded_bytes") or 0
+                if total:
+                    pct = int(done * 100 / total)
+                elif d.get("fragment_count"):
+                    pct = int((d.get("fragment_index") or 0) * 100 / d["fragment_count"])
+                else:
+                    pct = 0
+                _set({"status": "downloading", "percent": min(99, max(1, pct)), "downloaded": done, "total": total})
+            elif st == "finished":
+                _set({"status": "procesando", "percent": 99})   # muxeo/conversión sin hook
+
         tmpdir = tempfile.mkdtemp(prefix="fbvid_")
+
+        # Corre en un thread daemon (independiente del event loop): la descarga es bloqueante
+        # y larga; el cliente sigue el avance por /progress y baja el archivo por /file.
+        def _run_sync():
+            try:
+                path, name = media.download_video(
+                    url, tmpdir=tmpdir,
+                    max_bytes=settings.download_max_bytes, max_height=settings.video_max_height,
+                    quality=quality, audio_only=audio,
+                    proxy=proxy, cookiefile=cookiefile,
+                    timeout_s=int(settings.fetch_timeout_s), progress_hook=_hook,
+                )
+                ctype = mimetypes.guess_type(name)[0] or ("audio/mpeg" if audio else "video/mp4")
+                _set({"status": "done", "percent": 100, "name": name, "path": path, "ctype": ctype})
+            except Exception as e:  # noqa: BLE001 — yt-dlp lanza tipos varios
+                shutil.rmtree(tmpdir, ignore_errors=True)
+                reason = str(e).splitlines()[0][:200] if str(e) else type(e).__name__
+                # Anti-bot / pide sesión → el front muestra el modal de cookies (distinto si ya
+                # había cookies cargadas → entonces están vencidas/inválidas).
+                if media.is_auth_required(reason):
+                    _set({"status": "error", "needs_cookies": True, "had_cookies": had_cookies, "error": reason})
+                else:
+                    _set({"status": "error", "error": f"No se pudo bajar: {reason}"})
+            finally:
+                if tmp_cookiefile:
+                    try:
+                        os.unlink(tmp_cookiefile)
+                    except OSError:
+                        pass
+
+        threading.Thread(target=_run_sync, daemon=True).start()
+        return {"token": token}
+
+    @app.get("/api/download/video/progress/{token}")
+    async def download_video_progress(token: str, request: Request):
+        """Avance de una descarga: {status, percent, …}. status: downloading|procesando|done|error."""
+        import json
+        role, _ = auth.identity_from_request(request)
+        if role is None:
+            raise HTTPException(status_code=401, detail="Necesitás iniciar sesión.")
+        raw = _queue()._r.get(f"fbdl:{token}")
+        if not raw:
+            raise HTTPException(status_code=404, detail="Descarga no encontrada o expirada.")
         try:
-            path, name = await run_in_threadpool(
-                media.download_video, url, tmpdir=tmpdir,
-                max_bytes=settings.download_max_bytes, max_height=settings.video_max_height,
-                quality=quality, audio_only=audio,
-                proxy=proxy, cookiefile=cookiefile,
-                timeout_s=int(settings.fetch_timeout_s),
-            )
-        except Exception as e:  # noqa: BLE001 — yt-dlp lanza tipos varios
-            shutil.rmtree(tmpdir, ignore_errors=True)
-            reason = str(e).splitlines()[0][:200] if str(e) else type(e).__name__
-            # Anti-bot / pide sesión: el front muestra el modal de cookies (distinto si ya
-            # había cookies → entonces están vencidas/inválidas). 422, no 502: así el detalle
-            # llega al navegador en vez de que el gateway lo reemplace por un "Bad Gateway".
-            if media.is_auth_required(reason):
-                return JSONResponse(status_code=422, content={
-                    "needs_cookies": True, "had_cookies": had_cookies, "detail": reason})
-            raise HTTPException(status_code=400, detail=f"No se pudo bajar: {reason}")
-        finally:
-            if tmp_cookiefile:
-                try:
-                    os.unlink(tmp_cookiefile)
-                except OSError:
-                    pass
+            data = json.loads(raw)
+        except Exception:  # noqa: BLE001
+            data = {"status": "error", "error": "estado ilegible"}
+        data.pop("path", None)   # el path del server no se expone al cliente
+        return data
+
+    @app.get("/api/download/video/file/{token}")
+    async def download_video_file(token: str, request: Request):
+        """Sirve el archivo ya bajado (descarga nativa del navegador) y limpia al terminar."""
+        import json
+        import os
+        import shutil
+        from urllib.parse import quote
+        role, _ = auth.identity_from_request(request)
+        if role is None:
+            raise HTTPException(status_code=401, detail="Necesitás iniciar sesión.")
+        if not auth.caps_for(role).get("capture"):
+            raise HTTPException(status_code=403, detail="Sin permiso.")
+        prog_key = f"fbdl:{token}"
+        r = _queue()._r
+        raw = r.get(prog_key)
+        if not raw:
+            raise HTTPException(status_code=404, detail="Descarga no encontrada o expirada.")
+        data = json.loads(raw)
+        if data.get("status") != "done":
+            raise HTTPException(status_code=409, detail="La descarga todavía no terminó.")
+        path = data.get("path")
+        name = data.get("name") or "video.mp4"
+        ctype = data.get("ctype") or "application/octet-stream"
+        if not path or not os.path.isfile(path):
+            raise HTTPException(status_code=404, detail="El archivo ya no está disponible.")
+        tmpdir = os.path.dirname(path)
 
         def _gen():
             try:
@@ -628,13 +710,13 @@ def create_app(
                         yield chunk
             finally:
                 shutil.rmtree(tmpdir, ignore_errors=True)
+                try:
+                    r.delete(prog_key)
+                except Exception:  # noqa: BLE001
+                    pass
 
-        import mimetypes
-        from urllib.parse import quote
-        ctype = mimetypes.guess_type(name)[0] or ("audio/mpeg" if audio else "video/mp4")
         disp = f"attachment; filename*=UTF-8''{quote(name)}"
-        return StreamingResponse(_gen(), media_type=ctype,
-                                 headers={"Content-Disposition": disp})
+        return StreamingResponse(_gen(), media_type=ctype, headers={"Content-Disposition": disp})
 
     @app.get("/api/download/gallery")
     async def download_gallery(request: Request, url: str):

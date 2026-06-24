@@ -257,6 +257,9 @@
   .dl-btn:disabled { opacity: .55; cursor: default; }
   .dl-qsel { font-family: inherit; font-size: 13px; color: var(--text); background: var(--card-2); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; cursor: pointer; }
   .dl-qsel:hover { border-color: var(--accent); }
+  /* Barra de progreso de descarga (inyectada bajo el botón) */
+  .dlprog { width: 100%; height: 5px; margin-top: 8px; border-radius: 4px; background: var(--card-2); overflow: hidden; }
+  .dlprog > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s ease; }
   .dl-scrape { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 16px 20px 0; padding: 9px; width: calc(100% - 40px);
     background: transparent; border: 1px dashed var(--border); border-radius: 10px; color: var(--muted-2); font-family: inherit; font-size: 12.5px; cursor: pointer; }
   .dl-scrape:hover { color: var(--accent); border-color: var(--accent); }
@@ -1502,7 +1505,18 @@ function dlVia(encodedUrl) {
 async function dlMedia(encodedUrl, btn, audio) {
   const prev = btn ? btn.innerHTML : "";
   const ico = audio ? MUSIC_ICO : DL_ICO;
-  if (btn) { btn.disabled = true; btn.innerHTML = `${ico}<span>${audio ? T("msg.dlAudio") : T("msg.dlVideo")}</span>`; }
+  const setBtn = (txt) => { if (btn) btn.innerHTML = `${ico}<span>${txt}</span>`; };
+  // Barra de progreso inyectada debajo del botón (en el modal y en los resultados inline).
+  const ensureBar = () => {
+    if (!btn || !btn.parentElement) return null;
+    let b = btn.parentElement.querySelector(".dlprog");
+    if (!b) { b = document.createElement("div"); b.className = "dlprog"; b.innerHTML = "<i></i>"; btn.parentElement.appendChild(b); }
+    return b;
+  };
+  const setBar = (pct) => { const b = ensureBar(); if (b) b.firstChild.style.width = (pct || 0) + "%"; };
+  const killBar = () => { if (btn && btn.parentElement) { const b = btn.parentElement.querySelector(".dlprog"); if (b) b.remove(); } };
+  if (btn) btn.disabled = true;
+  setBtn(audio ? T("msg.dlAudio") : T("msg.dlVideo"));
   try {
     let q = "best";
     const sel = btn && btn.parentElement && btn.parentElement.querySelector(".qsel");
@@ -1514,22 +1528,31 @@ async function dlMedia(encodedUrl, btn, audio) {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ url: decodeURIComponent(encodedUrl), quality: q, audio: !!audio, cookies, proxy }),
     });
-    if (r.status === 422) {
-      const d = await r.json().catch(() => ({}));
-      if (d.needs_cookies) { alert(d.had_cookies ? T("err.cookiesStale") : T("err.cookiesNeeded")); return; }
-    }
     if (!r.ok) { let d = {}; try { d = await r.json(); } catch (e) {} throw new Error(d.detail || "no se pudo bajar"); }
-    const blob = await r.blob();
-    const cd = r.headers.get("content-disposition") || "";
-    const m = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(cd);
-    const name = m ? decodeURIComponent(m[1]) : (audio ? "audio.mp3" : "video.mp4");
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob); a.download = name;
-    document.body.appendChild(a); a.click();
-    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    const { token } = await r.json();
+    // Seguir el avance hasta done/error. El server baja a disco; al terminar, descarga nativa.
+    for (;;) {
+      await new Promise((res) => setTimeout(res, 500));
+      let p;
+      try { p = await (await fetch(`/api/download/video/progress/${token}`)).json(); }
+      catch (e) { continue; }
+      if (p.status === "downloading") { setBtn(`${p.percent || 0}%`); setBar(p.percent); }
+      else if (p.status === "procesando") { setBtn("procesando…"); setBar(99); }
+      else if (p.status === "error") {
+        if (p.needs_cookies) { alert(p.had_cookies ? T("err.cookiesStale") : T("err.cookiesNeeded")); return; }
+        throw new Error(p.error || "no se pudo bajar");
+      } else if (p.status === "done") {
+        setBtn("100%"); setBar(100);
+        const a = document.createElement("a");           // descarga nativa (lleva la cookie de sesión)
+        a.href = `/api/download/video/file/${token}`;
+        document.body.appendChild(a); a.click(); a.remove();
+        return;
+      }
+    }
   } catch (e) {
     alert((audio ? T("err.audio") : T("err.video")) + e.message);
   } finally {
+    killBar();
     if (btn) { btn.disabled = false; btn.innerHTML = prev; }
   }
 }
