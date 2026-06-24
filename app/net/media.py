@@ -132,7 +132,9 @@ def download_video(
         "no_warnings": True,
         "socket_timeout": timeout_s,
         "retries": 2,
-        "concurrent_fragment_downloads": 1,
+        # Baja varios fragmentos del DASH en paralelo (video+audio fragmentados, como el 1080p).
+        # En serie (1) es el cuello de botella principal; 4 acelera mucho sin saturar el proxy.
+        "concurrent_fragment_downloads": 4,
         "restrictfilenames": True,
     }
     if audio_only:
