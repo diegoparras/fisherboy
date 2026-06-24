@@ -161,6 +161,11 @@ class Settings:
         # da una sesión logueada. Mismos nombres que Escriba para reusar config.
         self.yt_proxy = e.get("YT_PROXY", "") or ""
         self.yt_cookies = e.get("YT_COOKIES", "") or ""   # ruta a cookies.txt
+        # Tier de browser EN LA NUBE (Cloudflare Browser Rendering): opt-in. Si CF_ACCOUNT_ID y
+        # CF_API_TOKEN están seteados, el router usa el browser de Cloudflare ANTES del Chromium
+        # local (mismo tier 3, con fallback al local). Permite imágenes sin Chromium (~1 GB menos).
+        self.cf_account_id = (e.get("CF_ACCOUNT_ID", "") or "").strip()
+        self.cf_api_token = (e.get("CF_API_TOKEN", "") or "").strip()
         # Altura máxima del video (calidad). En Docker con ffmpeg sube hasta acá muxeando;
         # sin ffmpeg cae al mejor progresivo (un solo archivo), típicamente ≤360p.
         self.video_max_height = int(e.get("VIDEO_MAX_HEIGHT", "1080"))

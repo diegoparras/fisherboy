@@ -25,6 +25,7 @@ from ..net.captcha import CaptchaSolver, NoopSolver
 from ..net.proxies import ProxyPool
 from .base import BlockedError, CaptchaError, FetchContext, FetchError, FetchResult
 from .browser import BrowserFetcher
+from .cloudflare import CloudflareBrowserFetcher
 from .static import StaticFetcher
 from .stealth import StealthFetcher
 from .tls import TLSFetcher
@@ -211,7 +212,14 @@ def build_router(settings, *, redis_client=None) -> TierRouter:
     from ..net.captcha import build_solver
     from ..net.proxies import build_pool
 
-    fetchers = [StaticFetcher(), TLSFetcher(), StealthFetcher(), BrowserFetcher()]
+    # CloudflareBrowserFetcher es tier 3 igual que el Chromium local, pero va ANTES en la lista:
+    # si está configurado (CF_ACCOUNT_ID + token) el router lo prueba primero y cae al local si
+    # falla. Si no está configurado, available()=False y el router lo saltea.
+    fetchers = [
+        StaticFetcher(), TLSFetcher(), StealthFetcher(),
+        CloudflareBrowserFetcher(settings.cf_account_id, settings.cf_api_token),
+        BrowserFetcher(),
+    ]
 
     pool = build_pool(
         settings.proxies_raw,
