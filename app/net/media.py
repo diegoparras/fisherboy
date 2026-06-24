@@ -89,8 +89,12 @@ def _format_selector(max_height: int) -> str:
     """Elige el formato. Con ffmpeg: mejor video+audio hasta max_height (muxea). Sin
     ffmpeg: el mejor PROGRESIVO (un archivo con audio+video, no necesita mux)."""
     if ffmpeg_available():
+        # Cae con gracia: mp4 hasta la altura → cualquier códec hasta la altura → progresivo
+        # hasta la altura → el mejor video+audio sin tope (muxea) → lo que haya. El penúltimo
+        # evita "Requested format is not available" cuando no hay formato bajo la altura pedida.
         return (f"bv*[height<={max_height}][ext=mp4]+ba[ext=m4a]/"
-                f"bv*[height<={max_height}]+ba/b[height<={max_height}]/b")
+                f"bv*[height<={max_height}]+ba/b[height<={max_height}]/"
+                f"bv*+ba/b")
     # progresivo: un solo archivo con ambos streams (acodec y vcodec presentes)
     return ("b[ext=mp4][acodec!=none][vcodec!=none]/"
             "b[acodec!=none][vcodec!=none]/b")
