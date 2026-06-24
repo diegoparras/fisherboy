@@ -900,6 +900,36 @@ def create_app(
         return JSONResponse({"count": len(items), "items": items, "platform": plat,
                              "experimental": plat in cmod.EXPERIMENTAL})
 
+    @app.post("/api/cookies/from-browser")
+    async def cookies_from_browser(request: Request):
+        """Lee las cookies del navegador LOCAL (Chrome/Firefox/Edge/Brave) para un dominio y las
+        devuelve en formato header (`k=v; k2=v2`) para cargarlas en la cajita de cookies.
+
+        OJO: lee el navegador de la MÁQUINA DONDE CORRE el server. Solo sirve en standalone en
+        tu propia máquina; en un server remoto no tiene tu navegador. Gateado a rol dios."""
+        role, _ = auth.identity_from_request(request)
+        if role != "dios":
+            raise HTTPException(status_code=403, detail="Leer cookies del navegador es solo para el rol dios.")
+        if settings.app_mode.value != "standalone":
+            raise HTTPException(status_code=400,
+                                detail="Solo en modo standalone (Fisherboy en tu máquina). En el server remoto, exportá un cookies.txt e importalo.")
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            body = {}
+        browser = (body.get("browser") or "chrome").strip().lower()
+        domain = (body.get("domain") or "youtube.com").strip().lower()
+        from .security import browser_cookies as bc
+        if not bc.available():
+            return {"ok": False, "reason": "El lector de cookies del navegador no está instalado en este server."}
+        from starlette.concurrency import run_in_threadpool
+        jar = await run_in_threadpool(bc.read_cookies, domain, browser)
+        if not jar:
+            return {"ok": False, "reason": f"No pude leer cookies de {browser} para {domain}. "
+                    "Probá cerrar el navegador (el store puede estar bloqueado) o exportá un cookies.txt e importalo."}
+        header = "; ".join(f"{k}={v}" for k, v in jar.items())
+        return {"ok": True, "count": len(jar), "domain": domain, "browser": browser, "cookies": header}
+
     @app.get("/metrics", include_in_schema=False)
     async def metrics(request: Request):
         # Si hay auth configurada, /metrics también la exige (no exponer telemetría abierta).
