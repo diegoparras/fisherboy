@@ -88,7 +88,7 @@ def _as_role(monkeypatch, role):
 def test_video_endpoint_humano_forbidden(client_factory, monkeypatch):
     _as_role(monkeypatch, "humano")
     c = client_factory(FILE_DOWNLOAD_MODE="both")
-    r = c.get("/api/download/video", params={"url": "https://www.youtube.com/watch?v=x"})
+    r = c.post("/api/download/video", json={"url": "https://www.youtube.com/watch?v=x"})
     assert r.status_code == 403
     assert "no habilita" in r.json()["detail"]
 
@@ -96,21 +96,21 @@ def test_video_endpoint_humano_forbidden(client_factory, monkeypatch):
 def test_video_endpoint_unauthenticated(client_factory, monkeypatch):
     _as_role(monkeypatch, None)
     c = client_factory(FILE_DOWNLOAD_MODE="both")
-    r = c.get("/api/download/video", params={"url": "https://www.youtube.com/watch?v=x"})
+    r = c.post("/api/download/video", json={"url": "https://www.youtube.com/watch?v=x"})
     assert r.status_code == 401
 
 
 def test_video_endpoint_disabled_mode(client_factory, monkeypatch):
     _as_role(monkeypatch, "dios")
     c = client_factory(FILE_DOWNLOAD_MODE="direct")   # solo link directo → proxy/video off
-    r = c.get("/api/download/video", params={"url": "https://www.youtube.com/watch?v=x"})
+    r = c.post("/api/download/video", json={"url": "https://www.youtube.com/watch?v=x"})
     assert r.status_code == 403
 
 
 def test_video_endpoint_bad_host(client_factory, monkeypatch):
     _as_role(monkeypatch, "dios")
     c = client_factory(FILE_DOWNLOAD_MODE="both")
-    r = c.get("/api/download/video", params={"url": "https://evil.com/x.mp4"})
+    r = c.post("/api/download/video", json={"url": "https://evil.com/x.mp4"})
     assert r.status_code == 400
     assert "plataformas conocidas" in r.json()["detail"]
 
@@ -118,8 +118,57 @@ def test_video_endpoint_bad_host(client_factory, monkeypatch):
 def test_video_endpoint_ssrf_host(client_factory, monkeypatch):
     _as_role(monkeypatch, "dios")
     c = client_factory(FILE_DOWNLOAD_MODE="both")
-    r = c.get("/api/download/video", params={"url": "http://169.254.169.254/latest/"})
+    r = c.post("/api/download/video", json={"url": "http://169.254.169.254/latest/"})
     assert r.status_code == 400   # no está en la allowlist de plataformas
+
+
+@pytest.mark.parametrize("msg,auth_req", [
+    ("ERROR: [youtube] x: Sign in to confirm you're not a bot. Use --cookies", True),
+    ("ERROR: [youtube] x: Sign in to confirm you’re not a bot.", True),   # apóstrofe tipográfico
+    ("ERROR: [youtube] x: Private video. Sign in if you've been granted access", True),
+    ("HTTP Error 404: Not Found", False),
+    ("Requested format is not available", False),
+])
+def test_is_auth_required(msg, auth_req):
+    assert media.is_auth_required(msg) is auth_req
+
+
+def test_video_endpoint_botcheck_returns_422(client_factory, monkeypatch):
+    """El anti-bot de YouTube → 422 needs_cookies (no 502, que el gateway se come)."""
+    _as_role(monkeypatch, "dios")
+
+    def _boom(*a, **k):
+        raise RuntimeError("ERROR: [youtube] x: Sign in to confirm you're not a bot. Use --cookies")
+    monkeypatch.setattr(media, "ytdlp_available", lambda: True)
+    monkeypatch.setattr(media, "download_video", _boom)
+    c = client_factory(FILE_DOWNLOAD_MODE="both")
+    r = c.post("/api/download/video", json={"url": "https://www.youtube.com/watch?v=x"})
+    assert r.status_code == 422
+    d = r.json()
+    assert d["needs_cookies"] is True and d["had_cookies"] is False
+
+
+def test_video_endpoint_passes_ui_cookies_and_proxy(client_factory, monkeypatch):
+    """Las cookies y el proxy del form (este job) llegan a yt-dlp: el cookiefile temporal
+    contiene las cookies de la UI y el proxy se pasa tal cual."""
+    _as_role(monkeypatch, "dios")
+    seen: dict = {}
+
+    def _capture(url, *, tmpdir, cookiefile, proxy, **k):
+        seen["proxy"] = proxy
+        if cookiefile:
+            with open(cookiefile, encoding="utf-8") as fh:
+                seen["cookie_text"] = fh.read()
+        raise RuntimeError("stop")   # no seguir a streaming; "stop" no es bot-check → 400
+    monkeypatch.setattr(media, "ytdlp_available", lambda: True)
+    monkeypatch.setattr(media, "download_video", _capture)
+    c = client_factory(FILE_DOWNLOAD_MODE="both")
+    r = c.post("/api/download/video", json={
+        "url": "https://www.youtube.com/watch?v=x",
+        "cookies": "SID=abc; HSID=def", "proxy": "http://u:p@host:8080"})
+    assert r.status_code == 400
+    assert seen["proxy"] == "http://u:p@host:8080"
+    assert "SID" in seen["cookie_text"] and "abc" in seen["cookie_text"]
 
 
 def test_me_reports_video_capability(client_factory, monkeypatch):

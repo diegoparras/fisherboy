@@ -1452,9 +1452,17 @@ async function dlMedia(encodedUrl, btn, audio) {
     let q = "best";
     const sel = btn && btn.parentElement && btn.parentElement.querySelector(".qsel");
     if (sel) q = sel.value || "best";
-    let url = "/api/download/video?url=" + encodedUrl + "&quality=" + encodeURIComponent(q);
-    if (audio) url += "&audio=true";
-    const r = await fetch(url);
+    // Cookies y proxy del panel Avanzado (este job) — el server los prioriza sobre su env.
+    const cookies = ((document.getElementById("cookies") || {}).value || "").trim();
+    let proxy = ""; try { proxy = proxyCanonical() || ""; } catch (e) {}
+    const r = await fetch("/api/download/video", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: decodeURIComponent(encodedUrl), quality: q, audio: !!audio, cookies, proxy }),
+    });
+    if (r.status === 422) {
+      const d = await r.json().catch(() => ({}));
+      if (d.needs_cookies) { alert(d.had_cookies ? T("err.cookiesStale") : T("err.cookiesNeeded")); return; }
+    }
     if (!r.ok) { let d = {}; try { d = await r.json(); } catch (e) {} throw new Error(d.detail || "no se pudo bajar"); }
     const blob = await r.blob();
     const cd = r.headers.get("content-disposition") || "";
