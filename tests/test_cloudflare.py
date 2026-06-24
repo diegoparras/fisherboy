@@ -60,3 +60,36 @@ def test_fetch_429_blocks(monkeypatch):
     monkeypatch.setattr(httpx, "post", lambda url, **k: _resp(429, {"success": False}))
     with pytest.raises(BlockedError):
         f.fetch("https://ej.com", FetchContext())
+
+
+class _FakeRedis:
+    def __init__(self, val: bytes | None = None) -> None:
+        self._v = val
+
+    def get(self, k):
+        return self._v
+
+
+def test_creds_from_redis_override_env(monkeypatch):
+    """La config de la UI (Redis) gana sobre las credenciales del entorno."""
+    import json
+    fake = _FakeRedis(json.dumps({"enabled": True, "account_id": "ui-acct", "api_token": "ui-tok"}).encode())
+    f = CloudflareBrowserFetcher("env-acct", "env-tok", redis_client=fake)
+    assert f.available() is True
+    cap = {}
+
+    def fake_post(url, **k):
+        cap["url"] = url
+        cap["auth"] = k["headers"]["Authorization"]
+        return _resp(200, {"success": True, "result": "<html>ok</html>"})
+    monkeypatch.setattr(httpx, "post", fake_post)
+    f.fetch("https://ej.com", FetchContext())
+    assert "ui-acct" in cap["url"] and cap["auth"] == "Bearer ui-tok"
+
+
+def test_redis_disabled_turns_off_even_with_env():
+    """Si la UI lo apagó (enabled=false), queda off aunque haya creds en el entorno."""
+    import json
+    fake = _FakeRedis(json.dumps({"enabled": False, "account_id": "x", "api_token": "y"}).encode())
+    f = CloudflareBrowserFetcher("env-acct", "env-tok", redis_client=fake)
+    assert f.available() is False

@@ -930,6 +930,98 @@ def create_app(
         header = "; ".join(f"{k}={v}" for k, v in jar.items())
         return {"ok": True, "count": len(jar), "domain": domain, "browser": browser, "cookies": header}
 
+    @app.get("/api/cloudflare/config")
+    async def cloudflare_config_get(request: Request):
+        """Estado del tier de browser en la nube (Cloudflare). No expone el token."""
+        role, _ = auth.identity_from_request(request)
+        if role != "dios":
+            raise HTTPException(status_code=403, detail="Solo el rol dios configura el browser en la nube.")
+        import json
+        from .fetchers.cloudflare import REDIS_KEY
+        cfg = {}
+        try:
+            raw = _queue()._r.get(REDIS_KEY)
+            if raw:
+                cfg = json.loads(raw)
+        except Exception:  # noqa: BLE001
+            cfg = {}
+        return {"enabled": bool(cfg.get("enabled")), "account_id": cfg.get("account_id", ""),
+                "has_token": bool(cfg.get("api_token")),
+                "env_fallback": bool(settings.cf_account_id and settings.cf_api_token)}
+
+    @app.post("/api/cloudflare/config")
+    async def cloudflare_config_set(request: Request):
+        """Guarda la config (account_id + token + enabled) en Redis. El token es write-only:
+        si llega vacío, se conserva el ya guardado (para togglear sin reescribirlo)."""
+        role, _ = auth.identity_from_request(request)
+        if role != "dios":
+            raise HTTPException(status_code=403, detail="Solo el rol dios configura el browser en la nube.")
+        import json
+        from .fetchers.cloudflare import REDIS_KEY
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            body = {}
+        r = _queue()._r
+        prev = {}
+        try:
+            raw = r.get(REDIS_KEY)
+            if raw:
+                prev = json.loads(raw)
+        except Exception:  # noqa: BLE001
+            prev = {}
+        token = (body.get("api_token") or "").strip() or prev.get("api_token", "")
+        cfg = {"enabled": bool(body.get("enabled")),
+               "account_id": (body.get("account_id") or "").strip(), "api_token": token}
+        try:
+            r.set(REDIS_KEY, json.dumps(cfg))
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=503, detail=f"No se pudo guardar (Redis): {e}")
+        return {"ok": True, "enabled": cfg["enabled"], "account_id": cfg["account_id"], "has_token": bool(token)}
+
+    @app.post("/api/cloudflare/test")
+    async def cloudflare_test(request: Request):
+        """Renderiza una URL FIJA con el browser de Cloudflare → {ok, ms, status, title}. Usa las
+        creds del body si vienen, si no las guardadas/entorno. Destino fijo (no es SSRF)."""
+        role, _ = auth.identity_from_request(request)
+        if role != "dios":
+            raise HTTPException(status_code=403, detail="Solo el rol dios prueba el browser en la nube.")
+        client_ip = request.client.host if request.client else "?"
+        if not ratelimit.allow(_queue()._r, f"cftest:{client_ip}", limit=settings.max_jobs_per_min):
+            raise HTTPException(status_code=429, detail="Demasiadas pruebas; probá en un minuto.")
+        import json
+        import time as _time
+        from starlette.concurrency import run_in_threadpool
+        from .fetchers.base import FetchContext
+        from .fetchers.cloudflare import REDIS_KEY, CloudflareBrowserFetcher
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            body = {}
+        acct = (body.get("account_id") or "").strip()
+        tok = (body.get("api_token") or "").strip()
+        if not (acct and tok):   # sin creds en el body → las guardadas o el entorno
+            cfg = {}
+            try:
+                raw = _queue()._r.get(REDIS_KEY)
+                if raw:
+                    cfg = json.loads(raw)
+            except Exception:  # noqa: BLE001
+                cfg = {}
+            acct = acct or cfg.get("account_id") or settings.cf_account_id
+            tok = tok or cfg.get("api_token") or settings.cf_api_token
+        if not (acct and tok):
+            return {"ok": False, "error": "Falta el Account ID o el API Token."}
+        fetcher = CloudflareBrowserFetcher(acct, tok)
+        t0 = _time.monotonic()
+        try:
+            res = await run_in_threadpool(fetcher.fetch, "https://example.com/", FetchContext(timeout_s=20.0))
+            return {"ok": True, "ms": int((_time.monotonic() - t0) * 1000),
+                    "status": res.status_code, "title": res.meta.get("cf_title", ""), "bytes": len(res.content)}
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "ms": int((_time.monotonic() - t0) * 1000),
+                    "error": str(e).splitlines()[0][:200]}
+
     @app.get("/metrics", include_in_schema=False)
     async def metrics(request: Request):
         # Si hay auth configurada, /metrics también la exige (no exponer telemetría abierta).
