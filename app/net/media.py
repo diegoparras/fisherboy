@@ -58,6 +58,24 @@ def video_provider(url: str) -> str | None:
     return "video" if host_allowed(url) else None
 
 
+def is_auth_required(message: str) -> bool:
+    """¿El error de yt-dlp es un pedido de sesión / anti-bot (la IP del server está
+    bloqueada), y no un fallo del video en sí? En ese caso la salida es pasar cookies de una
+    sesión logueada (o un proxy residencial), no reintentar. Se compara en minúsculas y por
+    subcadenas que evitan el apóstrofe tipográfico de "you're" para no depender de él."""
+    m = (message or "").lower()
+    needles = (
+        "sign in to confirm",      # "...you're not a bot" / "...your age"
+        "sign in if",              # "Private video. Sign in if you've been granted access"
+        "not a bot",
+        "use --cookies", "cookies-from-browser",
+        "login required", "login_required",
+        "private video", "members-only", "join this channel",
+        "this video is only available", "account on this device",
+    )
+    return any(n in m for n in needles)
+
+
 def ytdlp_available() -> bool:
     import importlib.util
     return importlib.util.find_spec("yt_dlp") is not None

@@ -458,22 +458,37 @@ def create_app(
         headers = {"Content-Disposition": "attachment; filename=fisherboy-archivos.zip"}
         return StreamingResponse(iter([buf.getvalue()]), media_type="application/zip", headers=headers)
 
-    @app.get("/api/download/video")
-    async def download_video(request: Request, url: str, quality: str = "best", audio: bool = False):
+    @app.post("/api/download/video")
+    async def download_video(request: Request):
         """Baja un video (mp4) o solo el audio (mp3) de YouTube/Vimeo/etc. con yt-dlp.
 
-        `quality`: 'best' o altura ('1080','720','480','360'); el server la capa a
+        Body JSON {url, quality?, audio?, cookies?, proxy?}. Las cookies y el proxy que el
+        usuario cargó en la UI (este job) GANAN sobre YT_COOKIES/YT_PROXY del server: las
+        cookies se escriben a un cookiefile temporal Netscape (secreto efímero, se borra al
+        terminar). `quality`: 'best' o altura ('1080','720','480','360'), capada a
         VIDEO_MAX_HEIGHT. `audio=true`: solo audio (mp3 si hay ffmpeg, si no nativo).
-        Fisherboy standalone, sin Escriba. Gateado a rol con capacidad (ángel/dios),
-        rate-limited, y la URL se restringe a plataformas conocidas (no es un proxy
-        genérico). Tope de tamaño por formato. ffmpeg opcional (HD + mp3)."""
+        Gateado a rol con capacidad (ángel/dios), rate-limited, y la URL se restringe a
+        plataformas conocidas (no es un proxy genérico). Tope de tamaño por formato.
+        Si YouTube/la plataforma exige sesión (IP bloqueada) devuelve 422 needs_cookies en
+        vez de un 502 (que el gateway se come y deja el error ilegible)."""
         role, _ = auth.identity_from_request(request)
         if role is None:
             raise HTTPException(status_code=401, detail="Necesitás iniciar sesión.")
         if not auth.caps_for(role).get("capture"):   # ángel/dios (operación cara)
             raise HTTPException(status_code=403, detail=f"Tu rol '{role}' no habilita descargar video.")
         _download_enabled()
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            body = {}
+        url = (body.get("url") or "").strip()
+        quality = body.get("quality") or "best"
+        audio = bool(body.get("audio"))
+        raw_cookies = body.get("cookies") or ""
+        req_proxy = (body.get("proxy") or "").strip()
         from .net import media
+        if not url:
+            raise HTTPException(status_code=400, detail="Falta la URL.")
         if not media.ytdlp_available():
             raise HTTPException(status_code=503, detail="yt-dlp no está instalado en el servidor.")
         if not media.host_allowed(url):
@@ -483,25 +498,56 @@ def create_app(
         if not ratelimit.allow(_queue()._r, f"dlvid:{client_ip}", limit=settings.max_jobs_per_min):
             raise HTTPException(status_code=429, detail="Demasiadas descargas; probá en un minuto.")
 
+        import os
         import shutil
         import tempfile
+        from urllib.parse import urlsplit
 
         from starlette.concurrency import run_in_threadpool
 
+        from .security import cookies as cookmod
+
         quality = quality if quality in media.QUALITIES else "best"
+
+        # Cookies de la UI (este job) > YT_COOKIES del server. Cookiefile temporal Netscape,
+        # se borra abajo. El proxy de la UI gana sobre YT_PROXY del server.
+        host = (urlsplit(url).hostname or "").lower()
+        dom = ("." + (host[4:] if host.startswith("www.") else host)) if host else ".youtube.com"
+        netscape = cookmod.to_netscape(raw_cookies, dom) if raw_cookies else ""
+        tmp_cookiefile = ""
+        if netscape:
+            fd, tmp_cookiefile = tempfile.mkstemp(prefix="fb-vid-", suffix=".txt")
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(netscape)
+        cookiefile = tmp_cookiefile or settings.yt_cookies
+        had_cookies = bool(tmp_cookiefile or settings.yt_cookies)
+        proxy = req_proxy or settings.yt_proxy
+
         tmpdir = tempfile.mkdtemp(prefix="fbvid_")
         try:
             path, name = await run_in_threadpool(
                 media.download_video, url, tmpdir=tmpdir,
                 max_bytes=settings.download_max_bytes, max_height=settings.video_max_height,
-                quality=quality, audio_only=bool(audio),
-                proxy=settings.yt_proxy, cookiefile=settings.yt_cookies,
+                quality=quality, audio_only=audio,
+                proxy=proxy, cookiefile=cookiefile,
                 timeout_s=int(settings.fetch_timeout_s),
             )
         except Exception as e:  # noqa: BLE001 — yt-dlp lanza tipos varios
             shutil.rmtree(tmpdir, ignore_errors=True)
-            reason = str(e).splitlines()[0][:160] if str(e) else type(e).__name__
-            raise HTTPException(status_code=502, detail=f"No se pudo bajar: {reason}")
+            reason = str(e).splitlines()[0][:200] if str(e) else type(e).__name__
+            # Anti-bot / pide sesión: el front muestra el modal de cookies (distinto si ya
+            # había cookies → entonces están vencidas/inválidas). 422, no 502: así el detalle
+            # llega al navegador en vez de que el gateway lo reemplace por un "Bad Gateway".
+            if media.is_auth_required(reason):
+                return JSONResponse(status_code=422, content={
+                    "needs_cookies": True, "had_cookies": had_cookies, "detail": reason})
+            raise HTTPException(status_code=400, detail=f"No se pudo bajar: {reason}")
+        finally:
+            if tmp_cookiefile:
+                try:
+                    os.unlink(tmp_cookiefile)
+                except OSError:
+                    pass
 
         def _gen():
             try:

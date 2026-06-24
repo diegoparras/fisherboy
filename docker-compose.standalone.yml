@@ -20,6 +20,12 @@ services:
     env_file: .env
     ports:
       - "8000:8000"
+    # Para bajar videos de YouTube desde el server (IP de datacenter), yt-dlp necesita
+    # cookies de una sesión logueada. Exportá un cookies.txt (formato Netscape), descomentá
+    # el volumen y poné YT_COOKIES=/app/cookies.txt en .env. Usá una cuenta SECUNDARIA.
+    # (Alternativa: cargá las cookies por job en el panel Avanzado de la UI, sin tocar esto.)
+    # volumes:
+    #   - ./cookies.txt:/app/cookies.txt:ro
     depends_on: [fisherboy-redis]
     networks: [fisherboy]
     restart: unless-stopped
