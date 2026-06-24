@@ -25,7 +25,8 @@ def test_healthz(client_factory):
     client = client_factory()
     body = client.get("/healthz").json()
     assert body["status"] == "ok"
-    assert body["version"] == "1.0.0"
+    from app import __version__
+    assert body["version"] == __version__
 
 
 def test_get_unknown_job_404(client_factory):

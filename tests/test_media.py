@@ -133,8 +133,20 @@ def test_is_auth_required(msg, auth_req):
     assert media.is_auth_required(msg) is auth_req
 
 
+def _poll_dl(c, token, tries=150):
+    """La descarga corre en background; segui el progreso hasta done/error."""
+    import time as _t
+    p = {}
+    for _ in range(tries):
+        p = c.get(f"/api/download/video/progress/{token}").json()
+        if p.get("status") in ("error", "done"):
+            return p
+        _t.sleep(0.02)
+    return p
+
+
 def test_video_endpoint_botcheck_returns_422(client_factory, monkeypatch):
-    """El anti-bot de YouTube → 422 needs_cookies (no 502, que el gateway se come)."""
+    """El anti-bot de YouTube → status 'error' con needs_cookies en el progreso."""
     _as_role(monkeypatch, "dios")
 
     def _boom(*a, **k):
@@ -143,9 +155,10 @@ def test_video_endpoint_botcheck_returns_422(client_factory, monkeypatch):
     monkeypatch.setattr(media, "download_video", _boom)
     c = client_factory(FILE_DOWNLOAD_MODE="both")
     r = c.post("/api/download/video", json={"url": "https://www.youtube.com/watch?v=x"})
-    assert r.status_code == 422
-    d = r.json()
-    assert d["needs_cookies"] is True and d["had_cookies"] is False
+    assert r.status_code == 200
+    p = _poll_dl(c, r.json()["token"])
+    assert p["status"] == "error"
+    assert p.get("needs_cookies") is True and p.get("had_cookies") is False
 
 
 def test_video_endpoint_passes_ui_cookies_and_proxy(client_factory, monkeypatch):
@@ -159,14 +172,15 @@ def test_video_endpoint_passes_ui_cookies_and_proxy(client_factory, monkeypatch)
         if cookiefile:
             with open(cookiefile, encoding="utf-8") as fh:
                 seen["cookie_text"] = fh.read()
-        raise RuntimeError("stop")   # no seguir a streaming; "stop" no es bot-check → 400
+        raise RuntimeError("stop")   # corta antes del archivo real
     monkeypatch.setattr(media, "ytdlp_available", lambda: True)
     monkeypatch.setattr(media, "download_video", _capture)
     c = client_factory(FILE_DOWNLOAD_MODE="both")
     r = c.post("/api/download/video", json={
         "url": "https://www.youtube.com/watch?v=x",
         "cookies": "SID=abc; HSID=def", "proxy": "http://u:p@host:8080"})
-    assert r.status_code == 400
+    assert r.status_code == 200
+    _poll_dl(c, r.json()["token"])
     assert seen["proxy"] == "http://u:p@host:8080"
     assert "SID" in seen["cookie_text"] and "abc" in seen["cookie_text"]
 

@@ -110,6 +110,7 @@ def download_video(
     proxy: str = "",
     cookiefile: str = "",
     timeout_s: int = 30,
+    progress_hook=None,
 ) -> tuple[str, str]:
     """Baja el video (o solo el audio mp3) a `tmpdir` y devuelve (ruta, nombre). Lanza si falla.
 
@@ -137,6 +138,8 @@ def download_video(
         "concurrent_fragment_downloads": 4,
         "restrictfilenames": True,
     }
+    if progress_hook:   # yt-dlp llama el hook con {status, downloaded_bytes, total_bytes, ...}
+        ydl_opts["progress_hooks"] = [progress_hook]
     if audio_only:
         ydl_opts["format"] = "bestaudio/best"
         if ffmpeg_available():    # convertir a mp3 necesita ffmpeg; sin él baja el nativo
