@@ -15,13 +15,19 @@ _INDEX = Path(__file__).parent / "index.html"
 _I18N = Path(__file__).parent / "i18n.js"
 
 
-def build_ui_router(escriba_web_url: str = "") -> APIRouter:
+def build_ui_router(escriba_web_url: str = "", auth_mode: str = "local") -> APIRouter:
     router = APIRouter()
 
     # Inyecta el sitio de Escriba (ESCRIBA_WEB_URL) en el <meta> al arrancar. Vacío → "/".
     page = _INDEX.read_text(encoding="utf-8").replace(
         '<meta name="fb-escriba-url" content="" />',
         f'<meta name="fb-escriba-url" content="{html.escape(escriba_web_url, quote=True)}" />',
+    )
+    # Modo de auth: en 'federado' la pantalla de login muestra "Entrar con Lockatus"
+    # (delega en el hub) en vez del campo de clave por rol.
+    page = page.replace(
+        '<meta name="fb-auth-mode" content="" />',
+        f'<meta name="fb-auth-mode" content="{html.escape(auth_mode, quote=True)}" />',
     )
 
     @router.get("/", response_class=HTMLResponse, include_in_schema=False)

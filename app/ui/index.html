@@ -7,6 +7,8 @@
 <meta name="theme-color" content="#f7faf9" />
 <!-- Destino de "Enviar a Escriba": el server lo inyecta desde ESCRIBA_WEB_URL. Vacío = "/" -->
 <meta name="fb-escriba-url" content="" />
+<!-- Modo de auth: "federado" → login vía Lockatus (el server lo inyecta desde AUTH_MODE). -->
+<meta name="fb-auth-mode" content="" />
 <!-- Anti-FOUC: aplicar el tema guardado ANTES de pintar (claro por defecto, ecosistema). -->
 <script>try{var t=localStorage.getItem("fb-theme")||"light";document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
 <script src="/i18n.js"></script>
@@ -747,11 +749,20 @@
         </g>
       </svg>
       <h2>Fisherboy</h2>
-      <p data-i18n="gate.keyTitle">Tu clave de acceso</p>
-      <input id="login-key" type="password" placeholder="••••••••••" autocomplete="current-password" />
-      <button type="submit" class="btn-pill" id="login-btn" data-i18n="gate.enter">Entrar</button>
-      <div class="err" id="login-err"></div>
-      <p class="role-hint" data-i18n="gate.roleHint">tu clave define el rol — dios · ángel · humano</p>
+      <!-- Login local por rol (modo 'local') -->
+      <div id="login-local">
+        <p data-i18n="gate.keyTitle">Tu clave de acceso</p>
+        <input id="login-key" type="password" placeholder="••••••••••" autocomplete="current-password" />
+        <button type="submit" class="btn-pill" id="login-btn" data-i18n="gate.enter">Entrar</button>
+        <div class="err" id="login-err"></div>
+        <p class="role-hint" data-i18n="gate.roleHint">tu clave define el rol — dios · ángel · humano</p>
+      </div>
+      <!-- Login federado (modo 'federado'): delega en Lockatus, el hub de identidad -->
+      <div id="login-sso" class="hidden">
+        <p data-i18n="gate.ssoTitle">Acceso unificado de la suite</p>
+        <a class="btn-pill" id="login-sso-btn" href="/auth/login" data-i18n="gate.ssoEnter">Entrar con Lockatus</a>
+        <p class="role-hint" data-i18n="gate.ssoHint">tu identidad y tu rol los gestiona Lockatus</p>
+      </div>
     </form>
   </div>
 
@@ -1032,7 +1043,15 @@ function applyAllowedModes(modes) {
   }
 }
 
-function showLogin() { gate.classList.remove("hidden"); loginForm.classList.remove("hidden"); }
+const AUTH_MODE = ((document.querySelector('meta[name="fb-auth-mode"]') || {}).content || "local").trim();
+function showLogin() {
+  gate.classList.remove("hidden");
+  loginForm.classList.remove("hidden");
+  // En federado, ocultar el campo de clave por rol y mostrar el botón "Entrar con Lockatus".
+  const fed = AUTH_MODE === "federado";
+  document.getElementById("login-local").classList.toggle("hidden", fed);
+  document.getElementById("login-sso").classList.toggle("hidden", !fed);
+}
 async function checkSession() {
   try {
     const r = await fetch("/api/me");
@@ -1052,6 +1071,7 @@ async function checkSession() {
 
 loginForm.addEventListener("submit", async (ev) => {
   ev.preventDefault();
+  if (AUTH_MODE === "federado") { location.href = "/auth/login"; return; }
   const errEl = document.getElementById("login-err"); errEl.textContent = "";
   try {
     const r = await fetch("/api/login", {
