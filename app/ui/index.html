@@ -1106,13 +1106,27 @@ cookiesFile.addEventListener("change", () => {
 /* ---------- cookies del navegador local (sin extensión) ---------- */
 let cookiesBrowser = null;
 document.querySelectorAll(".mini-btn.bc").forEach(b => {
-  b.addEventListener("click", () => {
-    const was = b.classList.contains("on");
+  b.addEventListener("click", async () => {
     document.querySelectorAll(".mini-btn.bc").forEach(x => x.classList.remove("on"));
-    cookiesBrowser = was ? null : b.dataset.b;
-    if (!was) b.classList.add("on");
-    document.getElementById("bc-sel").textContent = cookiesBrowser
-      ? `→ leeré tus cookies de ${b.textContent} para el dominio` : "";
+    b.classList.add("on");
+    cookiesBrowser = b.dataset.b;
+    const sel = document.getElementById("bc-sel");
+    // Dominio: el del campo URL si hay algo cargado; si no, YouTube (el caso más común).
+    let domain = "youtube.com";
+    try { const u = ((document.getElementById("url") || {}).value || "").trim(); if (u) domain = new URL(u.includes("://") ? u : "https://" + u).hostname.replace(/^www\./, ""); } catch (e) {}
+    sel.textContent = `Leyendo cookies de ${b.textContent} para ${domain}…`;
+    try {
+      const r = await fetch("/api/cookies/from-browser", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ browser: b.dataset.b, domain }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || !d.ok) { sel.textContent = d.reason || d.detail || "No se pudieron leer las cookies."; return; }
+      const ta = document.getElementById("cookies");
+      ta.value = d.cookies;
+      ta.dispatchEvent(new Event("input"));
+      sel.textContent = `${d.count} cookies de ${b.textContent} (${d.domain}) cargadas en la cajita.`;
+    } catch (e) { sel.textContent = "No se pudieron leer las cookies."; }
   });
 });
 
@@ -1622,9 +1636,10 @@ async function _fetchComments(encodedUrl, btn) {
   if (btn) { btn.disabled = true; btn.innerHTML = `${CHAT_ICO}<span>${T("msg.fetching")}</span>`; }
   try {
     const cookies = ((document.getElementById("cookies") || {}).value || "").trim();
+    let proxy = ""; try { proxy = proxyCanonical() || ""; } catch (e) {}
     const r = await fetch("/api/comments", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url: decodeURIComponent(encodedUrl), cookies }),
+      body: JSON.stringify({ url: decodeURIComponent(encodedUrl), cookies, proxy }),
     });
     const d = await r.json().catch(() => ({}));
     if (r.status === 422 && d.needs_cookies) {
