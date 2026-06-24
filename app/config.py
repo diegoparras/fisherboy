@@ -128,6 +128,22 @@ class Settings:
             (e.get("COOKIE_SECURE", "1") or "1").strip().lower() in ("1", "true", "yes", "on")
         )
 
+        # --- Federación opcional con Lockatus (el hub de identidad de la suite) ---
+        # Default 'local' = login propio por rol, sin cambios. En 'federado', /auth/login
+        # delega en Lockatus (OIDC) y /auth/callback siembra la MISMA cookie fb_session
+        # con el rol mapeado → el resto del gate por rol no cambia.
+        self.auth_mode = (e.get("AUTH_MODE", "local") or "local").strip().lower()
+        if self.auth_mode not in ("local", "federado"):
+            self.auth_mode = "local"
+        self.lockatus_issuer = (e.get("LOCKATUS_ISSUER", "") or "").rstrip("/")
+        self.lockatus_client_id = e.get("LOCKATUS_CLIENT_ID", "fisherboy") or "fisherboy"
+        self.lockatus_redirect_uri = (e.get("LOCKATUS_REDIRECT_URI", "") or "").strip()
+        if self.auth_mode == "federado" and not (self.lockatus_issuer and self.lockatus_redirect_uri):
+            raise ValueError(
+                "AUTH_MODE=federado requiere LOCKATUS_ISSUER y LOCKATUS_REDIRECT_URI "
+                "(y SECRET_KEY persistente para firmar la transacción OIDC)."
+            )
+
         # Archivos y media (manifiesto de descargables). 'both' = ofrecer link directo
         # Y descarga vía Fisherboy (proxy); 'direct' = solo link directo; 'proxy' = solo
         # vía Fisherboy; 'off' = no harvestear archivos. La detección siempre corre salvo
