@@ -1,6 +1,6 @@
 [project]
 name = "fisherboy"
-version = "1.0.5"
+version = "1.0.6"
 description = "Sistema supremo de scraping: adquiere la web, la convierte a markdown/JSON, la anonimiza y la entrega. Sidekick de Escriba o standalone."
 requires-python = ">=3.11"
 license = { text = "MIT" }

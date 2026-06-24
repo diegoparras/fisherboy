@@ -270,6 +270,10 @@
   .err-title { margin: 0 0 9px; font-size: 16px; font-weight: 600; color: var(--text); }
   .err-msg { margin: 0 0 20px; font-size: 13px; line-height: 1.55; color: var(--muted); word-break: break-word; white-space: pre-wrap; text-align: left; }
   .err-ok { min-width: 130px; }
+  /* Bloque Cloudflare en el panel Avanzado */
+  .cf-acciones { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+  .cf-status.ok { color: var(--ok, #2e9e5b); }
+  .cf-status.bad { color: var(--err); }
   .dl-scrape { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 16px 20px 0; padding: 9px; width: calc(100% - 40px);
     background: transparent; border: 1px dashed var(--border); border-radius: 10px; color: var(--muted-2); font-family: inherit; font-size: 12.5px; cursor: pointer; }
   .dl-scrape:hover { color: var(--accent); border-color: var(--accent); }
@@ -663,6 +667,31 @@
             </div>
           </div>
           <p class="help" data-i18n-html="adv.captchaHelp">Solver externo (estilo 2captcha), último recurso. Sin esto, la defensa es escalar de tier.</p>
+
+          <div id="cf-block" class="cf-block hidden">
+            <div class="adv-head" style="margin-top:16px">Browser en la nube · Cloudflare</div>
+            <label class="switch">
+              <input type="checkbox" id="cf-enabled" />
+              <span class="track"></span>
+              <span>Usar el browser de Cloudflare como tier 3 (antes del Chromium local)</span>
+            </label>
+            <div class="adv-grid">
+              <div class="field">
+                <label for="cf-account">Account ID</label>
+                <input id="cf-account" type="text" placeholder="tu Account ID de Cloudflare" autocomplete="off" spellcheck="false" />
+              </div>
+              <div class="field">
+                <label for="cf-token">API Token</label>
+                <input id="cf-token" type="password" placeholder="token con permiso Browser Rendering - Edit" autocomplete="off" />
+              </div>
+            </div>
+            <div class="cf-acciones">
+              <button type="button" class="dlbtn" id="cf-test"><svg class="ico" viewBox="0 0 24 24"><path d="M9 3v6l-3 3v3a2 2 0 0 0 2 2h2M15 3v6l3 3v3a2 2 0 0 1-2 2h-2"/></svg><span>Probar</span></button>
+              <button type="button" class="dlbtn" id="cf-save"><svg class="ico" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/></svg><span>Guardar</span></button>
+              <span class="help cf-status" id="cf-status"></span>
+            </div>
+            <p class="help">Renderiza con el Chrome de Cloudflare en vez del Chromium local — imagen más liviana y mejores IPs contra anti-bot. Solo rol dios. La URL a renderizar le va a Cloudflare.</p>
+          </div>
         </section>
 
         <section class="adv-section">
@@ -1147,6 +1176,50 @@ document.getElementById("cookies-eye").addEventListener("click", () => {
   const on = ta.classList.toggle("reveal");
   document.getElementById("cookies-eye").innerHTML = (on ? EYE_OFF : EYE) + (on ? "ocultar" : "ver");
 });
+
+/* ---------- Browser en la nube (Cloudflare) — solo dios ---------- */
+(async function initCloudflare() {
+  const block = document.getElementById("cf-block");
+  if (!block) return;
+  let cfg;
+  try {
+    const r = await fetch("/api/cloudflare/config");
+    if (!r.ok) return;   // no dios / sin sesión → queda oculto
+    cfg = await r.json();
+  } catch (e) { return; }
+  block.classList.remove("hidden");
+  const enabled = document.getElementById("cf-enabled");
+  const account = document.getElementById("cf-account");
+  const token = document.getElementById("cf-token");
+  const status = document.getElementById("cf-status");
+  const TOK_PH = "•••••• (guardado — dejá vacío para conservarlo)";
+  enabled.checked = !!cfg.enabled;
+  account.value = cfg.account_id || "";
+  if (cfg.has_token) token.placeholder = TOK_PH;
+  if (cfg.env_fallback) { status.className = "help cf-status"; status.textContent = "Hay credenciales en el entorno (fallback)."; }
+  document.getElementById("cf-save").addEventListener("click", async () => {
+    status.className = "help cf-status"; status.textContent = "Guardando…";
+    try {
+      const r = await fetch("/api/cloudflare/config", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: enabled.checked, account_id: account.value.trim(), api_token: token.value.trim() }) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.detail || "no se pudo guardar");
+      token.value = ""; if (d.has_token) token.placeholder = TOK_PH;
+      status.className = "help cf-status ok"; status.textContent = "Guardado · " + (d.enabled ? "activado" : "apagado");
+    } catch (e) { status.className = "help cf-status bad"; status.textContent = e.message; }
+  });
+  document.getElementById("cf-test").addEventListener("click", async () => {
+    status.className = "help cf-status"; status.textContent = "Probando con example.com…";
+    try {
+      const r = await fetch("/api/cloudflare/test", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ account_id: account.value.trim(), api_token: token.value.trim() }) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.detail || "error");
+      if (d.ok) { status.className = "help cf-status ok"; status.textContent = `Anduvo · ${d.ms} ms · HTTP ${d.status}${d.title ? " · " + d.title : ""}`; }
+      else { status.className = "help cf-status bad"; status.textContent = d.error || "no anduvo"; }
+    } catch (e) { status.className = "help cf-status bad"; status.textContent = e.message; }
+  });
+})();
 
 /* ---------- Proxy: pegado inteligente + probar + campos + guardados ---------- */
 function parseProxy(raw) {

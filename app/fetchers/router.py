@@ -217,7 +217,7 @@ def build_router(settings, *, redis_client=None) -> TierRouter:
     # falla. Si no está configurado, available()=False y el router lo saltea.
     fetchers = [
         StaticFetcher(), TLSFetcher(), StealthFetcher(),
-        CloudflareBrowserFetcher(settings.cf_account_id, settings.cf_api_token),
+        CloudflareBrowserFetcher(settings.cf_account_id, settings.cf_api_token, redis_client=redis_client),
         BrowserFetcher(),
     ]
 
