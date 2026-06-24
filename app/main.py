@@ -845,6 +845,7 @@ def create_app(
             body = {}
         url = (body.get("url") or "").strip()
         raw_cookies = body.get("cookies") or ""
+        req_proxy = (body.get("proxy") or "").strip()   # proxy de la UI (este job) > YT_PROXY del server
         if not url:
             raise HTTPException(status_code=400, detail="Falta la URL.")
         from .net import comments as cmod
@@ -873,13 +874,14 @@ def create_app(
                 fh.write(netscape)
         cookiefile = tmp_cookiefile or settings.yt_cookies
         had_cookies = bool(tmp_cookiefile or settings.yt_cookies)
+        proxy = req_proxy or settings.yt_proxy   # mismo criterio que la descarga de video
 
         from starlette.concurrency import run_in_threadpool
         try:
             items = await run_in_threadpool(
                 cmod.get_comments, url, max_items=settings.ig_max_items,
                 timeout_s=int(settings.fetch_timeout_s),
-                proxy=settings.yt_proxy, cookiefile=cookiefile)
+                proxy=proxy, cookiefile=cookiefile)
         except cmod.CommentsAuthRequired as e:
             # La plataforma pide sesión: el front muestra el modal de cookies (distinto si ya
             # había cookies cargadas → entonces están vencidas/inválidas).
