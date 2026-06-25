@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Fisherboy">
   <rect width="64" height="64" rx="15" fill="#0f8f6a"/>
   <g fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-    <circle cx="32" cy="16" r="3.4" stroke-width="2.6"/>
-    <path d="M32 19.4 V40 a9 9 0 0 1 -18 0 v-3"/>
-    <path d="M14 39 l3.2 4.2 4.4 -2.4"/>
+    <circle cx="39" cy="15.5" r="3.3" stroke-width="2.6"/>
+    <path d="M39 18.8 V40 a9 9 0 0 1 -18 0 v-3"/>
+    <path d="M21 39 l3.4 4.2 4.4 -2.6"/>
   </g>
 </svg>
