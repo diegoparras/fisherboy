@@ -13,6 +13,7 @@ from fastapi.responses import HTMLResponse, Response
 
 _INDEX = Path(__file__).parent / "index.html"
 _I18N = Path(__file__).parent / "i18n.js"
+_CSS = Path(__file__).parent / "escriba-ui.css"
 
 
 def build_ui_router(escriba_web_url: str = "", auth_mode: str = "local") -> APIRouter:
@@ -38,5 +39,12 @@ def build_ui_router(escriba_web_url: str = "", auth_mode: str = "local") -> APIR
     async def i18n() -> Response:
         return Response(_I18N.read_text(encoding="utf-8"),
                         media_type="application/javascript; charset=utf-8")
+
+    @router.get("/escriba-ui.css", include_in_schema=False)
+    async def escriba_ui_css() -> Response:
+        # Sistema de diseño canónico de la Suite (branding/escriba-ui.css). Se importa
+        # ANTES del CSS propio en index.html; lo único que la app agrega es su acento.
+        return Response(_CSS.read_text(encoding="utf-8"),
+                        media_type="text/css; charset=utf-8")
 
     return router
