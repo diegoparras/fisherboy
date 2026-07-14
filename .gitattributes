@@ -1,2 +1,6 @@
+* text=auto eol=lf
+*.png binary
+*.gif binary
+*.svg text eol=lf
 # Los scripts de shell corren en Linux/WSL: siempre LF (CRLF rompe el shebang).
 *.sh text eol=lf
