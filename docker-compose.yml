@@ -31,6 +31,20 @@ services:
     networks: [fisherboy]
     restart: unless-stopped
 
+  # PO Token provider (bgutil) — el que hace que YouTube entregue los formatos.
+  # YouTube (SABR) exige un proof-of-origin token: corre BotGuard en el navegador y manda el
+  # token con cada pedido. Sin él la lista de formatos viene vacía y yt-dlp corta con
+  # "Requested format is not available" (el audio/mp3 es lo primero que desaparece). Este
+  # sidecar corre esa misma VM de BotGuard en Node y fabrica tokens a pedido; el plugin de
+  # yt-dlp (instalado en la imagen) se los pide solo por HTTP. Sin estado, no expone puerto
+  # al host: solo lo alcanzan la API y el worker por la red interna.
+  # NO arregla el bloqueo por IP ("Sign in to confirm you're not a bot"): para eso, cookies
+  # de sesión + proxy residencial (Avanzado en la UI, o YT_COOKIES/YT_PROXY).
+  fisherboy-bgutil:
+    image: brainicism/bgutil-ytdlp-pot-provider:1.3.1
+    networks: [fisherboy]
+    restart: unless-stopped
+
   # Persistencia opcional (Capa 7). Activar con: docker compose --profile persist up
   # y seteando DATABASE_URL=postgresql://fisherboy:fisherboy@fisherboy-postgres:5432/fisherboy
   fisherboy-postgres:

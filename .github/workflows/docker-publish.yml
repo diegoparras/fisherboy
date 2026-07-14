@@ -8,6 +8,11 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
+  # Rebuild semanal (lunes 05:00 UTC) aunque nadie toque el código: la imagen trae yt-dlp del
+  # canal nightly, y YouTube rompe la extracción cada pocas semanas. Sin este cron, la imagen
+  # se queda con el yt-dlp del día que se buildeó y las descargas vuelven a fallar solas.
+  schedule:
+    - cron: "0 5 * * 1"
   workflow_dispatch:
 
 env:
@@ -51,5 +56,11 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # Invalida SOLO la capa de yt-dlp en cada build (el resto del cache se conserva).
+          # Sin esto, el cache de GHA reusaría el `pip install --pre yt-dlp` para siempre y la
+          # imagen quedaría clavada en el yt-dlp del primer build — justo lo contrario de lo
+          # que se busca con el canal nightly. github.run_id cambia en cada corrida.
+          build-args: |
+            YTDLP_REFRESH=${{ github.run_id }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

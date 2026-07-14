@@ -223,7 +223,7 @@
   .dl-card { position: relative; width: min(460px, 94vw); background: var(--panel); border: 1px solid var(--border);
     border-radius: 18px; box-shadow: var(--shadow); padding: 0 0 20px; overflow: hidden; animation: dl-pop .22s cubic-bezier(.2,.9,.3,1.2); }
   @keyframes dl-pop { from { opacity: 0; transform: translateY(10px) scale(.97); } to { opacity: 1; transform: none; } }
-  .dl-x { position: absolute; top: 12px; right: 12px; z-index: 2; display: grid; place-items: center; width: 32px; height: 32px;
+  .dl-x { position: absolute; top: 12px; right: 12px; z-index: 2; display: grid; place-items: center; width: 32px; height: 32px; padding: 0;
     border-radius: 9px; border: 1px solid var(--border); background: color-mix(in srgb, var(--panel) 70%, transparent); color: var(--muted-2); cursor: pointer; }
   .dl-x:hover { color: var(--text); border-color: var(--accent); }
   .dl-x .ico { width: 16px; height: 16px; }
@@ -251,11 +251,17 @@
   /* Barra de progreso de descarga (inyectada bajo el botón) */
   .dlprog { width: 100%; height: 5px; margin-top: 8px; border-radius: 4px; background: var(--card-2); overflow: hidden; }
   .dlprog > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s ease; }
-  /* Modal de error */
-  .err-back { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 20px; background: rgba(0,0,0,.45); }
+  /* Modal de error. z-index POR ENCIMA del modal de descarga (.dl-back, 130): el error casi
+     siempre nace de una descarga, y con el modal abierto detrás quedaba dibujado debajo de su
+     backdrop con blur → el usuario veía el error translúcido e ilegible. */
+  .err-back { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; padding: 20px;
+    background: color-mix(in srgb, var(--bg) 50%, rgba(0,0,0,.55)); backdrop-filter: blur(6px); animation: reveal .18s; }
   .err-back.hidden { display: none; }
+  /* --card es translúcido (rgba sobre el fondo): sobre un backdrop borroso el texto de atrás
+     se filtraba por la tarjeta. --panel es opaco, como el resto de los modales. */
   .err-card { width: 100%; max-width: 440px; text-align: center; padding: 28px 26px; border-radius: 16px;
-    background: var(--card); border: 1px solid var(--border); box-shadow: 0 24px 64px rgba(0,0,0,.45); }
+    background: var(--panel); border: 1px solid var(--border); box-shadow: var(--shadow);
+    animation: dl-pop .22s cubic-bezier(.2,.9,.3,1.2); }
   .err-face { width: 56px; height: 56px; margin: 0 auto 14px; color: var(--err); }
   .err-face svg { width: 100%; height: 100%; }
   .err-title { margin: 0 0 9px; font-size: 16px; font-weight: 600; color: var(--text); }
