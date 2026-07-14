@@ -56,10 +56,21 @@ EOF
 
 compose() { "${DC[@]}" -p "$PROJECT" -f "$COMPOSE_FILE" -f "$OVERRIDE" "$@"; }
 
-# --- Levantar ----------------------------------------------------------------
+# --- Buildear (una sola vez) -------------------------------------------------
+# La API y el worker comparten la MISMA imagen. Si se buildean en paralelo (lo que hace
+# `up --build`), chocan exportando el mismo tag a la vez → "image already exists" con el store
+# de containerd. Se buildea un solo servicio primero (queda tageado) y el otro lo reusa.
 echo ""
-echo "→ Buildeando y levantando (la primera vez baja Chromium, ~1 GB; paciencia)…"
-if ! compose up -d --build; then
+echo "→ Buildeando la imagen compartida (la primera vez baja Chromium, ~1 GB; paciencia)…"
+if ! compose build fisherboy-api; then
+  echo ""
+  echo "✗ Falló el build. Revisá el error de arriba."
+  exit 1
+fi
+
+# --- Levantar ----------------------------------------------------------------
+echo "→ Levantando el stack…"
+if ! compose up -d; then
   echo ""
   echo "✗ Falló el 'up'. Últimas líneas de log:"
   compose logs --tail=30
