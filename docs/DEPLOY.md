@@ -83,11 +83,44 @@ image is simplest.
    `REDIS_URL` at it.
 7. Add a **second service from the same image** for the worker, with command
    `python -m app.worker` and the **same env**.
+8. Add the **PO Token provider** — see below. Without it, YouTube downloads fail.
+
+### YouTube downloads: the PO Token provider (bgutil)
+
+YouTube (SABR) hands out **no downloadable formats** unless the request carries a
+proof‑of‑origin token — the thing a real browser produces by running BotGuard. Without it
+yt‑dlp dies with `Requested format is not available`, and audio (mp3) is the first thing to
+go. `docker-compose*.yml` ships this as the `fisherboy-bgutil` sidecar; **on EasyPanel you
+have to add it as its own service**, because EasyPanel doesn't read the compose file.
+
+1. **Create → App → Docker Image** in the *same project*.
+2. Image: `brainicism/bgutil-ytdlp-pot-provider:1.3.1`
+3. **No domain, no exposed port.** Only the API and the worker talk to it, over the project's
+   internal network. It's stateless — no volume.
+4. On the **API and the worker**, add the env var pointing at it:
+   ```ini
+   YT_POT_URL=http://<project>_<service>:4416
+   ```
+   EasyPanel's internal hostname is `<projectName>_<serviceName>` — e.g. a service named
+   `bgutil` in project `fisherboy` is `http://fisherboy_bgutil:4416`. Check the exact name in
+   the service's own page.
+
+Two things worth knowing:
+
+- **It does not replace cookies.** The PO token proves "a real client asked"; it says nothing
+  about *who*. If YouTube answers `Sign in to confirm you're not a bot`, that's your
+  datacenter IP being burned — the fix there is session cookies (`YT_COOKIES`, or the
+  Advanced panel in the UI) plus a residential `YT_PROXY`. You can hit both walls at once.
+- **Keep the image fresh.** YouTube breaks extraction every few weeks. The image carries
+  yt‑dlp from the *nightly* channel and GitHub Actions rebuilds it weekly, so in EasyPanel
+  turn on **auto‑deploy** (or hit Deploy) to pull the new `:latest` — otherwise you stay on
+  the yt‑dlp you first pulled and downloads start failing again on their own.
 
 ### Option B — build from source
 
 1. **Create → App → GitHub repo**, point it at `diegoparras/fisherboy`.
-2. Build type: **Dockerfile** (the repo has one). Same env / port / Redis / worker as above.
+2. Build type: **Dockerfile** (the repo has one). Same env / port / Redis / worker as above,
+   **plus the bgutil service** described above.
 
 > EasyPanel sits behind HTTPS, so keep `COOKIE_SECURE=1`. Don't set `FISHERBOY_OPEN_GOD`.
 
@@ -143,6 +176,8 @@ Optional add‑ons: `docker-compose.observability.yml` (Prometheus + Loki + Graf
 | `CRAWL_MAX_PAGES` | `100` | Hard cap of pages per job. |
 | `MAX_FETCH_TIER` | `3` | Escalation ceiling (0 static · 1 TLS · 2 stealth · 3 browser). |
 | `PROXIES` | — | Comma/line‑separated proxy pool. |
+| `YT_POT_URL` | `http://fisherboy-bgutil:4416` | PO Token provider (bgutil). **YouTube hands out no formats without it** — mp3 is the first to go. On EasyPanel point it at your own service name. Empty = off. |
+| `YT_COOKIES` / `YT_PROXY` | — | Session cookies file + proxy for yt‑dlp. The answer to `Sign in to confirm you're not a bot` (burned datacenter IP) — a different wall than the PO token. |
 | `LLM_API_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | — | For `output_format=json` (LLM extraction). |
 | `ALLOW_PRIVATE_TARGETS` | `0` | Dev/test only — **disables SSRF protection**. Never in prod. |
 
