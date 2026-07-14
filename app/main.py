@@ -212,6 +212,7 @@ def create_app(
         return {"role": role, "caps": auth.caps_for(role), "auth_enabled": auth.auth_enabled(),
                 "download_mode": settings.file_download_mode,
                 "video_download": video_ok, "ffmpeg": media.ffmpeg_available(),
+                "pot": media.pot_available(),   # PO Token provider: sin él YouTube esconde el audio
                 "gallery_download": gallery_ok, "instagram_data": ig_ok,
                 "comments_download": proxy_modes and can_capture,
                 "allowed_modes": allowed_modes, "default_mode": app.state.policy._default.value}
@@ -632,14 +633,14 @@ def create_app(
                     url, tmpdir=tmpdir,
                     max_bytes=settings.download_max_bytes, max_height=settings.video_max_height,
                     quality=quality, audio_only=audio,
-                    proxy=proxy, cookiefile=cookiefile,
+                    proxy=proxy, cookiefile=cookiefile, pot_url=settings.yt_pot_url,
                     timeout_s=int(settings.fetch_timeout_s), progress_hook=_hook,
                 )
                 ctype = mimetypes.guess_type(name)[0] or ("audio/mpeg" if audio else "video/mp4")
                 _set({"status": "done", "percent": 100, "name": name, "path": path, "ctype": ctype})
             except Exception as e:  # noqa: BLE001 — yt-dlp lanza tipos varios
                 shutil.rmtree(tmpdir, ignore_errors=True)
-                reason = str(e).splitlines()[0][:200] if str(e) else type(e).__name__
+                reason = str(e).splitlines()[0][:400] if str(e) else type(e).__name__
                 # Anti-bot / pide sesión → el front muestra el modal de cookies (distinto si ya
                 # había cookies cargadas → entonces están vencidas/inválidas).
                 if media.is_auth_required(reason):

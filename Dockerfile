@@ -27,6 +27,19 @@ RUN curl -fsSL https://deno.land/install.sh | DENO_INSTALL=/usr/local sh \
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 
+# yt-dlp: canal NIGHTLY, a propósito. YouTube rompe la extracción cada pocas semanas y la
+# release estable de PyPI llega tarde; la nightly trae el arreglo el mismo día. Junto va el
+# plugin de PO Tokens (bgutil), que le pide los tokens al sidecar `fisherboy-bgutil` del
+# compose (YT_POT_URL). Sin PO Token, YouTube devuelve la lista de formatos vacía y yt-dlp
+# corta con "Requested format is not available" — el audio es lo primero que esconde.
+# El plugin y el sidecar tienen que ser de la misma major (1.x ↔ imagen 1.x).
+# Para forzar el refresco de estas dos capas sin invalidar el resto:
+#   docker build --build-arg YTDLP_REFRESH=$(date +%s) .
+ARG YTDLP_REFRESH=0
+RUN pip install -U --pre "yt-dlp[default]" \
+    && pip install -U "bgutil-ytdlp-pot-provider>=1.1,<2" \
+    && yt-dlp --version
+
 # Navegador (Chromium) para los tiers 2/3 — sitios con JavaScript / anti-bot — y para la
 # captura de API/XHR. patchright = Chromium con stealth (tier 2 + captura); playwright =
 # Chromium estándar (tier 3). Se instalan en una ruta compartida accesible por el user
