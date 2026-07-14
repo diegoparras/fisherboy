@@ -94,7 +94,7 @@ go. `docker-compose*.yml` ships this as the `fisherboy-bgutil` sidecar; **on Eas
 have to add it as its own service**, because EasyPanel doesn't read the compose file.
 
 1. **Create → App → Docker Image** in the *same project*.
-2. Image: `brainicism/bgutil-ytdlp-pot-provider:1.3.1`
+2. Image: `brainicism/bgutil-ytdlp-pot-provider:latest`
 3. **No domain, no exposed port.** Only the API and the worker talk to it, over the project's
    internal network. It's stateless — no volume.
 4. On the **API and the worker**, add the env var pointing at it:
@@ -104,17 +104,36 @@ have to add it as its own service**, because EasyPanel doesn't read the compose 
    EasyPanel's internal hostname is `<projectName>_<serviceName>` — e.g. a service named
    `bgutil` in project `fisherboy` is `http://fisherboy_bgutil:4416`. Check the exact name in
    the service's own page.
+5. **Auto‑deploy on**, here and on the API/worker. Everything in this stack is deliberately
+   unpinned (`latest` / yt‑dlp nightly) and Actions rebuilds the image **weekly**: standing
+   still is what breaks YouTube downloads, not moving.
 
-Two things worth knowing:
+### Is it working?
+
+`GET /api/download/pot/health` (role ángel/dios) answers without you having to fail a
+download first:
+
+```json
+{"ok": true, "server": "1.3.1", "plugin": "1.3.1", "mismatch": false, "error": ""}
+```
+
+- `ok: false` → the sidecar is down, or `YT_POT_URL` points at the wrong hostname.
+- `mismatch: true` → **the one thing to watch with `latest`.** The plugin lives *inside the
+  Fisherboy image* and the server is *its own container*; they're deployed separately, so a
+  new major on one side and not the other means they stop understanding each other. You don't
+  have to guess: the download fails saying exactly that, and `mismatch` flags it here.
+  The fix is a **redeploy of both** — never a version pin, which rots just the same.
+
+Two more things worth knowing:
 
 - **It does not replace cookies.** The PO token proves "a real client asked"; it says nothing
   about *who*. If YouTube answers `Sign in to confirm you're not a bot`, that's your
   datacenter IP being burned — the fix there is session cookies (`YT_COOKIES`, or the
   Advanced panel in the UI) plus a residential `YT_PROXY`. You can hit both walls at once.
-- **Keep the image fresh.** YouTube breaks extraction every few weeks. The image carries
-  yt‑dlp from the *nightly* channel and GitHub Actions rebuilds it weekly, so in EasyPanel
-  turn on **auto‑deploy** (or hit Deploy) to pull the new `:latest` — otherwise you stay on
-  the yt‑dlp you first pulled and downloads start failing again on their own.
+  When the provider is healthy and a download still finds no formats, Fisherboy tells you so
+  and points you at the IP instead of sending you back to bgutil.
+- **`latest` everywhere is the point.** YouTube breaks extraction every few weeks; a frozen
+  image is a downloader that dies on its own. Redeploy to pick up the weekly rebuild.
 
 ### Option B — build from source
 

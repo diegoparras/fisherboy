@@ -32,13 +32,20 @@ RUN pip install -r requirements.txt
 # plugin de PO Tokens (bgutil), que le pide los tokens al sidecar `fisherboy-bgutil` del
 # compose (YT_POT_URL). Sin PO Token, YouTube devuelve la lista de formatos vacía y yt-dlp
 # corta con "Requested format is not available" — el audio es lo primero que esconde.
-# El plugin y el sidecar tienen que ser de la misma major (1.x ↔ imagen 1.x).
-# Para forzar el refresco de estas dos capas sin invalidar el resto:
+#
+# Los dos SIN PIN, a propósito: acá "quedarse quieto" es lo que rompe, no lo que estabiliza.
+# El precio es que el plugin (que vive acá) y el sidecar (que vive en el compose) se despliegan
+# por separado y podrían quedar en majors distintas, que no se entienden. Eso NO se arregla
+# fijando versiones a mano —se pudren igual—, sino detectándolo: media.pot_probe() le pregunta
+# la versión al sidecar y, si no coinciden, la descarga falla diciendo exactamente eso y que
+# hay que redeployar. Ver `no_formats_hint` y /api/download/pot/health.
+# Para refrescar estas capas sin invalidar el resto del cache:
 #   docker build --build-arg YTDLP_REFRESH=$(date +%s) .
 ARG YTDLP_REFRESH=0
 RUN pip install -U --pre "yt-dlp[default]" \
-    && pip install -U "bgutil-ytdlp-pot-provider>=1.1,<2" \
-    && yt-dlp --version
+    && pip install -U "bgutil-ytdlp-pot-provider" \
+    && yt-dlp --version \
+    && python -c "from importlib.metadata import version; print('bgutil plugin', version('bgutil-ytdlp-pot-provider'))"
 
 # Navegador (Chromium) para los tiers 2/3 — sitios con JavaScript / anti-bot — y para la
 # captura de API/XHR. patchright = Chromium con stealth (tier 2 + captura); playwright =

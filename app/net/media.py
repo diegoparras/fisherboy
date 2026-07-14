@@ -108,6 +108,67 @@ def pot_available() -> bool:
         return False
 
 
+def pot_plugin_version() -> str:
+    """Versión del plugin bgutil que quedó horneada en ESTA imagen."""
+    try:
+        from importlib.metadata import version
+        return version("bgutil-ytdlp-pot-provider")
+    except Exception:  # noqa: BLE001 — no instalado
+        return ""
+
+
+def pot_probe(pot_url: str, timeout_s: float = 3.0) -> dict:
+    """Le pregunta al sidecar quién es (GET /ping → {version, server_uptime}) y compara su
+    versión con la del plugin de esta imagen.
+
+    Existe porque plugin y servidor son DOS piezas que se despliegan por separado (la imagen
+    de Fisherboy y el contenedor de bgutil) y tienen que hablar el mismo protocolo: si sus
+    majors difieren, no se entienden y YouTube vuelve a no entregar formatos. Sin este chequeo
+    el síntoma sería otra vez "Requested format is not available" — un error que no dice nada
+    de la causa real. No corre en el camino feliz: solo cuando una descarga ya falló, o si lo
+    pedís por /api/download/pot/health."""
+    out = {"url": pot_url, "plugin": pot_plugin_version(), "server": "",
+           "ok": False, "mismatch": False, "error": ""}
+    if not pot_url:
+        out["error"] = "YT_POT_URL vacío (proveedor apagado)"
+        return out
+    import httpx
+    try:
+        r = httpx.get(pot_url.rstrip("/") + "/ping", timeout=timeout_s)
+        r.raise_for_status()
+        out["server"] = str((r.json() or {}).get("version") or "")
+    except Exception as e:  # noqa: BLE001 — no responde, DNS, 404, JSON roto…
+        out["error"] = f"{type(e).__name__}: {e}"[:160]
+        return out
+    out["ok"] = True
+    major = lambda v: (v or "").split(".")[0]   # noqa: E731
+    if out["plugin"] and out["server"] and major(out["plugin"]) != major(out["server"]):
+        out["mismatch"] = True
+    return out
+
+
+def no_formats_hint(pot_url: str) -> str:
+    """El mensaje que ve el usuario cuando YouTube no entregó formatos. Interroga al sidecar
+    para decir QUÉ pasó, en vez del "Requested format is not available / usá --list-formats"
+    de yt-dlp, que no le sirve a nadie desde una UI."""
+    base = "YouTube no entregó formatos descargables (protección SABR). "
+    if not pot_url:
+        return (base + "No hay proveedor de PO tokens configurado (YT_POT_URL): sin él YouTube "
+                "esconde el audio. También podés cargar cookies de sesión y un proxy en Avanzado.")
+    p = pot_probe(pot_url)
+    if not p["ok"]:
+        return (base + f"El proveedor de PO tokens no responde en {pot_url} ({p['error']}): "
+                "revisá que el servicio bgutil esté levantado y que YT_POT_URL apunte a su "
+                "hostname interno.")
+    if p["mismatch"]:
+        return (base + f"El proveedor de PO tokens es la versión {p['server']} y el plugin de "
+                f"esta imagen la {p['plugin']}: son majors distintas y no se entienden. "
+                "Actualizá la imagen de Fisherboy (redeploy) para que las dos vuelvan a "
+                "coincidir.")
+    return (base + f"El proveedor de PO tokens responde bien (v{p['server']}), así que el "
+            "bloqueo es por IP: cargá cookies de sesión y un proxy residencial en Avanzado.")
+
+
 # Planes de extracción, en orden. YouTube rota qué cliente exige PO Token, así que en vez de
 # casarnos con uno probamos en cascada y nos quedamos con el primero que entregue formatos:
 #   1. default   — los clientes que elija yt-dlp. Con el PO Token provider levantado, es el
@@ -236,15 +297,10 @@ def download_video(
                     except OSError:
                         pass
     else:
-        # Ningún plan entregó formatos: es SABR/PO Token, no un video roto. El mensaje tiene
-        # que decir qué hacer, porque el de yt-dlp ("Requested format is not available") manda
-        # al usuario a leer --list-formats, que acá no le sirve de nada.
-        hint = ("YouTube no entregó formatos descargables (protección SABR). "
-                + ("El proveedor de PO tokens no está respondiendo: revisá que el servicio "
-                   "bgutil esté levantado." if pot_url else
-                   "Falta el proveedor de PO tokens (bgutil): sin él YouTube esconde el audio.")
-                + " También podés cargar cookies de sesión y un proxy en Avanzado.")
-        raise RuntimeError(hint) from last_exc
+        # Ningún plan entregó formatos: es SABR/PO Token, no un video roto. Acá se le pregunta
+        # al sidecar qué le pasa (¿caído? ¿major distinta? ¿sano → entonces es la IP?) para que
+        # el mensaje diga la causa real y no el "usá --list-formats" de yt-dlp.
+        raise RuntimeError(no_formats_hint(pot_url)) from last_exc
 
     # Localiza el archivo realmente bajado (yt-dlp puede cambiar la extensión al muxear).
     candidates = [os.path.join(tmpdir, f) for f in os.listdir(tmpdir)]
