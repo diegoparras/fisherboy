@@ -27,7 +27,7 @@ services:
     # volumes:
     #   - ./cookies.txt:/app/cookies.txt:ro
     depends_on: [fisherboy-redis]
-    networks: [fisherboy]
+    networks: [fisherboy, pot]
     restart: unless-stopped
 
   fisherboy-worker:
@@ -39,7 +39,7 @@ services:
       REDIS_URL: redis://fisherboy-redis:6379/0
     env_file: .env
     depends_on: [fisherboy-redis]
-    networks: [fisherboy]
+    networks: [fisherboy, pot]
     restart: unless-stopped
 
   fisherboy-redis:
@@ -56,13 +56,19 @@ services:
   # se los pide solo (YT_POT_URL, por defecto http://fisherboy-bgutil:4416). Sin estado y sin
   # puerto al host. NO reemplaza a las cookies: si YouTube pide "Sign in to confirm you're not
   # a bot" es la IP la que está quemada → cookies + proxy residencial.
-  # `latest` a propósito: acá quedarse quieto es lo que rompe. Si el sidecar salta a una major
-  # que el plugin de la imagen no entiende, la descarga lo dice con todas las letras (pot_probe)
-  # y se arregla con un redeploy — no hace falta vivir atado a un número.
+  # Fijado por DIGEST (inmutable), no por `latest`: este contenedor VE TUS CREDENCIALES DE PROXY
+  # —el plugin se las manda para generar el token desde tu misma IP— así que un compromiso de la
+  # cuenta upstream no puede entrar solo en un redeploy. Para no quedar clavado en una versión
+  # vieja (la otra forma de romperse), Dependabot abre un PR cuando sale una nueva.
+  # Red propia (`pot`): habla con la API y el worker, pero NO ve a Redis.
   fisherboy-bgutil:
-    image: brainicism/bgutil-ytdlp-pot-provider:latest
-    networks: [fisherboy]
+    image: brainicism/bgutil-ytdlp-pot-provider:1.3.1@sha256:1aaa43a0ca72dfca6a6d2129a0fb4a23465c25adb1b043f8aff829a20825646b
+    networks: [pot]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
     restart: unless-stopped
 
 networks:
   fisherboy:
+  # Red dedicada al provider: lo mantiene lejos de Redis (ejecuta código de terceros).
+  pot:

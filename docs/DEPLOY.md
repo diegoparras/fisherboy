@@ -94,7 +94,12 @@ go. `docker-compose*.yml` ships this as the `fisherboy-bgutil` sidecar; **on Eas
 have to add it as its own service**, because EasyPanel doesn't read the compose file.
 
 1. **Create → App → Docker Image** in the *same project*.
-2. Image: `brainicism/bgutil-ytdlp-pot-provider:latest`
+2. Image — **pin it by digest**, not `latest` (see the security note below):
+   ```
+   brainicism/bgutil-ytdlp-pot-provider:1.3.1@sha256:1aaa43a0ca72dfca6a6d2129a0fb4a23465c25adb1b043f8aff829a20825646b
+   ```
+   The current digest lives in `docker-compose.yml`; Dependabot bumps it there via PR, so
+   check that file for the latest one.
 3. **No domain, no exposed port.** Only the API and the worker talk to it, over the project's
    internal network. It's stateless — no volume.
 4. On the **API and the worker**, add the env var pointing at it:
@@ -104,9 +109,22 @@ have to add it as its own service**, because EasyPanel doesn't read the compose 
    EasyPanel's internal hostname is `<projectName>_<serviceName>` — e.g. a service named
    `bgutil` in project `fisherboy` is `http://fisherboy_bgutil:4416`. Check the exact name in
    the service's own page.
-5. **Auto‑deploy on**, here and on the API/worker. Everything in this stack is deliberately
-   unpinned (`latest` / yt‑dlp nightly) and Actions rebuilds the image **weekly**: standing
-   still is what breaks YouTube downloads, not moving.
+5. **Auto‑deploy on** for the API and worker (yt‑dlp is nightly + a weekly rebuild — standing
+   still is what breaks YouTube downloads). Leave the **bgutil** service on its digest and bump
+   it through the Dependabot PR instead.
+
+> **Why pin bgutil but not yt‑dlp?** This container is third‑party code that runs Google's
+> BotGuard VM, and the plugin hands it **your proxy credentials** on every request (the token
+> has to be minted from your exit IP). With `latest` + auto‑deploy, a compromise of the
+> upstream account would flow into your next redeploy on its own. A **digest is immutable** —
+> nothing can change what sits behind that hash — and Dependabot keeps you current through a
+> reviewable PR rather than a blind pull. yt‑dlp is different: it's yours (baked into your own
+> image, rebuilt by your own Actions), so freshness wins there.
+>
+> On the compose files this service also sits on its **own network**, reachable by the API and
+> worker but **not** by Redis. EasyPanel doesn't give you per‑service networks the same way, so
+> the digest pin is your main lever there — keep the service without a public domain so it's
+> only reachable inside the project.
 
 ### Is it working?
 
