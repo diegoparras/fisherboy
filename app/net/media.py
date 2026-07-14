@@ -76,9 +76,50 @@ def is_auth_required(message: str) -> bool:
     return any(n in m for n in needles)
 
 
+def is_no_formats(message: str) -> bool:
+    """¿El fallo es "YouTube no me dio formatos descargables"? Es la cara visible de SABR:
+    YouTube exige un PO Token (proof-of-origin) y, si no lo tiene, entrega una lista de
+    formatos vacía o mocha (solo storyboards). yt-dlp lo reporta como "Requested format is
+    not available". Distinto de is_auth_required (ahí pide sesión): acá la salida es el PO
+    token provider o probar otro player_client, no las cookies."""
+    m = (message or "").lower()
+    needles = (
+        "requested format is not available",
+        "no video formats", "no formats found", "no suitable formats",
+        "only images are available",
+        "unable to extract player", "failed to extract any player response",
+        "sabr",
+    )
+    return any(n in m for n in needles)
+
+
 def ytdlp_available() -> bool:
     import importlib.util
     return importlib.util.find_spec("yt_dlp") is not None
+
+
+def pot_available() -> bool:
+    """¿Está instalado el plugin que fabrica PO Tokens (bgutil)? Sin él, YouTube esconde
+    los formatos de audio y el mp3 no sale."""
+    import importlib.util
+    try:
+        return importlib.util.find_spec("yt_dlp_plugins.extractor.getpot_bgutil") is not None
+    except (ImportError, ValueError):   # el namespace del plugin ni existe
+        return False
+
+
+# Planes de extracción, en orden. YouTube rota qué cliente exige PO Token, así que en vez de
+# casarnos con uno probamos en cascada y nos quedamos con el primero que entregue formatos:
+#   1. default   — los clientes que elija yt-dlp. Con el PO Token provider levantado, es el
+#                  que da la mejor calidad (formatos DASH completos → 1080p y audio real).
+#   2. tv,web_embedded — no exigen PO Token hoy; el salvavidas cuando el provider está caído.
+#   3. android_vr      — tampoco lo exige; último recurso, catálogo de formatos más pobre.
+# La lista vacía = "no fuerces player_client" (default de yt-dlp).
+_PLAYER_PLANS: tuple[tuple[str, ...], ...] = (
+    (),
+    ("tv", "web_embedded"),
+    ("android_vr",),
+)
 
 
 def ffmpeg_available() -> bool:
@@ -113,6 +154,7 @@ def download_video(
     audio_only: bool = False,
     proxy: str = "",
     cookiefile: str = "",
+    pot_url: str = "",
     timeout_s: int = 30,
     progress_hook=None,
 ) -> tuple[str, str]:
@@ -120,7 +162,9 @@ def download_video(
 
     `quality`: 'best' o una altura ('1080','720',...). El server la capa a VIDEO_MAX_HEIGHT.
     `audio_only`: solo el audio → mp3 si hay ffmpeg, si no el formato nativo (m4a/webm).
-    Bloqueante (red + disco): el endpoint lo corre en un threadpool."""
+    `pot_url`: URL del PO Token provider (bgutil). Sin él YouTube esconde los formatos.
+    Si YouTube no entrega formatos, reintenta con otros player_client (_PLAYER_PLANS) antes
+    de darse por vencido. Bloqueante (red + disco): el endpoint lo corre en un threadpool."""
     import yt_dlp
 
     # Altura efectiva: lo que pidió el usuario, capado por el tope del server.
@@ -145,7 +189,10 @@ def download_video(
     if progress_hook:   # yt-dlp llama el hook con {status, downloaded_bytes, total_bytes, ...}
         ydl_opts["progress_hooks"] = [progress_hook]
     if audio_only:
-        ydl_opts["format"] = "bestaudio/best"
+        # bestaudio son formatos DASH: los primeros que YouTube esconde sin PO Token. El
+        # fallback a un progresivo (que trae video+audio) salva el mp3 aunque el DASH no esté
+        # —ffmpeg le arranca la pista de audio igual—, a costa de bajar unos MB de más.
+        ydl_opts["format"] = "bestaudio/bestaudio*/b"
         if ffmpeg_available():    # convertir a mp3 necesita ffmpeg; sin él baja el nativo
             ydl_opts["postprocessors"] = [{
                 "key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192",
@@ -158,8 +205,46 @@ def download_video(
     if cookiefile:
         ydl_opts["cookiefile"] = cookiefile
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        ydl.extract_info(url, download=True)
+    extractor_args: dict[str, dict[str, list[str]]] = {}
+    if pot_url:   # el plugin bgutil lee de acá a qué sidecar pedirle los PO Tokens
+        extractor_args["youtubepot-bgutilhttp"] = {"base_url": [pot_url]}
+
+    # Cascada: si YouTube no entrega formatos con un plan, se prueba el siguiente. Los errores
+    # que NO son de formatos (video privado, red, sesión) cortan de una: reintentar no ayuda.
+    last_exc: Exception | None = None
+    for plan in _PLAYER_PLANS:
+        opts = dict(ydl_opts)
+        args = dict(extractor_args)
+        if plan:
+            args["youtube"] = {"player_client": list(plan)}
+        if args:
+            opts["extractor_args"] = args
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                ydl.extract_info(url, download=True)
+            break
+        except Exception as e:  # noqa: BLE001 — yt-dlp lanza tipos varios
+            msg = str(e)
+            if is_auth_required(msg) or not is_no_formats(msg):
+                raise
+            last_exc = e
+            # Plan fallido: limpiar los .part que dejó antes de reintentar con otro cliente.
+            for f in os.listdir(tmpdir):
+                if f.endswith((".part", ".ytdl")):
+                    try:
+                        os.unlink(os.path.join(tmpdir, f))
+                    except OSError:
+                        pass
+    else:
+        # Ningún plan entregó formatos: es SABR/PO Token, no un video roto. El mensaje tiene
+        # que decir qué hacer, porque el de yt-dlp ("Requested format is not available") manda
+        # al usuario a leer --list-formats, que acá no le sirve de nada.
+        hint = ("YouTube no entregó formatos descargables (protección SABR). "
+                + ("El proveedor de PO tokens no está respondiendo: revisá que el servicio "
+                   "bgutil esté levantado." if pot_url else
+                   "Falta el proveedor de PO tokens (bgutil): sin él YouTube esconde el audio.")
+                + " También podés cargar cookies de sesión y un proxy en Avanzado.")
+        raise RuntimeError(hint) from last_exc
 
     # Localiza el archivo realmente bajado (yt-dlp puede cambiar la extensión al muxear).
     candidates = [os.path.join(tmpdir, f) for f in os.listdir(tmpdir)]

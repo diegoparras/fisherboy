@@ -161,6 +161,12 @@ class Settings:
         # da una sesión logueada. Mismos nombres que Escriba para reusar config.
         self.yt_proxy = e.get("YT_PROXY", "") or ""
         self.yt_cookies = e.get("YT_COOKIES", "") or ""   # ruta a cookies.txt
+        # PO Token provider (bgutil). YouTube exige un proof-of-origin token (SABR): sin él
+        # devuelve la lista de formatos vacía y yt-dlp corta con "Requested format is not
+        # available" — sobre todo para el audio (los DASH adaptativos son los primeros que
+        # esconde). El provider es un sidecar HTTP que corre la VM de BotGuard y fabrica el
+        # token; el plugin de yt-dlp lo consume solo. Vacío = sin provider (modo degradado).
+        self.yt_pot_url = (e.get("YT_POT_URL", "http://fisherboy-bgutil:4416") or "").strip()
         # Tier de browser EN LA NUBE (Cloudflare Browser Rendering): opt-in. Si CF_ACCOUNT_ID y
         # CF_API_TOKEN están seteados, el router usa el browser de Cloudflare ANTES del Chromium
         # local (mismo tier 3, con fallback al local). Permite imágenes sin Chromium (~1 GB menos).
