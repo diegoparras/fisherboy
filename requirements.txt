@@ -33,7 +33,14 @@ browser-cookie3>=0.19   # leer cookies del navegador local (reemplaza la extensi
 # --- Descarga de video (mp4) de YouTube/Vimeo/etc. (standalone, sin Escriba).
 #   ffmpeg (binario del sistema, ver Dockerfile) es OPCIONAL: mejora la calidad muxeando
 #   video+audio; sin él cae al mejor progresivo (un solo archivo).
-yt-dlp>=2024.1.0
+#   OJO: yt-dlp NO se instala desde acá — el Dockerfile lo pone del canal nightly
+#   (`pip install --pre`), porque YouTube rompe la extracción cada pocas semanas y la stable
+#   de PyPI llega tarde. Local (fuera de Docker): `pip install -U --pre "yt-dlp[default]"`.
+#   Junto con él va el plugin de PO Tokens (bgutil), que habla con el sidecar del compose:
+#   sin PO Token YouTube entrega la lista de formatos vacía → "Requested format is not
+#   available" (y el mp3 nunca sale). El plugin y el sidecar deben ser de la misma major.
+#   yt-dlp[default]  → nightly, ver Dockerfile
+#   bgutil-ytdlp-pot-provider>=1.1,<2  → ver Dockerfile
 #   gallery-dl: el gemelo de yt-dlp para imágenes/galerías (Instagram, X, Reddit, Pinterest,
 #   Tumblr, Flickr, DeviantArt, etc.). Python puro, sin binarios.
 gallery-dl>=1.26

@@ -70,8 +70,23 @@ def test_quality_capped_by_server_max(monkeypatch, tmp_path):
 
 def test_audio_only_uses_mp3_postprocessor(monkeypatch, tmp_path):
     opts = _capture_ydl_opts(monkeypatch, tmp_path, ffmpeg=True, audio_only=True)
-    assert opts["format"] == "bestaudio/best"
+    assert opts["format"].startswith("bestaudio")
+    assert opts["format"].endswith("/b")   # cae a un progresivo si YouTube esconde el DASH
     assert opts["postprocessors"][0]["preferredcodec"] == "mp3"
+
+
+def test_pot_url_reaches_extractor_args(monkeypatch, tmp_path):
+    """El PO Token provider viaja en extractor_args: sin esto el plugin bgutil no sabe a
+    qué sidecar pedirle el token y YouTube no entrega los formatos."""
+    opts = _capture_ydl_opts(monkeypatch, tmp_path, ffmpeg=True,
+                             pot_url="http://fisherboy-bgutil:4416")
+    assert opts["extractor_args"]["youtubepot-bgutilhttp"]["base_url"] == \
+        ["http://fisherboy-bgutil:4416"]
+
+
+def test_no_pot_url_leaves_extractor_args_clean(monkeypatch, tmp_path):
+    opts = _capture_ydl_opts(monkeypatch, tmp_path, ffmpeg=True)
+    assert "extractor_args" not in opts
 
 
 def test_audio_only_no_ffmpeg_skips_postprocessor(monkeypatch, tmp_path):
@@ -131,6 +146,91 @@ def test_video_endpoint_ssrf_host(client_factory, monkeypatch):
 ])
 def test_is_auth_required(msg, auth_req):
     assert media.is_auth_required(msg) is auth_req
+
+
+@pytest.mark.parametrize("msg,no_fmt", [
+    ("ERROR: [youtube] x: Requested format is not available. Use --list-formats", True),
+    ("ERROR: [youtube] x: No video formats found!", True),
+    ("Only images are available for download. Use --list-formats", True),
+    ("HTTP Error 404: Not Found", False),
+    ("Sign in to confirm you're not a bot", False),   # eso es auth, no falta de formatos
+])
+def test_is_no_formats(msg, no_fmt):
+    assert media.is_no_formats(msg) is no_fmt
+
+
+# ---- Cascada de player_client: el arreglo de "Requested format is not available" (SABR).
+NO_FMT = "ERROR: [youtube] x: Requested format is not available. Use --list-formats"
+
+
+def _run_with_script(monkeypatch, tmp_path, script, calls=None, **kw):
+    """Corre download_video con un yt_dlp falso guionado: `script[i]` es el mensaje de error
+    del intento i (None = ese intento anda y deja el archivo). `calls` (lista del caller) se
+    llena con las opts de cada intento — así se puede inspeccionar incluso si download_video
+    termina lanzando."""
+    calls = [] if calls is None else calls
+
+    class _FakeYDL:
+        def __init__(self, opts):
+            self.opts = opts
+        def __enter__(self):
+            return self
+        def __exit__(self, *a):
+            return False
+        def extract_info(self, url, download=True):
+            calls.append(self.opts)
+            err = script[len(calls) - 1]
+            if err:
+                raise RuntimeError(err)
+            (tmp_path / "clip.mp3").write_bytes(b"x" * 512)
+            return {}
+
+    import sys
+    import types
+    fake = types.ModuleType("yt_dlp")
+    fake.YoutubeDL = _FakeYDL
+    monkeypatch.setattr(media, "ffmpeg_available", lambda: True)
+    monkeypatch.setitem(sys.modules, "yt_dlp", fake)
+    result = media.download_video("https://youtu.be/x", tmpdir=str(tmp_path),
+                                  max_bytes=10**8, **kw)
+    return result, calls
+
+
+def test_retries_with_next_player_client_when_no_formats(monkeypatch, tmp_path):
+    """YouTube esconde los formatos con el cliente por defecto (SABR) → reintenta con el
+    plan siguiente (tv/web_embedded) en vez de morir con el error críptico de yt-dlp."""
+    (_path, name), calls = _run_with_script(
+        monkeypatch, tmp_path, [NO_FMT, None],
+        audio_only=True, pot_url="http://fisherboy-bgutil:4416")
+    assert name == "clip.mp3"
+    assert len(calls) == 2
+    assert calls[1]["extractor_args"]["youtube"]["player_client"] == ["tv", "web_embedded"]
+    # el PO token sigue viajando en el reintento
+    assert calls[1]["extractor_args"]["youtubepot-bgutilhttp"]["base_url"] \
+        == ["http://fisherboy-bgutil:4416"]
+
+
+def test_all_plans_exhausted_gives_actionable_error(monkeypatch, tmp_path):
+    """Si ningún cliente entrega formatos, el mensaje tiene que decir qué hacer — el de
+    yt-dlp manda a leer --list-formats, que al usuario de la UI no le sirve de nada."""
+    calls: list[dict] = []
+    with pytest.raises(RuntimeError) as ei:
+        _run_with_script(monkeypatch, tmp_path, [NO_FMT] * 3, calls=calls,
+                         audio_only=True, pot_url="")
+    assert len(calls) == len(media._PLAYER_PLANS)   # probó todos los planes antes de rendirse
+    msg = str(ei.value)
+    assert "SABR" in msg and "bgutil" in msg and "cookies" in msg
+
+
+def test_auth_error_does_not_retry(monkeypatch, tmp_path):
+    """Un pedido de sesión no se arregla cambiando de player_client: cortá y pedí cookies.
+    El guion deja 2 planes exitosos detrás; si reintentara, no lanzaría y habría 2+ intentos."""
+    calls: list[dict] = []
+    with pytest.raises(RuntimeError) as ei:
+        _run_with_script(monkeypatch, tmp_path,
+                         ["ERROR: Sign in to confirm you're not a bot", None, None], calls=calls)
+    assert len(calls) == 1                          # cortó en el primero
+    assert media.is_auth_required(str(ei.value))    # y el motivo llega intacto al endpoint
 
 
 def _poll_dl(c, token, tries=150):
