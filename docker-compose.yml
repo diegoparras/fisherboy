@@ -14,7 +14,7 @@ services:
     ports:
       - "8000:8000"   # exponé solo en standalone; en sidekick dejalo detrás de la red
     depends_on: [fisherboy-redis]
-    networks: [fisherboy, escriba_internal]
+    networks: [fisherboy, escriba_internal, pot]
     restart: unless-stopped
 
   fisherboy-worker:
@@ -22,7 +22,7 @@ services:
     command: python -m app.worker
     env_file: .env
     depends_on: [fisherboy-redis]
-    networks: [fisherboy, escriba_internal]
+    networks: [fisherboy, escriba_internal, pot]
     restart: unless-stopped
 
   fisherboy-redis:
@@ -40,14 +40,21 @@ services:
   # al host: solo lo alcanzan la API y el worker por la red interna.
   # NO arregla el bloqueo por IP ("Sign in to confirm you're not a bot"): para eso, cookies
   # de sesión + proxy residencial (Avanzado en la UI, o YT_COOKIES/YT_PROXY).
-  # `latest` a propósito (igual que yt-dlp nightly en la imagen): acá quedarse quieto es lo que
-  # rompe. El riesgo de latest —que el sidecar salte a una major nueva y deje de entenderse con
-  # el plugin de la imagen— no se tapa con un pin: se detecta. Si pasa, la descarga falla
-  # diciendo "el sidecar es vX y el plugin vY, redeployá", no con un error críptico.
-  # Pullealo junto con la imagen: `docker compose pull && docker compose up -d`.
+  # Fijado por DIGEST, no por `latest`. No es desconfianza del proyecto (es el provider que
+  # recomienda la wiki de yt-dlp, GPL-3, activo): es que este contenedor VE TUS CREDENCIALES DE
+  # PROXY —el plugin le manda el `proxy` en cada pedido, para que el token se genere desde tu
+  # misma IP— y con `latest` + auto-deploy, un compromiso de la cuenta upstream entraría solo en
+  # el próximo redeploy. Un digest es inmutable: nadie puede cambiar lo que hay detrás del hash.
+  # Y para no quedar clavado en una versión vieja (que es la OTRA forma de romperse), Dependabot
+  # abre un PR cuando sale una nueva — ver .github/dependabot.yml. Al día, pero revisado.
+  #
+  # Red propia (`pot`): habla con la API y el worker, pero NO ve a Redis. Si algún día esa
+  # imagen resulta hostil, no encuentra la cola ni los sobres del otro lado.
   fisherboy-bgutil:
-    image: brainicism/bgutil-ytdlp-pot-provider:latest
-    networks: [fisherboy]
+    image: brainicism/bgutil-ytdlp-pot-provider:1.3.1@sha256:1aaa43a0ca72dfca6a6d2129a0fb4a23465c25adb1b043f8aff829a20825646b
+    networks: [pot]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]     # Node escucha en 4416 (>1024): no necesita ninguna capability
     restart: unless-stopped
 
   # Persistencia opcional (Capa 7). Activar con: docker compose --profile persist up
@@ -69,5 +76,8 @@ volumes:
 
 networks:
   fisherboy:
+  # Red dedicada al PO Token provider: solo la API y el worker cruzan a ella. Mantiene al
+  # sidecar (código de terceros que ejecuta la VM de BotGuard de Google) lejos de Redis.
+  pot:
   escriba_internal:
     external: true
