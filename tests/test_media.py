@@ -219,7 +219,89 @@ def test_all_plans_exhausted_gives_actionable_error(monkeypatch, tmp_path):
                          audio_only=True, pot_url="")
     assert len(calls) == len(media._PLAYER_PLANS)   # probó todos los planes antes de rendirse
     msg = str(ei.value)
-    assert "SABR" in msg and "bgutil" in msg and "cookies" in msg
+    assert "SABR" in msg and "YT_POT_URL" in msg and "cookies" in msg
+
+
+# ---- El sidecar y el plugin se despliegan por separado y pueden desincronizarse: en vez de
+# ---- fijar versiones a mano (que se pudren igual), se detecta y se dice.
+def _fake_ping(monkeypatch, *, version=None, boom=False):
+    """Simula el GET /ping del sidecar bgutil."""
+    class _Resp:
+        def raise_for_status(self):
+            pass
+        def json(self):
+            return {"server_uptime": 12.3, "version": version}
+
+    def _get(url, timeout=None):
+        assert url.endswith("/ping"), url
+        if boom:
+            raise ConnectionError("Connection refused")
+        return _Resp()
+
+    import httpx
+    monkeypatch.setattr(httpx, "get", _get)
+
+
+def test_pot_probe_detects_version_mismatch(monkeypatch):
+    """Sidecar en 2.x + plugin en 1.x = no se entienden. Hay que verlo, no adivinarlo."""
+    _fake_ping(monkeypatch, version="2.0.0")
+    monkeypatch.setattr(media, "pot_plugin_version", lambda: "1.3.1")
+    p = media.pot_probe("http://fisherboy-bgutil:4416")
+    assert p["ok"] is True and p["mismatch"] is True
+    assert p["server"] == "2.0.0" and p["plugin"] == "1.3.1"
+
+
+def test_pot_probe_same_major_is_fine(monkeypatch):
+    """Dentro de la misma major se entienden: 1.4.0 contra 1.3.1 NO es un problema."""
+    _fake_ping(monkeypatch, version="1.4.0")
+    monkeypatch.setattr(media, "pot_plugin_version", lambda: "1.3.1")
+    p = media.pot_probe("http://fisherboy-bgutil:4416")
+    assert p["ok"] is True and p["mismatch"] is False
+
+
+def test_pot_probe_reports_dead_sidecar(monkeypatch):
+    _fake_ping(monkeypatch, boom=True)
+    p = media.pot_probe("http://fisherboy-bgutil:4416")
+    assert p["ok"] is False and "Connection refused" in p["error"]
+
+
+def test_hint_mismatch_tells_you_to_redeploy(monkeypatch):
+    monkeypatch.setattr(media, "pot_probe", lambda url, **k: {
+        "url": url, "plugin": "1.3.1", "server": "2.0.0", "ok": True, "mismatch": True, "error": ""})
+    msg = media.no_formats_hint("http://x:4416")
+    assert "2.0.0" in msg and "1.3.1" in msg and "redeploy" in msg.lower()
+
+
+def test_hint_healthy_provider_points_at_the_ip(monkeypatch):
+    """Si el proveedor está sano, el que bloquea es YouTube por IP: mandá al usuario a las
+    cookies/proxy, no a seguir peleando con bgutil."""
+    monkeypatch.setattr(media, "pot_probe", lambda url, **k: {
+        "url": url, "plugin": "1.3.1", "server": "1.3.1", "ok": True, "mismatch": False, "error": ""})
+    msg = media.no_formats_hint("http://x:4416")
+    assert "IP" in msg and "cookies" in msg
+
+
+def test_hint_dead_provider_says_so(monkeypatch):
+    monkeypatch.setattr(media, "pot_probe", lambda url, **k: {
+        "url": url, "plugin": "1.3.1", "server": "", "ok": False, "mismatch": False,
+        "error": "ConnectionError: refused"})
+    msg = media.no_formats_hint("http://fisherboy-bgutil:4416")
+    assert "no responde" in msg and "fisherboy-bgutil" in msg
+
+
+def test_pot_health_endpoint(client_factory, monkeypatch):
+    _as_role(monkeypatch, "dios")
+    monkeypatch.setattr(media, "pot_probe", lambda url, **k: {
+        "url": url, "plugin": "1.3.1", "server": "1.3.1", "ok": True, "mismatch": False, "error": ""})
+    c = client_factory(FILE_DOWNLOAD_MODE="both")
+    d = c.get("/api/download/pot/health").json()
+    assert d["ok"] is True and d["mismatch"] is False
+
+
+def test_pot_health_endpoint_requires_capture(client_factory, monkeypatch):
+    _as_role(monkeypatch, "humano")
+    c = client_factory(FILE_DOWNLOAD_MODE="both")
+    assert c.get("/api/download/pot/health").status_code == 403
 
 
 def test_auth_error_does_not_retry(monkeypatch, tmp_path):

@@ -56,8 +56,11 @@ services:
   # se los pide solo (YT_POT_URL, por defecto http://fisherboy-bgutil:4416). Sin estado y sin
   # puerto al host. NO reemplaza a las cookies: si YouTube pide "Sign in to confirm you're not
   # a bot" es la IP la que está quemada → cookies + proxy residencial.
+  # `latest` a propósito: acá quedarse quieto es lo que rompe. Si el sidecar salta a una major
+  # que el plugin de la imagen no entiende, la descarga lo dice con todas las letras (pot_probe)
+  # y se arregla con un redeploy — no hace falta vivir atado a un número.
   fisherboy-bgutil:
-    image: brainicism/bgutil-ytdlp-pot-provider:1.3.1
+    image: brainicism/bgutil-ytdlp-pot-provider:latest
     networks: [fisherboy]
     restart: unless-stopped
 
