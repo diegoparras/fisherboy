@@ -529,6 +529,24 @@ def create_app(
         headers = {"Content-Disposition": "attachment; filename=fisherboy-archivos.zip"}
         return StreamingResponse(iter([buf.getvalue()]), media_type="application/zip", headers=headers)
 
+    @app.get("/api/download/pot/health")
+    async def download_pot_health(request: Request):
+        """¿El proveedor de PO tokens (bgutil) está vivo y habla el mismo idioma que la imagen?
+
+        Sin PO token YouTube no entrega formatos, así que este es el primer lugar donde mirar
+        cuando una descarga falla. Devuelve {ok, server, plugin, mismatch, error}: `mismatch`
+        avisa que el sidecar y el plugin quedaron en majors distintas (se despliegan por
+        separado) — se arregla redeployando, no fijando versiones."""
+        role, _ = auth.identity_from_request(request)
+        if role is None:
+            raise HTTPException(status_code=401, detail="Necesitás iniciar sesión.")
+        if not auth.caps_for(role).get("capture"):
+            raise HTTPException(status_code=403, detail="Sin permiso.")
+        from .net import media
+        import anyio
+        # pot_probe hace una llamada HTTP bloqueante: al threadpool, para no frenar el loop.
+        return await anyio.to_thread.run_sync(media.pot_probe, settings.yt_pot_url)
+
     @app.post("/api/download/video")
     async def download_video(request: Request):
         """Baja un video (mp4) o solo el audio (mp3) de YouTube/Vimeo/etc. con yt-dlp.

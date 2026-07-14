@@ -40,8 +40,13 @@ services:
   # al host: solo lo alcanzan la API y el worker por la red interna.
   # NO arregla el bloqueo por IP ("Sign in to confirm you're not a bot"): para eso, cookies
   # de sesión + proxy residencial (Avanzado en la UI, o YT_COOKIES/YT_PROXY).
+  # `latest` a propósito (igual que yt-dlp nightly en la imagen): acá quedarse quieto es lo que
+  # rompe. El riesgo de latest —que el sidecar salte a una major nueva y deje de entenderse con
+  # el plugin de la imagen— no se tapa con un pin: se detecta. Si pasa, la descarga falla
+  # diciendo "el sidecar es vX y el plugin vY, redeployá", no con un error críptico.
+  # Pullealo junto con la imagen: `docker compose pull && docker compose up -d`.
   fisherboy-bgutil:
-    image: brainicism/bgutil-ytdlp-pot-provider:1.3.1
+    image: brainicism/bgutil-ytdlp-pot-provider:latest
     networks: [fisherboy]
     restart: unless-stopped
 
