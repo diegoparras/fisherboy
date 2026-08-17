@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from ..net import captcha
 from ..security.ssrf import resolve_and_validate
+from .actions import persist_session, run_actions, session_state
 from .base import BlockedError, CaptchaError, FetchContext, FetchError, FetchResult
 
 
@@ -75,9 +76,9 @@ class BrowserFetcher:
             html, final = loop.run_until_complete(_run())
         finally:
             loop.close()
-        return html, 200, {}, final
+        return html, 200, {}, final, None
 
-    def _render_playwright(self, url: str, ctx: FetchContext) -> tuple[str, int, dict, str]:
+    def _render_playwright(self, url: str, ctx: FetchContext):
         from playwright.sync_api import sync_playwright
 
         launch = {"headless": ctx.headless, "args": _stealth_args(ctx)}
@@ -85,10 +86,12 @@ class BrowserFetcher:
             launch["proxy"] = {"server": ctx.proxy}
         with sync_playwright() as p:
             browser = p.chromium.launch(**launch)
-            context = browser.new_context(
-                user_agent=ctx.user_agent, locale=ctx.locale,
-                viewport={"width": 1920, "height": 1080},
-            )
+            opts = {"user_agent": ctx.user_agent, "locale": ctx.locale,
+                    "viewport": {"width": 1920, "height": 1080}}
+            state = session_state(ctx)      # sesión guardada → arranca ya logueado
+            if state:
+                opts["storage_state"] = state
+            context = browser.new_context(**opts)
             if ctx.cookies:
                 context.add_cookies([
                     {"name": k, "value": str(v), "url": url} for k, v in ctx.cookies.items()
@@ -100,21 +103,33 @@ class BrowserFetcher:
                 for _ in range(4):
                     page.mouse.wheel(0, 600)
                     page.wait_for_timeout(500)
+            outcome = (run_actions(page, ctx.actions, allow_private=ctx.allow_private,
+                                   default_timeout_s=min(ctx.timeout_s, 30.0))
+                       if ctx.actions else None)
             html = page.content()
             status = resp.status if resp else 200
             headers = dict(resp.headers) if resp else {}
             final = page.url
+            persist_session(context, ctx)
             browser.close()
-            return html, status, headers, final
+            return html, status, headers, final, outcome
 
     def fetch(self, url: str, ctx: FetchContext) -> FetchResult:
         resolve_and_validate(url, allow_private=ctx.allow_private)
 
+        # nodriver es el más indetectable, pero NO habla la API de Playwright: no sabe correr
+        # acciones ni restaurar una sesión. Si el job pide cualquiera de las dos, Playwright
+        # gana; para el fetch simple se mantiene el orden de siempre (nodriver primero).
+        needs_pw = bool(ctx.actions or ctx.session_name)
         try:
-            if _has("nodriver"):
-                html, status, headers, final = self._render_nodriver(url, ctx)
+            if _has("nodriver") and not (needs_pw and _has("playwright")):
+                if needs_pw:
+                    raise FetchError(
+                        "Las acciones de browser necesitan Playwright y no está instalado."
+                    )
+                html, status, headers, final, outcome = self._render_nodriver(url, ctx)
             elif _has("playwright"):
-                html, status, headers, final = self._render_playwright(url, ctx)
+                html, status, headers, final, outcome = self._render_playwright(url, ctx)
             else:  # pragma: no cover
                 raise FetchError("tier 3 no disponible: instalá nodriver o playwright.")
         except FetchError:
@@ -123,6 +138,10 @@ class BrowserFetcher:
             raise FetchError(f"Fallo de browser en tier 3: {type(e).__name__}.") from e
 
         resolve_and_validate(final, allow_private=ctx.allow_private)
+        # Acción no opcional que falló = la página no quedó como el usuario pidió. Falla claro
+        # en vez de entregar en silencio el HTML equivocado.
+        if outcome is not None and outcome.failed:
+            raise FetchError(f"Acciones de browser: {outcome.failed}")
         content = html.encode("utf-8", errors="replace")
         if len(content) > ctx.max_bytes:
             raise FetchError(f"El recurso supera el límite de {ctx.max_bytes} bytes.")
@@ -139,7 +158,7 @@ class BrowserFetcher:
         if klass == "blocked":
             raise BlockedError(f"Bloqueado en tier 3 ({signal}).", signal=signal)
 
-        return FetchResult(
+        result = FetchResult(
             url=final,
             status_code=status,
             content=content,
@@ -149,3 +168,7 @@ class BrowserFetcher:
             proxy_used=ctx.proxy,
             headers=headers,
         )
+        if outcome is not None:
+            result.meta["actions"] = outcome.log
+            result.meta["artifacts"] = outcome.artifacts
+        return result
