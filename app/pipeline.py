@@ -57,6 +57,7 @@ class PipelineDeps:
     index_content: Callable[[Sobre], bool] | None = None        # embeddings → vector store
     metrics: object | None = None
     progress: Callable[[Sobre], None] | None = None             # persiste el sobre en cada paso (UI en vivo)
+    save_artifact: Callable[[str, str, bytes], bool] | None = None  # (job_id, name, blob) — screenshots/PDF
     file_download_mode: str = "both"                            # both|direct|proxy|off (FILE_DOWNLOAD_MODE)
 
 
@@ -97,10 +98,12 @@ def build_default_deps(settings, *, redis_client=None) -> PipelineDeps:
 
     router = build_router(settings, redis_client=redis_client)
 
-    def _fetch(url: str, tier_hint=None, proxy=None, solver=None, cookies=None, max_tier=None) -> FetchResult:
+    def _fetch(url: str, tier_hint=None, proxy=None, solver=None, cookies=None, max_tier=None,
+               actions=None, session_name="", session_owner="") -> FetchResult:
         return router.fetch(url, tier_hint=tier_hint, proxy_override=proxy,
                             solver_override=solver, cookies_override=cookies,
-                            max_tier_override=max_tier)
+                            max_tier_override=max_tier, actions=actions,
+                            session_name=session_name, session_owner=session_owner)
 
     def _extract(html: str, url: str | None) -> str:
         return html_to_markdown_rich(html, url=url)[0]
@@ -110,7 +113,8 @@ def build_default_deps(settings, *, redis_client=None) -> PipelineDeps:
         return fetch_post(u, data, allow_private=settings.allow_private_targets,
                           max_bytes=settings.fetch_max_bytes, cookies=cookies, proxy=proxy)
 
-    def _capture(u: str, tier_hint=None, proxy=None, solver=None, cookies=None, max_tier=None) -> list:
+    def _capture(u: str, tier_hint=None, proxy=None, solver=None, cookies=None, max_tier=None,
+                 actions=None, session_name="", session_owner="") -> list:
         from .fetchers.base import FetchContext
         from .fetchers.capture import capture_xhr
         ctx = FetchContext(
@@ -119,6 +123,8 @@ def build_default_deps(settings, *, redis_client=None) -> PipelineDeps:
             settle_s=settings.browser_settle_s, scroll=settings.browser_scroll,
             user_agent=settings.browser_user_agent, locale=settings.browser_locale,
             proxy=proxy, cookies=cookies or {},
+            actions=actions or [], session_name=session_name, session_owner=session_owner,
+            session_store=getattr(router, "session_store", None),
         )
         return capture_xhr(u, ctx)
 
@@ -144,12 +150,16 @@ def build_default_deps(settings, *, redis_client=None) -> PipelineDeps:
     robots = RobotsChecker(_robots_text, user_agent="Fisherboy")
 
     def _crawl(seed: str, *, tier_hint=None, max_pages=10, max_depth=1, proxy=None,
-               solver=None, cookies=None, max_tier=None, scope_path=None) -> list[FetchResult]:
+               solver=None, cookies=None, max_tier=None, scope_path=None,
+               actions=None, session_name="", session_owner="") -> list[FetchResult]:
+        # Las acciones se aplican a CADA página del crawl, no solo a la semilla: lo que se
+        # suele pedir (cerrar el banner de cookies, estar logueado) vale para todas.
         return _crawl_bfs(
             seed,
             fetch=lambda u: router.fetch(u, tier_hint=tier_hint, proxy_override=proxy,
                                          solver_override=solver, cookies_override=cookies,
-                                         max_tier_override=max_tier),
+                                         max_tier_override=max_tier, actions=actions,
+                                         session_name=session_name, session_owner=session_owner),
             robots_allowed=robots.allowed if settings.respect_robots else None,
             max_pages=max_pages,
             max_depth=max_depth,
@@ -165,6 +175,19 @@ def build_default_deps(settings, *, redis_client=None) -> PipelineDeps:
         log.warning("ANONIMAL_URL vacío: modo opaco usa el anonimizador regex incorporado (sin NER).")
         _anon_opaco = lambda text: build_opaco(text, [])  # noqa: E731
 
+    # Los screenshots/PDF que producen las acciones son bytes: no entran en el Sobre (que es
+    # JSON y va a Redis/callback). Se guardan aparte con el TTL del job y se sirven por
+    # GET /api/jobs/{id}/artifacts/{nombre}. Sin Redis, simplemente no se guardan.
+    def _save_artifact(job_id: str, name: str, blob: bytes) -> bool:
+        if redis_client is None or not blob:
+            return False
+        try:
+            from .queue import _SOBRE_TTL_S      # mismo TTL que el Sobre: mueren juntos
+            redis_client.set(f"fisherboy:artifact:{job_id}:{name}", blob, ex=_SOBRE_TTL_S)
+            return True
+        except Exception:  # noqa: BLE001 — best-effort: el job no falla por un screenshot
+            return False
+
     deps = PipelineDeps(
         fetch=_fetch,
         extract=_extract,
@@ -173,6 +196,7 @@ def build_default_deps(settings, *, redis_client=None) -> PipelineDeps:
         post=_post,
         capture=_capture,
         capture_page=_capture_page,
+        save_artifact=_save_artifact,
         file_download_mode=settings.file_download_mode,
     )
 
@@ -279,6 +303,22 @@ def _job_overrides(sobre: Sobre) -> dict:
         kw["cookies"] = jar
     if sobre.meta.get("max_tier") is not None:
         kw["max_tier"] = int(sobre.meta["max_tier"])
+    # Acciones de browser (ADR-011). Ya vienen validadas desde el gateway (un `actions` inválido
+    # es un 400, no un fallo del worker). `login` es azúcar que se expande a acciones y va
+    # ADELANTE: primero te logueás, después hacés el resto.
+    actions = list(sobre.meta.get("actions") or [])
+    login = sobre.meta.get("login")
+    if login:
+        from .fetchers.actions import from_login
+        actions = from_login(login) + actions
+    if actions:
+        kw["actions"] = actions
+    session = sobre.meta.get("session")
+    if session:
+        kw["session_name"] = str(session)
+        # El dueño namespacea la sesión: sin esto, adivinar el nombre daría acceso al login
+        # de otro usuario. owner_jti es interno y nunca sale del Sobre.
+        kw["session_owner"] = str(sobre.meta.get("owner_jti") or sobre.rol.value)
     return kw
 
 
@@ -321,6 +361,27 @@ def _scope_path(sobre: Sobre) -> str | None:
         from urllib.parse import urlsplit
         return urlsplit(str(sobre.source_url)).path or "/"
     return None
+
+
+def _harvest_actions(sobre: Sobre, deps: PipelineDeps, pages: list[FetchResult]) -> None:
+    """Pasa del FetchResult al Sobre lo que dejaron las acciones de browser (ADR-011).
+
+    Dos destinos distintos a propósito: el LOG va al Sobre (ya redactado, es lo que el usuario
+    necesita para depurar sus selectores), y los ARTEFACTOS (screenshot/PDF, que son bytes) van
+    a Redis con el TTL del job; en el Sobre solo quedan sus nombres para poder pedirlos."""
+    log: list[dict] = []
+    names: list[str] = []
+    for p in pages:
+        log.extend(p.meta.get("actions") or [])
+        for name, blob in (p.meta.get("artifacts") or {}).items():
+            if deps.save_artifact is not None and deps.save_artifact(sobre.job_id, name, blob):
+                names.append(name)
+        p.meta.pop("artifacts", None)   # los bytes no siguen viaje dentro del resultado
+    if log:
+        sobre.meta["actions_log"] = log
+    if names:
+        sobre.meta["artifact_names"] = names
+        _report(deps, sobre, f"Capturas guardadas: {', '.join(names)}")
 
 
 def _gather(sobre: Sobre, deps: PipelineDeps) -> list[FetchResult]:
@@ -679,6 +740,7 @@ def process_job(sobre: Sobre, deps: PipelineDeps) -> Sobre:
             return _capture_branch(sobre, deps)
 
         pages = _gather(sobre, deps)
+        _harvest_actions(sobre, deps, pages)
         first = pages[0]
         sobre.tier_usado = FetchTier(first.tier) if first.tier is not None else FetchTier.ESTATICO
         sobre.fetched_at = datetime.now(timezone.utc)

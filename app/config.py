@@ -109,6 +109,16 @@ class Settings:
             "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         )
         self.browser_locale = e.get("BROWSER_LOCALE", "es-AR")
+        # Acciones de browser (ADR-011): operar la página antes de extraerla.
+        # TTL de las sesiones guardadas (cookies+localStorage de un login, en Redis).
+        self.browser_session_ttl_s = int(e.get("BROWSER_SESSION_TTL_S", str(7 * 24 * 3600)))
+        # La acción `eval` corre JS ARBITRARIO en la página. Apagada por defecto a propósito:
+        # un script puede pedirle cosas a la red interna desde el browser del server (un SSRF
+        # que esquiva el chequeo de la URL). Encenderla es una decisión consciente, y aun
+        # encendida queda solo para el rol dios.
+        self.browser_allow_eval = (
+            (e.get("BROWSER_ALLOW_EVAL", "0") or "0").strip().lower() in ("1", "true", "yes", "on")
+        )
 
         # Allowlist de destinos de callback en producción. Vacío = solo bloqueo SSRF.
         # Coma-separada de hosts. Ver ADR-004 punto 3.

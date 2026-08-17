@@ -76,6 +76,10 @@ class JobRequest(BaseModel):
     captcha_api_key: str | None = None
     cookies: str | None = None            # cookies de sesión "k=v; k2=v2" (gate por login/ubicación)
     cookies_browser: str | None = None    # leer cookies del navegador local (chrome/firefox/edge/brave) — sin extensión
+    # Acciones de browser (ADR-011): operar la página antes de extraerla. Fuerzan tier 2+.
+    actions: list[dict] | None = None     # [{"do":"click","sel":"#x"}, …] — ver fetchers/actions.py
+    login: dict | None = None             # azúcar: {user_sel,user,pass_sel,password,submit_sel?}
+    session: str | None = None            # nombre de sesión de browser a reusar/guardar (login persistente)
 
 
 class RevertRequest(BaseModel):
@@ -125,7 +129,10 @@ class Sobre(BaseModel):
 
 
 # Claves de meta que jamás se serializan hacia afuera (secretos por-job + control interno).
+# `actions`/`login` entran acá porque pueden llevar la contraseña de un login: sin esto,
+# saldrían por GET /api/jobs y por el callback. El log de lo que pasó SÍ sale, pero por
+# `actions_log`, que el motor genera ya redactado (ver fetchers/actions.py::redact).
 _SENSITIVE_META = frozenset({
     "proxy", "captcha_api_url", "captcha_api_key", "cookies", "cookies_browser",
-    "callback_url", "owner_jti",
+    "callback_url", "owner_jti", "actions", "login", "artifacts",
 })
