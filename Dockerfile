@@ -1,7 +1,7 @@
 # Fisherboy — imagen única (API + worker comparten esta imagen).
 # Liviana por defecto: tier 0 (httpx) + proxies + conversión Crawl4AI/Trafilatura.
 # Los tiers de browser (2/3) se encienden instalando su lib (ver README).
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
