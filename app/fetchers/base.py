@@ -54,6 +54,13 @@ class FetchContext:
     scroll: bool = True               # scrollea para disparar contenido lazy
     locale: str = "es-AR"
     extra: dict = field(default_factory=dict)
+    # Acciones de browser (ADR-011): operar la página antes de extraerla — click, login,
+    # scroll infinito, screenshot. Solo las corren los tiers con browser (2/3); los tiers
+    # baratos las ignoran, y el router sube de tier solo si hay acciones que ejecutar.
+    actions: list = field(default_factory=list)
+    session_name: str = ""            # nombre de la sesión de browser a reusar/guardar
+    session_owner: str = ""           # dueño (namespacea la sesión; lo pone el server)
+    session_store: object | None = None  # BrowserSessionStore, inyectado por el router
 
 
 @dataclass

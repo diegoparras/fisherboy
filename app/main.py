@@ -305,6 +305,23 @@ def create_app(
             sobre.meta["cookies"] = req.cookies
         if req.cookies_browser:
             sobre.meta["cookies_browser"] = req.cookies_browser
+        # Acciones de browser (ADR-011). Se validan ACÁ, no en el worker: un selector mal
+        # escrito tiene que ser un 400 inmediato con el motivo, no un job que falla 30s después.
+        # `eval` (JS arbitrario) exige las dos llaves: la config del server y el rol dios.
+        if req.actions or req.login:
+            from .fetchers.actions import from_login, validate
+            allow_eval = bool(settings.browser_allow_eval) and role == "dios"
+            try:
+                acts = validate(req.actions, allow_eval=allow_eval)
+                from_login(req.login)      # valida el azúcar; se expande en el worker
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e)) from e
+            if acts:
+                sobre.meta["actions"] = acts
+            if req.login:
+                sobre.meta["login"] = req.login
+        if req.session:
+            sobre.meta["session"] = str(req.session)[:64]
         _queue().enqueue(sobre)
 
         log.info("job encolado", extra={"job_id": job_id, "mode": mode.value, "rol": role})
@@ -324,6 +341,32 @@ def create_app(
             raise HTTPException(status_code=404, detail="job no encontrado")
         # Nunca devolver los secretos por-job (proxy/captcha/cookies). Ver public_dump.
         return JSONResponse(sobre.public_dump(mode="json"))
+
+    @app.get("/api/jobs/{job_id}/artifacts/{name}")
+    async def get_job_artifact(job_id: str, name: str, request: Request):
+        """Sirve un screenshot/PDF que produjeron las acciones de browser (ADR-011).
+
+        Los artefactos son bytes: no viajan en el Sobre, viven en Redis con el mismo TTL.
+        Mismo control de dueño que GET /api/jobs/{id}: si el job no es tuyo, 404 (no se filtra
+        ni siquiera que existe). El nombre se restringe a los que el propio job registró, así
+        que no hay forma de recorrer las claves de Redis desde acá."""
+        role, jti = auth.identity_from_request(request)
+        if role is None:
+            raise HTTPException(status_code=401, detail="Necesitás iniciar sesión.")
+        sobre = _queue().get(job_id)
+        if sobre is None:
+            raise HTTPException(status_code=404, detail="job no encontrado")
+        owner = sobre.meta.get("owner_jti")
+        if owner and role != "dios" and owner != jti:
+            raise HTTPException(status_code=404, detail="job no encontrado")
+        if name not in (sobre.meta.get("artifact_names") or []):
+            raise HTTPException(status_code=404, detail="ese archivo no es de este job")
+        blob = _queue()._r.get(f"fisherboy:artifact:{job_id}:{name}")
+        if not blob:
+            raise HTTPException(status_code=404, detail="el archivo expiró o no está disponible")
+        ctype = "application/pdf" if name.endswith(".pdf") else "image/png"
+        return Response(content=blob, media_type=ctype,
+                        headers={"Content-Disposition": f'inline; filename="{name}"'})
 
     @app.post("/api/revert")
     async def revert(req: "RevertRequest", request: Request):

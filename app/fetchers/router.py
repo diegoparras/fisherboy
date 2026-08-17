@@ -93,6 +93,7 @@ class TierRouter:
         ctx_template: FetchContext | None = None,
         max_tier: int = 3,
         proxy_attempts: int = 2,
+        session_store=None,
     ) -> None:
         # Orden estable por tier; el router consulta available() en caliente.
         self.fetchers = sorted(fetchers, key=lambda f: f.tier)
@@ -102,6 +103,7 @@ class TierRouter:
         self.ctx_template = ctx_template or FetchContext()
         self.max_tier = max_tier
         self.proxy_attempts = max(1, proxy_attempts)
+        self.session_store = session_store
 
     def _build_ctx(self, proxy: str | None) -> FetchContext:
         t = self.ctx_template
@@ -120,6 +122,7 @@ class TierRouter:
             scroll=t.scroll,
             locale=t.locale,
             extra=dict(t.extra),
+            session_store=self.session_store,
         )
 
     def _eligible(self, start_tier: int) -> list:
@@ -138,11 +141,24 @@ class TierRouter:
         solver_override=None,
         cookies_override: dict | None = None,
         max_tier_override: int | None = None,
+        actions: list | None = None,
+        session_name: str = "",
+        session_owner: str = "",
     ) -> FetchResult:
         domain = _domain(url)
         cached = self.cache.get(domain)
         cap = self.max_tier if max_tier_override is None else min(self.max_tier, int(max_tier_override))
         start = min(max(int(tier_hint or 0), int(cached or 0)), cap)
+        # Un click no se puede hacer con httpx: si el job trae acciones (o quiere reusar una
+        # sesión de browser), el piso es el tier 2. Sin esto el router resolvería la URL con un
+        # fetch estático y las acciones se perderían en silencio.
+        if actions or session_name:
+            start = max(start, 2)
+            if cap < 2:
+                raise FetchError(
+                    "Las acciones de browser necesitan tier 2+; este job/rol lo tiene capado "
+                    f"en {cap}."
+                )
         chain = [f for f in self._eligible(start) if f.tier <= cap]
         if not chain:
             chain = self._eligible(start)[:1]
@@ -161,10 +177,19 @@ class TierRouter:
                     ctx.solver = solver_override
                 if cookies_override:
                     ctx.cookies = cookies_override
+                if actions:
+                    ctx.actions = actions
+                if session_name:
+                    ctx.session_name = session_name
+                    ctx.session_owner = session_owner
                 try:
                     result = fetcher.fetch(url, ctx)
                     self.proxies.report_success(proxy)
-                    self.cache.set(domain, fetcher.tier)
+                    # Ojo: si el tier lo forzaron las acciones (no un bloqueo del sitio), NO se
+                    # cachea. Si no, un solo job con clicks dejaría a todo el dominio arrancando
+                    # en browser para siempre — caro y sin motivo.
+                    if not (actions or session_name):
+                        self.cache.set(domain, fetcher.tier)
                     result.meta.update(
                         {"escalation": escalation, "tier_name": fetcher.name,
                          "proxy_attempts": attempt + 1}
@@ -247,6 +272,12 @@ def build_router(settings, *, redis_client=None) -> TierRouter:
         user_agent=settings.browser_user_agent,
         locale=settings.browser_locale,
     )
+    # Sesiones de browser (ADR-011): viven en Redis. Sin Redis no hay persistencia entre jobs
+    # (el login habría que repetirlo), pero todo lo demás sigue funcionando igual.
+    from .session_store import BrowserSessionStore
+    sessions = (BrowserSessionStore(redis_client, ttl_s=settings.browser_session_ttl_s)
+                if redis_client is not None else None)
+
     return TierRouter(
         fetchers,
         cache=cache,
@@ -255,4 +286,5 @@ def build_router(settings, *, redis_client=None) -> TierRouter:
         ctx_template=ctx,
         max_tier=settings.max_fetch_tier,
         proxy_attempts=settings.proxy_attempts,
+        session_store=sessions,
     )
