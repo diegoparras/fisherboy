@@ -20,6 +20,7 @@ import re
 from urllib.parse import urlsplit
 
 from ..security.ssrf import SSRFError, resolve_and_validate
+from .actions import persist_session, run_actions, session_state
 from .base import FetchContext, FetchError
 
 # Endpoints de telemetría/tracking/analytics/PUBLICIDAD: NUNCA son el dato. Se descartan.
@@ -166,10 +167,12 @@ def capture_page(url: str, ctx: FetchContext, *, max_endpoints: int = 40,
 
     with sync_playwright() as p:
         browser = p.chromium.launch(**launch)
-        context = browser.new_context(
-            user_agent=ctx.user_agent, locale=ctx.locale,
-            viewport={"width": 1920, "height": 1080},
-        )
+        _opts = {"user_agent": ctx.user_agent, "locale": ctx.locale,
+                 "viewport": {"width": 1920, "height": 1080}}
+        _state = session_state(ctx)     # sesión de browser guardada (ADR-011)
+        if _state:
+            _opts["storage_state"] = _state
+        context = browser.new_context(**_opts)
         if ctx.cookies:
             context.add_cookies([
                 {"name": k, "value": str(v), "url": url} for k, v in ctx.cookies.items()
@@ -200,7 +203,19 @@ def capture_page(url: str, ctx: FetchContext, *, max_endpoints: int = 40,
                 for _ in range(5):
                     page.mouse.wheel(0, 800)
                     page.wait_for_timeout(700)
+            # Acciones + captura es la combinación fuerte: apretar "siguiente"/"ver más" hace
+            # que la página dispare el XHR que justamente queremos interceptar.
+            if ctx.actions:
+                _out = run_actions(page, ctx.actions, allow_private=ctx.allow_private,
+                                   default_timeout_s=min(ctx.timeout_s, 30.0))
+                if _out.failed:
+                    browser.close()
+                    raise FetchError(f"Acciones de browser: {_out.failed}")
+                page.wait_for_timeout(800)          # deja llegar el XHR que dispararon
             html = page.content()
+            persist_session(context, ctx)
+        except FetchError:
+            raise
         except Exception as e:  # noqa: BLE001
             browser.close()
             raise FetchError(f"Fallo al capturar API: {type(e).__name__}.") from e

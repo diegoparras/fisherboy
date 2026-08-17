@@ -32,6 +32,13 @@ def make_settings(**overrides) -> Settings:
 
 
 @pytest.fixture
+def fake_redis():
+    """Redis en memoria, para lo que guarda estado fuera del Sobre (sesiones de browser,
+    artefactos, caches)."""
+    return fakeredis.FakeStrictRedis()
+
+
+@pytest.fixture
 def fake_queue() -> JobQueue:
     return JobQueue(fakeredis.FakeStrictRedis())
 
