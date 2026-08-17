@@ -276,6 +276,28 @@
   .dl-scrape:hover { color: var(--accent); border-color: var(--accent); }
   .dl-scrape .ico { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.8; }
 
+  /* ===== Acciones de browser ===== */
+  .act-presets { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 8px; }
+  .act-presets .mini-btn { margin-left: 0; }
+  .act-presets .act-clear { color: var(--muted); }
+  #actions { font-family: var(--mono); font-size: 12px; }
+  .act-status { min-height: 16px; }
+  .act-status.bad { color: var(--err); }
+  .act-status.ok { color: var(--ok, #2e9e5b); }
+  /* Capturas que devolvió el job */
+  .shots { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 6px; }
+  .shot { display: block; border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+    background: var(--card-2); max-width: 240px; }
+  .shot img { display: block; width: 100%; height: auto; }
+  .shot .shot-name { display: block; padding: 6px 9px; font-size: 11.5px; color: var(--muted); }
+  .shot:hover { border-color: var(--accent); }
+  /* Log de acciones */
+  .actlog { display: flex; flex-direction: column; gap: 3px; margin-bottom: 6px; }
+  .actlog .st { font-family: var(--mono); font-size: 11.5px; color: var(--muted-2);
+    display: flex; gap: 7px; align-items: baseline; }
+  .actlog .st.bad { color: var(--err); }
+  .actlog .st b { color: var(--text); font-weight: 600; }
+
   /* ===== Modal de aviso ===== */
   .warn-card { position: relative; width: min(420px, 94vw); background: var(--panel); border: 1px solid var(--border);
     border-radius: 18px; box-shadow: var(--shadow); padding: 26px 24px 20px; text-align: center; animation: dl-pop .22s cubic-bezier(.2,.9,.3,1.2); }
@@ -692,6 +714,28 @@
             </div>
             <p class="help">Renderiza con el Chrome de Cloudflare en vez del Chromium local — imagen más liviana y mejores IPs contra anti-bot. Solo rol dios. La URL a renderizar le va a Cloudflare.</p>
           </div>
+        </section>
+
+        <section class="adv-section">
+          <div class="adv-head">Acciones de browser</div>
+          <p class="help">Operá la página antes de extraerla: cerrar un banner, loguearte, cargar
+            un feed infinito, sacar una captura. Necesita navegador, así que fuerza el tier 2+.</p>
+          <div class="act-presets">
+            <button type="button" class="mini-btn" data-preset="banner">+ cerrar banner</button>
+            <button type="button" class="mini-btn" data-preset="login">+ login</button>
+            <button type="button" class="mini-btn" data-preset="scroll">+ scroll infinito</button>
+            <button type="button" class="mini-btn" data-preset="shot">+ captura</button>
+            <button type="button" class="mini-btn" data-preset="wait">+ esperar elemento</button>
+            <button type="button" class="mini-btn act-clear" data-preset="clear">limpiar</button>
+          </div>
+          <textarea id="actions" name="actions" rows="7" spellcheck="false"
+            placeholder='[{"do": "click", "sel": "#aceptar-cookies", "optional": true}]'></textarea>
+          <p class="help act-status" id="actions-status"></p>
+          <label for="session">Sesión de browser · opcional</label>
+          <input id="session" name="session" autocomplete="off"
+            placeholder="mi-sitio — guarda el login para los próximos jobs" />
+          <p class="help">Poniéndole un nombre, las cookies del login quedan guardadas y el
+            próximo job con ese mismo nombre entra ya logueado.</p>
         </section>
 
         <section class="adv-section">
@@ -1470,6 +1514,68 @@ function statusPill(status) {
 
 let currentSobre = null;
 
+/* ===== Acciones de browser =====
+   Escribir el JSON a mano asusta, así que los presets pegan el paso ya armado y solo hay que
+   cambiar el selector. La validación corre mientras se escribe: mejor enterarse acá que
+   después de encolar el job. */
+const actsEl = document.getElementById("actions");
+const actsStatus = document.getElementById("actions-status");
+const ACT_PRESETS = {
+  banner: { do: "click", sel: "#aceptar-cookies", optional: true },
+  login: [
+    { do: "type", sel: "#usuario", text: "TU-USUARIO" },
+    { do: "type", sel: "#clave", text: "TU-CLAVE", secret: true },
+    { do: "click", sel: "button[type=submit]" },
+    { do: "wait_for", sel: ".panel" },
+  ],
+  scroll: { do: "scroll_until", max_rounds: 10 },
+  shot: { do: "screenshot", name: "final", full_page: true },
+  wait: { do: "wait_for", sel: ".resultados" },
+};
+
+function actsParse(txt) {
+  const t = (txt || "").trim();
+  if (!t) return { ok: true, list: [] };
+  try {
+    const v = JSON.parse(t);
+    const list = Array.isArray(v) ? v : [v];
+    for (const a of list) {
+      if (!a || typeof a !== "object" || !a.do) return { ok: false, err: "cada paso necesita un \"do\"" };
+    }
+    return { ok: true, list };
+  } catch (e) {
+    return { ok: false, err: "JSON inválido: " + e.message };
+  }
+}
+
+function actsCheck() {
+  if (!actsEl) return;
+  const r = actsParse(actsEl.value);
+  if (!actsEl.value.trim()) { actsStatus.textContent = ""; actsStatus.className = "help act-status"; return; }
+  if (r.ok) {
+    actsStatus.textContent = `${r.list.length} paso${r.list.length === 1 ? "" : "s"} · se usará navegador (tier 2+)`;
+    actsStatus.className = "help act-status ok";
+  } else {
+    actsStatus.textContent = r.err;
+    actsStatus.className = "help act-status bad";
+  }
+}
+
+if (actsEl) {
+  actsEl.addEventListener("input", actsCheck);
+  document.querySelectorAll(".act-presets [data-preset]").forEach(b => {
+    b.addEventListener("click", () => {
+      if (b.dataset.preset === "clear") { actsEl.value = ""; actsCheck(); return; }
+      const add = ACT_PRESETS[b.dataset.preset];
+      const cur = actsParse(actsEl.value);
+      const list = cur.ok ? cur.list : [];
+      actsEl.value = JSON.stringify(list.concat(add), null, 2);
+      actsCheck();
+      actsEl.focus();
+    });
+  });
+}
+
 function render(sobre) {
   currentSobre = sobre;
   wrap.classList.remove("hidden");
@@ -1506,6 +1612,30 @@ function render(sobre) {
   }
 
   let html = "";
+
+  // Capturas que dejaron las acciones. Son bytes: no vienen en el sobre, se piden por su
+  // endpoint (con la cookie de sesión, por eso alcanza con un <img src>).
+  const shots = m.artifact_names || [];
+  if (shots.length) {
+    html += `<div class="flabel">${shots.length} captura${shots.length === 1 ? "" : "s"}</div><div class="shots">` +
+      shots.map(n => {
+        const u = `/api/jobs/${encodeURIComponent(sobre.job_id)}/artifacts/${encodeURIComponent(n)}`;
+        const prev = n.endsWith(".pdf") ? "" : `<img src="${u}" alt="${escapeHtml(n)}" loading="lazy">`;
+        return `<a class="shot" href="${u}" target="_blank" rel="noopener">${prev}<span class="shot-name">${escapeHtml(n)}</span></a>`;
+      }).join("") + `</div>`;
+  }
+
+  // Qué hizo cada acción. Sirve para depurar selectores; los secretos ya vienen redactados.
+  const alog = m.actions_log || [];
+  if (alog.length) {
+    html += `<details class="fcat"><summary>${CHAT_ICO}<b>Acciones ejecutadas</b><span class="fcount">${alog.length}</span></summary><div class="actlog">` +
+      alog.map(st => {
+        const extra = st.error ? " · " + escapeHtml(st.error)
+          : (st.rounds != null ? ` · ${st.rounds} vueltas` : (st.bytes != null ? ` · ${(st.bytes / 1024).toFixed(0)} KB` : ""));
+        return `<span class="st${st.ok ? "" : " bad"}">${st.ok ? "✓" : "✗"} <b>${escapeHtml(st.do || "")}</b>${st.sel ? " " + escapeHtml(st.sel) : ""}${extra}</span>`;
+      }).join("") + `</div></details>`;
+  }
+
   // Registros aplanados (productos/resultados) — lo más útil
   const recs = m.records || [];
   if (recs.length) {
@@ -1983,6 +2113,19 @@ async function runScrape() {
     payload.paginate = true;
     payload.max_pages = parseInt(form.max_pages.value, 10) || 10;
   }
+  // Acciones de browser: se validan ANTES de encolar (un JSON roto no debe llegar al server).
+  if (actsEl && actsEl.value.trim()) {
+    const r = actsParse(actsEl.value);
+    if (!r.ok) {
+      btn.disabled = false;
+      document.getElementById("btn-label").textContent = T("form.submit");
+      showError(r.err, "Revisá las acciones");
+      return;
+    }
+    if (r.list.length) payload.actions = r.list;
+  }
+  const sessEl = document.getElementById("session");
+  if (sessEl && sessEl.value.trim()) payload.session = sessEl.value.trim();
   if (form.capture_api.checked) payload.capture_api = true;
   if (form.tarantula.checked) {
     payload.tarantula = true;
