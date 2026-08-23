@@ -1,0 +1,91 @@
+# Fisherboy detrás de una VPN (Proton, Mullvad, Nord, etc.) — TODO el tráfico saliente cifrado.
+#
+#   docker compose -f docker-compose.vpn.yml up -d
+#
+# ¿Cuándo usar esto y cuándo NO?
+#
+#   Proxy por job (campo «Proxy de salida» en la UI)      → lo normal. Cambia la IP de UN job,
+#     admite http/https/socks5, y podés tener varios proxies distintos a la vez. Si tu VPN da
+#     credenciales SOCKS5 (Proton las da en los planes pagos), pegalas ahí y NO necesitás este
+#     archivo: socks5://usuario:clave@servidor:1080
+#
+#   Este compose (VPN a nivel red)                        → cuando querés que absolutamente
+#     TODO salga por la VPN (incluidos los pedidos que no pasan por el proxy), o cuando tu VPN
+#     solo te da WireGuard/OpenVPN y no SOCKS5.
+#
+# Cómo funciona: `gluetun` es un contenedor cliente de VPN. La API y el worker NO tienen red
+# propia — comparten la de gluetun (`network_mode: service:gluetun`), así que su único camino a
+# internet es el túnel. Si la VPN se cae, se quedan sin salida (kill switch de verdad, no se
+# escapa tráfico). Por eso el puerto 8000 se publica en GLUETUN, no en la API.
+#
+# gluetun soporta ~50 proveedores; acá está Proton porque es el que se pidió. Para cambiar,
+# mirá https://github.com/qdm12/gluetun-wiki y ajustá las variables VPN_*.
+#
+# En .env necesitás (Proton, WireGuard):
+#   VPN_PRIVATE_KEY=...        # Proton → Downloads → WireGuard configuration → PrivateKey
+#   VPN_COUNTRIES=Argentina    # o el país que quieras como salida
+#
+# OJO: gluetun necesita NET_ADMIN y el dispositivo /dev/net/tun. Algunos hosts gestionados
+# (EasyPanel incluido, según el plan) no lo permiten; si tu proveedor no te deja, quedate con
+# el proxy SOCKS5 por job, que no pide privilegios.
+
+services:
+  gluetun:
+    image: qmcgaw/gluetun:latest
+    cap_add: [NET_ADMIN]
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      VPN_SERVICE_PROVIDER: protonvpn
+      VPN_TYPE: wireguard
+      WIREGUARD_PRIVATE_KEY: ${VPN_PRIVATE_KEY:?falta VPN_PRIVATE_KEY en .env}
+      SERVER_COUNTRIES: ${VPN_COUNTRIES:-Argentina}
+      # Chequeo de salud del túnel: si se cae, gluetun se reinicia y los demás se quedan
+      # sin salida hasta que vuelva (que es lo que uno quiere de un kill switch).
+      HEALTH_VPN_DURATION_INITIAL: 30s
+    ports:
+      - "8000:8000"     # el puerto de la API se publica ACÁ, porque la API vive en esta red
+    restart: unless-stopped
+
+  fisherboy-api:
+    image: ghcr.io/diegoparras/fisherboy:latest
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    environment:
+      APP_MODE: standalone
+      REDIS_URL: redis://127.0.0.1:6379/0   # 127.0.0.1: comparte la red de gluetun con Redis
+      # Todos comparten el namespace de red de gluetun, asi que se ven entre si en 127.0.0.1
+      # (NO por nombre de servicio, que es lo que se usa en los otros compose).
+      YT_POT_URL: http://127.0.0.1:4416
+    env_file: .env
+    network_mode: "service:gluetun"         # sin red propia: solo sale por el túnel
+    depends_on: [gluetun, fisherboy-redis]
+    restart: unless-stopped
+
+  fisherboy-worker:
+    image: ghcr.io/diegoparras/fisherboy:latest
+    command: python -m app.worker
+    environment:
+      APP_MODE: standalone
+      REDIS_URL: redis://127.0.0.1:6379/0
+      YT_POT_URL: http://127.0.0.1:4416
+    env_file: .env
+    network_mode: "service:gluetun"
+    depends_on: [gluetun, fisherboy-redis]
+    restart: unless-stopped
+
+  fisherboy-redis:
+    image: redis:8-alpine
+    command: redis-server --save "" --appendonly no
+    network_mode: "service:gluetun"         # misma red: la API lo ve en 127.0.0.1
+    depends_on: [gluetun]
+    restart: unless-stopped
+
+  # El proveedor de PO tokens también va por el túnel: el token tiene que generarse desde la
+  # MISMA IP que después baja el video, o YouTube lo rechaza.
+  fisherboy-bgutil:
+    image: brainicism/bgutil-ytdlp-pot-provider:1.3.1@sha256:1aaa43a0ca72dfca6a6d2129a0fb4a23465c25adb1b043f8aff829a20825646b
+    network_mode: "service:gluetun"
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    depends_on: [gluetun]
+    restart: unless-stopped

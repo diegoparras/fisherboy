@@ -2042,6 +2042,11 @@ function showError(msg, title) {
   m.querySelector("#err-ok").focus();
 }
 
+function sesionActual() {
+  const el = document.getElementById("session");
+  return el ? (el.value || "").trim() : "";
+}
+
 async function dlMedia(encodedUrl, btn, audio) {
   const prev = btn ? btn.innerHTML : "";
   const ico = audio ? MUSIC_ICO : DL_ICO;
@@ -2066,7 +2071,10 @@ async function dlMedia(encodedUrl, btn, audio) {
     let proxy = ""; try { proxy = proxyCanonical() || ""; } catch (e) {}
     const r = await fetch("/api/download/video", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url: decodeURIComponent(encodedUrl), quality: q, audio: !!audio, cookies, proxy }),
+      // `session`: si te logueaste con el navegador en pantalla, esas cookies sirven tambien
+      // para bajar video. Las pegadas a mano ganan; la sesion es el fallback comodo.
+      body: JSON.stringify({ url: decodeURIComponent(encodedUrl), quality: q, audio: !!audio,
+                             cookies, proxy, session: sesionActual() }),
     });
     if (!r.ok) { let d = {}; try { d = await r.json(); } catch (e) {} throw new Error(d.detail || "no se pudo bajar"); }
     const { token } = await r.json();
