@@ -91,3 +91,39 @@ def to_netscape(raw: str | None, default_domain: str = ".youtube.com") -> str:
     lines += ["\t".join([dom, "TRUE", "/", "TRUE", "2147483647", name, value])
               for name, value in jar.items()]
     return "\n".join(lines) + "\n"
+
+
+def storage_state_to_netscape(state: dict | None) -> str:
+    """Convierte el `storage_state` de una sesión de browser al cookies.txt que come yt-dlp.
+
+    Es el puente entre las dos mitades del sistema (ADR-013): te logueás UNA vez en el navegador
+    del server y esa misma sesión sirve para bajar videos, sin exportar cookies a mano nunca más.
+
+    A diferencia de `to_netscape`, acá cada cookie ya trae su dominio, path, expiración y flag
+    secure reales — no hay que inventarles un dominio por defecto, así que el archivo resultante
+    es fiel a lo que tiene el navegador. Nunca lanza: sin cookies devuelve "".
+    """
+    galletas = (state or {}).get("cookies") or []
+    if not isinstance(galletas, list):
+        return ""
+    lineas = ["# Netscape HTTP Cookie File"]
+    for c in galletas:
+        if not isinstance(c, dict):
+            continue
+        nombre, valor = str(c.get("name") or ""), str(c.get("value") or "")
+        dominio = str(c.get("domain") or "")
+        if not nombre or not dominio:
+            continue
+        # Netscape: el primer campo TRUE/FALSE indica "vale para subdominios", que es
+        # justamente lo que significa un dominio que arranca con punto.
+        subdominios = "TRUE" if dominio.startswith(".") else "FALSE"
+        path = str(c.get("path") or "/")
+        seguro = "TRUE" if c.get("secure") else "FALSE"
+        try:    # -1 (cookie de sesión) → 0, que en este formato significa "no expira sola"
+            expira = int(float(c.get("expires", 0) or 0))
+        except (TypeError, ValueError):
+            expira = 0
+        if expira < 0:
+            expira = 0
+        lineas.append("\t".join([dominio, subdominios, path, seguro, str(expira), nombre, valor]))
+    return "\n".join(lineas) + "\n" if len(lineas) > 1 else ""

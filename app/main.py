@@ -841,7 +841,7 @@ def create_app(
         plataformas conocidas (no es un proxy genérico). Tope de tamaño por formato.
         Si YouTube/la plataforma exige sesión (IP bloqueada) devuelve 422 needs_cookies en
         vez de un 502 (que el gateway se come y deja el error ilegible)."""
-        role, _ = auth.identity_from_request(request)
+        role, _jti = auth.identity_from_request(request)
         if role is None:
             raise HTTPException(status_code=401, detail="Necesitás iniciar sesión.")
         if not auth.caps_for(role).get("capture"):   # ángel/dios (operación cara)
@@ -885,6 +885,18 @@ def create_app(
         host = (urlsplit(url).hostname or "").lower()
         dom = ("." + (host[4:] if host.startswith("www.") else host)) if host else ".youtube.com"
         netscape = cookmod.to_netscape(raw_cookies, dom) if raw_cookies else ""
+        # Puente con el login interactivo (ADR-013): si el job nombra una sesion de browser, sus
+        # cookies valen tambien para bajar video. Es lo que cierra el circulo de YouTube: te
+        # logueas UNA vez en pantalla y las descargas andan, sin exportar cookies a mano.
+        # Las pegadas a mano ganan (son mas explicitas); la sesion es el fallback comodo.
+        if not netscape:
+            _sess = (body.get("session") or "").strip()[:64]
+            if _sess:
+                from .fetchers.session_store import BrowserSessionStore
+                _role_dueno = str(_jti or role)
+                _estado = BrowserSessionStore(
+                    _queue()._r, ttl_s=settings.browser_session_ttl_s).load(_role_dueno, _sess)
+                netscape = cookmod.storage_state_to_netscape(_estado)
         tmp_cookiefile = ""
         if netscape:
             fd, tmp_cookiefile = tempfile.mkstemp(prefix="fb-vid-", suffix=".txt")
