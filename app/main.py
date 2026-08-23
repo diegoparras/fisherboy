@@ -582,6 +582,114 @@ def create_app(
         headers = {"Content-Disposition": "attachment; filename=fisherboy-archivos.zip"}
         return StreamingResponse(iter([buf.getvalue()]), media_type="application/zip", headers=headers)
 
+    # --- Login interactivo (ADR-013): el navegador del server, en tu pantalla ---------
+    def _login_store():
+        """El mismo store de sesiones que usan los jobs, para que lo guardado sirva allá."""
+        from .fetchers.session_store import BrowserSessionStore
+        return BrowserSessionStore(_queue()._r, ttl_s=settings.browser_session_ttl_s)
+
+    def _login_ident(request: Request) -> str:
+        """Dueño de la sesión de login. Namespacea igual que en los jobs."""
+        role, jti = auth.identity_from_request(request)
+        if role is None:
+            raise HTTPException(status_code=401, detail="Necesitás iniciar sesión.")
+        if not auth.caps_for(role).get("capture"):
+            raise HTTPException(status_code=403,
+                                detail=f"Tu rol '{role}' no habilita abrir un navegador.")
+        return str(jti or role)
+
+    @app.post("/api/browser-login/start")
+    async def browser_login_start(request: Request):
+        """Abre un navegador en el server, apuntando a `url`, para que el usuario se loguee.
+
+        Es la única vía que aguanta 2FA y captchas: los resuelve la persona. Lo que se guarda
+        al final es el storage_state bajo `session`, que es lo que después consumen los jobs."""
+        from .net import browser_login
+        dueno = _login_ident(request)
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            body = {}
+        url = (body.get("url") or "").strip()
+        nombre = (body.get("session") or "").strip()[:64]
+        if not url or not nombre:
+            raise HTTPException(status_code=400, detail="Faltan `url` y `session` (el nombre).")
+        try:
+            validate_proxy_url(body.get("proxy") or "") if body.get("proxy") else None
+        except SSRFError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        try:
+            token, ses = browser_login.abrir(
+                url, nombre=nombre, dueno=dueno, store=_login_store(),
+                proxy=(body.get("proxy") or "").strip() or settings.yt_proxy,
+                allow_private=settings.allow_private_targets,
+                locale=settings.browser_locale, user_agent=settings.browser_user_agent,
+            )
+        except browser_login.LoginError as e:
+            raise HTTPException(status_code=429, detail=str(e)) from e
+        log.info("login interactivo abierto", extra={"session": nombre})
+        return {"token": token, "estado": ses.estado,
+                "ancho": browser_login.ANCHO, "alto": browser_login.ALTO}
+
+    @app.get("/api/browser-login/{token}/frame")
+    async def browser_login_frame(token: str, request: Request):
+        """La última foto del navegador remoto. La UI la pide en bucle."""
+        from .net import browser_login
+        dueno = _login_ident(request)
+        ses = browser_login.obtener(token, dueno)
+        if ses is None:
+            raise HTTPException(status_code=404, detail="Esa ventana de login no existe.")
+        png = ses.frame
+        if not png:
+            # Todavía no hay primer frame (el navegador está arrancando).
+            raise HTTPException(status_code=202, detail=ses.error or "arrancando")
+        return Response(content=png, media_type="image/png",
+                        headers={"Cache-Control": "no-store",
+                                 "X-Login-Estado": ses.estado,
+                                 "X-Login-Url": ses.url_actual[:400]})
+
+    @app.post("/api/browser-login/{token}/event")
+    async def browser_login_event(token: str, request: Request):
+        """Reinyecta un click/tecla/scroll en el navegador remoto."""
+        from .net import browser_login
+        dueno = _login_ident(request)
+        ses = browser_login.obtener(token, dueno)
+        if ses is None:
+            raise HTTPException(status_code=404, detail="Esa ventana de login no existe.")
+        try:
+            cmd = await request.json()
+        except Exception:  # noqa: BLE001
+            cmd = {}
+        if cmd.get("tipo") == "guardar":     # guardar tiene su propio endpoint
+            raise HTTPException(status_code=400, detail="Usá /save para guardar.")
+        try:
+            ses.enviar(cmd)
+        except browser_login.LoginError as e:
+            raise HTTPException(status_code=409, detail=str(e)) from e
+        return {"ok": True, "estado": ses.estado}
+
+    @app.post("/api/browser-login/{token}/save")
+    async def browser_login_save(token: str, request: Request):
+        """Guarda la sesión ya logueada y cierra el navegador."""
+        from .net import browser_login
+        dueno = _login_ident(request)
+        ses = browser_login.obtener(token, dueno)
+        if ses is None:
+            raise HTTPException(status_code=404, detail="Esa ventana de login no existe.")
+        import anyio
+        ok = await anyio.to_thread.run_sync(ses.guardar)   # bloquea hasta ~6s: al threadpool
+        browser_login.cerrar(token, dueno)
+        if not ok:
+            raise HTTPException(status_code=500,
+                                detail=ses.error or "No se pudo guardar la sesión.")
+        return {"ok": True, "session": ses.nombre}
+
+    @app.delete("/api/browser-login/{token}")
+    async def browser_login_close(token: str, request: Request):
+        from .net import browser_login
+        dueno = _login_ident(request)
+        return {"ok": browser_login.cerrar(token, dueno)}
+
     @app.get("/api/download/pot/health")
     async def download_pot_health(request: Request):
         """¿El proveedor de PO tokens (bgutil) está vivo y habla el mismo idioma que la imagen?
