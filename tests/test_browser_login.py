@@ -184,3 +184,91 @@ def test_save_guarda_y_cierra(client_factory, monkeypatch):
     assert r.status_code == 200 and r.json()["session"] == "mi-x"
     assert ses.guardada is True
     assert "tok" not in bl._SESIONES        # se cierra sola al guardar
+
+
+# ---------------------------------------------------------------------------
+# Modo VNC (el pesado): registro, ownership y que sea de a una
+# ---------------------------------------------------------------------------
+from app.net import browser_vnc as bv   # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _limpiar_vnc():
+    bv._SESIONES.clear()
+    yield
+    bv._SESIONES.clear()
+
+
+class _VncFalsa:
+    def __init__(self, dueno="jti-1", nombre="s", vencida=False, estado="listo"):
+        self.dueno, self.nombre, self.estado = dueno, nombre, estado
+        self.error, self.guardada, self.cerrada = "", False, False
+        self._v = vencida
+
+    def vencida(self):
+        return self._v
+
+    def cerrar(self):
+        self.cerrada = True
+
+    def guardar(self):
+        self.guardada = True
+        return True
+
+
+def test_vnc_es_de_a_una(monkeypatch):
+    """Xvfb + Chromium con ventana es caro: no se permiten dos a la vez."""
+    monkeypatch.setattr(bv, "_SesionVnc", lambda *a, **k: _VncFalsa())
+    monkeypatch.setattr(bv, "_puerto_libre", lambda p: True)
+    bv.abrir("https://ej.com/", nombre="n", dueno="jti", store=None)
+    with pytest.raises(bv.VncError, match="Ya hay una ventana VNC"):
+        bv.abrir("https://ej.com/", nombre="n", dueno="jti", store=None)
+
+
+def test_vnc_libera_cuando_vence(monkeypatch):
+    monkeypatch.setattr(bv, "_SesionVnc", lambda *a, **k: _VncFalsa())
+    monkeypatch.setattr(bv, "_puerto_libre", lambda p: True)
+    bv.abrir("https://ej.com/", nombre="n", dueno="jti", store=None)
+    for s in bv._SESIONES.values():
+        s._v = True
+    bv.abrir("https://ej.com/", nombre="n", dueno="jti", store=None)   # no lanza
+
+
+def test_vnc_respeta_al_dueno():
+    bv._SESIONES["tok"] = _VncFalsa(dueno="jti-ana")
+    assert bv.obtener("tok", "jti-ana") is not None
+    assert bv.obtener("tok", "jti-beto") is None
+    assert bv.cerrar("tok", "jti-beto") is False
+
+
+def test_vnc_rechaza_si_el_puerto_esta_ocupado(monkeypatch):
+    monkeypatch.setattr(bv, "_puerto_libre", lambda p: False)
+    with pytest.raises(bv.VncError, match="puerto"):
+        bv.abrir("https://ej.com/", nombre="n", dueno="jti", store=None)
+
+
+def test_vnc_available_reporta_lo_que_hay(client_factory, monkeypatch):
+    _as_role(monkeypatch, "dios")
+    c = client_factory()
+    d = c.get("/api/browser-login/vnc/available").json()
+    assert "ok" in d and isinstance(d["ok"], bool)
+
+
+def test_vnc_start_pide_url_y_nombre(client_factory, monkeypatch):
+    _as_role(monkeypatch, "dios")
+    c = client_factory()
+    assert c.post("/api/browser-login/vnc/start", json={"url": "https://x.com/"}).status_code == 400
+
+
+def test_vnc_start_gateado_por_rol(client_factory, monkeypatch):
+    _as_role(monkeypatch, "humano")
+    c = client_factory()
+    r = c.post("/api/browser-login/vnc/start", json={"url": "https://x.com/", "session": "s"})
+    assert r.status_code == 403
+
+
+def test_vnc_save_404_si_no_es_tuyo(client_factory, monkeypatch):
+    bv._SESIONES["tok"] = _VncFalsa(dueno="jti-otro")
+    _as_role(monkeypatch, "dios", jti="jti-mio")
+    c = client_factory()
+    assert c.post("/api/browser-login/vnc/tok/save").status_code == 404
