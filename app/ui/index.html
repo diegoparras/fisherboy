@@ -311,6 +311,9 @@
     border-bottom: 1px solid var(--border); }
   .rb-url { flex: 1 1 auto; font-family: var(--mono); font-size: 11.5px; color: var(--muted);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rb-addr { background: var(--card-2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 6px 10px; color: var(--text); outline: none; min-width: 0; }
+  .rb-addr:focus { border-color: var(--accent); }
   .rb-stage { position: relative; background: #000; display: grid; place-items: center;
     overflow: auto; flex: 1 1 auto; min-height: 200px; }
   .rb-stage img { display: block; max-width: 100%; height: auto; cursor: crosshair; }
@@ -1661,7 +1664,8 @@ if (actsEl) {
       const r = await fetch(`/api/browser-login/${token}/frame`, { cache: "no-store" });
       if (r.status === 202) { decir("arrancando…"); return; }
       if (!r.ok) { decir("la ventana se cerró", true); parar(); return; }
-      urlEl.textContent = r.headers.get("X-Login-Url") || "";
+      const uActual = r.headers.get("X-Login-Url") || "";
+      if (document.activeElement !== urlEl) urlEl.value = uActual;   // no pisar lo que tipeás
       const blob = await r.blob();
       if (blobPrev) URL.revokeObjectURL(blobPrev);
       blobPrev = URL.createObjectURL(blob);
@@ -1714,6 +1718,17 @@ if (actsEl) {
     if (t) { tipeo.value = ""; evento({ tipo: "texto", texto: t }); }
   });
 
+  function irA() {
+    let u = (urlEl.value || "").trim();
+    if (!u) return;
+    if (!/^https?:\/\//i.test(u)) u = "https://" + u;   // "youtube.com" también vale
+    evento({ tipo: "navegar", url: u });
+  }
+  document.getElementById("rb-go").addEventListener("click", irA);
+  urlEl.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); irA(); }
+    e.stopPropagation();          // que no lo capture el teclado del navegador remoto
+  });
   document.getElementById("rb-back-btn").addEventListener("click", () => evento({ tipo: "atras" }));
   document.getElementById("rb-reload").addEventListener("click", () => evento({ tipo: "recargar" }));
   document.getElementById("rb-close").addEventListener("click", () => cerrar(true));
@@ -1721,6 +1736,14 @@ if (actsEl) {
 
   document.getElementById("rb-save").addEventListener("click", async () => {
     if (!token) return;
+    // Si no le pusiste nombre, se deduce del dominio donde estás: "youtube.com" → "youtube".
+    const campo = document.getElementById("session");
+    if (!(campo.value || "").trim()) {
+      try {
+        const h = new URL(urlEl.value).hostname.replace(/^www\./, "");
+        campo.value = h.split(".")[0] || "sesion";
+      } catch (e) { campo.value = "sesion"; }
+    }
     decir("guardando…");
     try {
       const r = await fetch(`/api/browser-login/${token}/save`, { method: "POST" });
@@ -1734,10 +1757,11 @@ if (actsEl) {
 
   // --- abrir
   document.getElementById("btn-login-nav").addEventListener("click", async () => {
-    const nombre = (document.getElementById("session").value || "").trim();
-    const url = (form.url.value || "").trim();
-    if (!nombre) { showError("Poné primero un nombre en «Sesión de browser» (ej. mi-facebook).", "Falta el nombre"); return; }
-    if (!url) { showError("Poné arriba la URL del sitio donde te querés loguear.", "Falta la URL"); return; }
+    // Sin requisitos para abrir: es un navegador. La URL sale del formulario si la pusiste,
+    // y si no arranca en una página en blanco y navegás desde la barra de adentro. El nombre
+    // de sesión recién hace falta al guardar (y si falta, se deduce del dominio).
+    const nombre = (document.getElementById("session").value || "").trim() || "sesion-temporal";
+    const url = (form.url.value || "").trim() || "https://www.google.com";
     modal.classList.remove("hidden");
     espera.hidden = false; img.hidden = true;
     decir("");
@@ -2730,7 +2754,9 @@ eyeify();
     <div class="rb-head">
       <button type="button" class="mini-btn" id="rb-back-btn">&larr; atrás</button>
       <button type="button" class="mini-btn" id="rb-reload">recargar</button>
-      <span class="rb-url" id="rb-url"></span>
+      <input class="rb-url rb-addr" id="rb-url" autocomplete="off" spellcheck="false"
+        placeholder="escribí una dirección y Enter — ej. youtube.com" />
+      <button type="button" class="mini-btn" id="rb-go">ir</button>
       <button type="button" class="btn-pill" id="rb-save">Ya me logueé, guardar</button>
       <button type="button" class="modal-x" id="rb-close" aria-label="Cerrar">
         <svg class="ico" viewBox="0 0 24 24" style="width:14px;height:14px"><path d="M18 6 6 18M6 6l12 12"/></svg>
