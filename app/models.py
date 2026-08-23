@@ -67,6 +67,8 @@ class JobRequest(BaseModel):
     paginate: bool = False                # barrer el paginado de la URL (postback/links/?page=)
     crawl_scope: str = "domain"           # "domain" (todo el sitio) | "path" (solo la sección de la semilla)
     capture_api: bool = False             # capturar el JSON/XHR oculto en vez del HTML (ADR-010)
+    social: bool = False                  # redes sociales: posts como registros (ADR-012)
+    max_posts: int = Field(default=100, ge=1, le=2000)   # tope de publicaciones a extraer
     tarantula: bool = False               # araña profunda: captura el API de CADA nodo (árbol de datos)
     tier_hint: FetchTier | None = None
     callback_url: HttpUrl | None = None

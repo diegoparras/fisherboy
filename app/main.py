@@ -292,6 +292,16 @@ def create_app(
             sobre.meta["crawl_scope"] = "path"
         if req.capture_api:
             sobre.meta["capture_api"] = True
+        # Redes sociales (ADR-012). Se autodetecta por dominio: si pediste x.com/usuario con
+        # social=true no hace falta que digas cuál es. Necesita browser, así que el tier lo
+        # sube el propio branch al capturar.
+        if req.social:
+            from .net.social import social_platform
+            sobre.meta["social"] = True
+            sobre.meta["max_posts"] = int(req.max_posts)
+            plat = social_platform(str(req.url))
+            if plat:
+                sobre.meta["social_platform"] = plat
         if req.tarantula:
             sobre.meta["tarantula"] = True
         if req.extract_schema is not None:
