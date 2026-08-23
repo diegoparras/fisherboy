@@ -747,6 +747,20 @@
           </label>
           <p class="help" data-i18n-html="adv.captureHelp">Trae el JSON que la página ya consume (SPAs, grids dinámicos). <b>Lo más confiable.</b></p>
           <label class="switch">
+            <input type="checkbox" id="social" name="social" />
+            <span class="track"></span>
+            <span>Redes sociales &middot; posts como datos</span>
+          </label>
+          <p class="help">Baja publicaciones de X (y pronto más) como registros: texto, autor,
+            fecha, likes. Scrollea solo hasta juntarlas. <b>Necesitás sesión iniciada</b> —
+            usá el campo Sesión de arriba o pegá cookies.</p>
+          <div class="row-2 social-opts hidden" id="social-opts">
+            <div>
+              <label for="max_posts">Máx. publicaciones</label>
+              <input type="number" id="max_posts" name="max_posts" min="1" max="2000" value="100" />
+            </div>
+          </div>
+          <label class="switch">
             <input type="checkbox" id="tarantula" name="tarantula" />
             <span class="track"></span>
             <span data-i18n="adv.tarantula">Araña profunda · tarántula</span>
@@ -1576,6 +1590,14 @@ if (actsEl) {
   });
 }
 
+/* Redes sociales: el tope de posts solo tiene sentido con el modo prendido. */
+(() => {
+  const sw = document.getElementById("social"), opts = document.getElementById("social-opts");
+  if (!sw || !opts) return;
+  const sync = () => opts.classList.toggle("hidden", !sw.checked);
+  sw.addEventListener("change", sync); sync();
+})();
+
 function render(sobre) {
   currentSobre = sobre;
   wrap.classList.remove("hidden");
@@ -2127,6 +2149,10 @@ async function runScrape() {
   const sessEl = document.getElementById("session");
   if (sessEl && sessEl.value.trim()) payload.session = sessEl.value.trim();
   if (form.capture_api.checked) payload.capture_api = true;
+  if (form.social && form.social.checked) {
+    payload.social = true;
+    payload.max_posts = parseInt(document.getElementById("max_posts").value, 10) || 100;
+  }
   if (form.tarantula.checked) {
     payload.tarantula = true;
     payload.crawl_depth = parseInt(form.spider.value, 10) || 1;

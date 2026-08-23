@@ -557,6 +557,60 @@ def _harvest_files(deps: PipelineDeps, sobre: Sobre, pages: list[FetchResult]) -
         sobre.meta["files"] = merged
 
 
+def _social_branch(sobre: Sobre, deps: PipelineDeps) -> Sobre:
+    """Trae publicaciones de una red social como registros normalizados (ADR-012).
+
+    Reusa toda la maquinaria que ya existe: navegador con sesión (para pasar el login),
+    acciones (para agotar el scroll y que la timeline pida mas paginas) y captura de XHR
+    (para quedarse con la API interna en vez del HTML). Lo unico propio es el extractor
+    que reconoce los posts por su forma."""
+    from .net import social
+
+    url = str(sobre.source_url)
+    plat = social.social_platform(url) or ""
+    max_posts = int(sobre.meta.get("max_posts") or 100)
+    overrides = _job_overrides(sobre)
+
+    # El scroll se suma a las acciones del usuario (si puso un login a mano, corre primero).
+    acts = list(overrides.get("actions") or [])
+    acts += social.scroll_actions(max_posts)
+    overrides["actions"] = acts
+
+    if social.needs_session(plat) and not (overrides.get("session_name") or overrides.get("cookies")):
+        _report(deps, sobre, f"Ojo: {plat} exige sesion iniciada; sin cookies vas a ver poco y nada")
+
+    _report(deps, sobre, f"Abriendo {plat or 'la pagina'} y bajando hasta {max_posts} posts...")
+    endpoints = deps.capture(url, sobre.meta.get("tier_hint"), **overrides)
+    posts = social.extract_posts(plat, endpoints, max_posts=max_posts)
+    _report(deps, sobre, f"{len(posts)} publicaciones extraidas de {len(endpoints)} endpoints")
+
+    sobre.tier_usado = FetchTier.BROWSER
+    sobre.fetched_at = datetime.now(timezone.utc)
+    sobre.meta["social_platform"] = plat
+    sobre.meta["api_endpoints"] = len(endpoints)
+    if not posts:
+        # Sin posts no se inventa nada: se dice por que puede ser y se entrega lo crudo.
+        sobre.meta["social_note"] = (
+            "No se reconocieron publicaciones. Suele ser falta de sesion (login) o que la "
+            "plataforma todavia no tiene extractor propio: " + ", ".join(social.supported())
+        )
+
+    body = json.dumps(posts, ensure_ascii=False, indent=2)
+    if sobre.privacy_mode is PrivacyMode.DIRECTO:
+        sobre.content_json = {"posts": posts}
+        sobre.content_md = body
+        sobre.anonimizado = False
+        if posts:
+            sobre.meta["records"] = posts
+    else:   # opaco/reversible: los posts son datos de personas, se enmascara TODO lo que sale
+        anon, n = deps.anonymize_opaco(body)
+        sobre.content_md = anon
+        sobre.anonimizado = True
+        sobre.meta["entidades_anonimizadas"] = n
+    sobre.status = JobStatus.OK
+    return sobre
+
+
 def _capture_branch(sobre: Sobre, deps: PipelineDeps) -> Sobre:
     """Captura los endpoints JSON/XHR ocultos y los entrega. Respeta privacy_mode."""
     url = str(sobre.source_url)
@@ -734,6 +788,11 @@ def process_job(sobre: Sobre, deps: PipelineDeps) -> Sobre:
         # Tarántula: araña profunda que captura el JSON/XHR de CADA nodo → árbol de datos.
         if sobre.meta.get("tarantula") and deps.capture_page is not None:
             return _tarantula_branch(sobre, deps)
+
+        # Redes sociales (ADR-012): posts como registros. Va ANTES de la captura genérica
+        # porque es un caso especial de ella: misma técnica, extractor propio.
+        if sobre.meta.get("social") and deps.capture is not None:
+            return _social_branch(sobre, deps)
 
         # Keystone (ADR-010): capturar el API/XHR oculto en vez de pelear el HTML.
         if sobre.meta.get("capture_api") and deps.capture is not None:
