@@ -690,6 +690,126 @@ def create_app(
         dueno = _login_ident(request)
         return {"ok": browser_login.cerrar(token, dueno)}
 
+    # --- Modo VNC: el escritorio del server (popups, pestañas) --------------------
+    # Archivos del cliente noVNC (los trae el paquete `novnc` de Debian). Se montan solo si
+    # estan: sin ellos el modo VNC no se ofrece y el liviano anda igual.
+    for _novnc_dir in ("/usr/share/novnc", "/usr/share/webapps/novnc"):
+        import os as _os
+        if _os.path.isdir(_novnc_dir):
+            from fastapi.staticfiles import StaticFiles
+            app.mount("/novnc", StaticFiles(directory=_novnc_dir, html=True), name="novnc")
+            break
+
+    @app.get("/api/browser-login/vnc/available")
+    async def vnc_available(request: Request):
+        """¿La imagen trae Xvfb/x11vnc? La UI lo usa para ofrecer o no el modo pesado."""
+        _login_ident(request)
+        from .net import browser_vnc
+        ok, motivo = browser_vnc.disponible()
+        return {"ok": ok, "motivo": motivo}
+
+    @app.post("/api/browser-login/vnc/start")
+    async def vnc_start(request: Request):
+        """Levanta pantalla virtual + VNC + Chromium con ventana, y devuelve por dónde verlo."""
+        from .net import browser_vnc
+        dueno = _login_ident(request)
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            body = {}
+        url = (body.get("url") or "").strip()
+        nombre = (body.get("session") or "").strip()[:64]
+        if not url or not nombre:
+            raise HTTPException(status_code=400, detail="Faltan `url` y `session` (el nombre).")
+        try:
+            token, ses = browser_vnc.abrir(
+                url, nombre=nombre, dueno=dueno, store=_login_store(),
+                proxy=(body.get("proxy") or "").strip() or settings.yt_proxy,
+                allow_private=settings.allow_private_targets, locale=settings.browser_locale,
+            )
+        except browser_vnc.VncError as e:
+            raise HTTPException(status_code=429, detail=str(e)) from e
+        return {"token": token, "estado": ses.estado,
+                "ancho": browser_vnc.ANCHO, "alto": browser_vnc.ALTO}
+
+    @app.get("/api/browser-login/vnc/{token}/status")
+    async def vnc_status(token: str, request: Request):
+        from .net import browser_vnc
+        dueno = _login_ident(request)
+        ses = browser_vnc.obtener(token, dueno)
+        if ses is None:
+            raise HTTPException(status_code=404, detail="Esa ventana VNC no existe.")
+        return {"estado": ses.estado, "error": ses.error}
+
+    @app.post("/api/browser-login/vnc/{token}/save")
+    async def vnc_save(token: str, request: Request):
+        from .net import browser_vnc
+        dueno = _login_ident(request)
+        ses = browser_vnc.obtener(token, dueno)
+        if ses is None:
+            raise HTTPException(status_code=404, detail="Esa ventana VNC no existe.")
+        import anyio
+        ok = await anyio.to_thread.run_sync(ses.guardar)
+        browser_vnc.cerrar(token, dueno)
+        if not ok:
+            raise HTTPException(status_code=500, detail=ses.error or "No se pudo guardar.")
+        return {"ok": True, "session": ses.nombre}
+
+    @app.delete("/api/browser-login/vnc/{token}")
+    async def vnc_close(token: str, request: Request):
+        from .net import browser_vnc
+        dueno = _login_ident(request)
+        return {"ok": browser_vnc.cerrar(token, dueno)}
+
+    @app.websocket("/api/browser-login/vnc/{token}/ws")
+    async def vnc_ws(websocket, token: str):
+        """Puente WebSocket ↔ el x11vnc local. Es lo que hace websockify, pero acá adentro.
+
+        Así el VNC no necesita un puerto propio expuesto (ni tocar el deploy de EasyPanel):
+        viaja por el mismo dominio y la misma cookie de sesión que el resto de la API. El
+        x11vnc escucha solo en 127.0.0.1, así que este puente es la ÚNICA puerta, y exige
+        sesión + rol antes de tender el túnel."""
+        import anyio
+        from .net import browser_vnc
+
+        # Auth: el WebSocket no pasa por las dependencias HTTP, hay que validarlo a mano.
+        role, jti = auth.identity_from_request(websocket)
+        if role is None or not auth.caps_for(role).get("capture"):
+            await websocket.close(code=1008)
+            return
+        if browser_vnc.obtener(token, str(jti or role)) is None:
+            await websocket.close(code=1008)
+            return
+
+        await websocket.accept(subprotocol="binary")
+        try:
+            stream = await anyio.connect_tcp("127.0.0.1", browser_vnc.VNC_PORT)
+        except OSError:
+            await websocket.close(code=1011)
+            return
+
+        async def del_vnc_al_navegador():
+            try:
+                async for chunk in stream:
+                    await websocket.send_bytes(chunk)
+            except Exception:  # noqa: BLE001 — se cortó una punta: cerramos las dos
+                pass
+
+        async def del_navegador_al_vnc():
+            try:
+                while True:
+                    data = await websocket.receive_bytes()
+                    await stream.send(data)
+            except Exception:  # noqa: BLE001
+                pass
+
+        try:
+            async with anyio.create_task_group() as tg:
+                tg.start_soon(del_vnc_al_navegador)
+                tg.start_soon(del_navegador_al_vnc)
+        finally:
+            await stream.aclose()
+
     @app.get("/api/download/pot/health")
     async def download_pot_health(request: Request):
         """¿El proveedor de PO tokens (bgutil) está vivo y habla el mismo idioma que la imagen?

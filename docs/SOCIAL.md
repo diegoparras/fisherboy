@@ -60,6 +60,32 @@ if those yield nothing, the plain HTML of **`mbasic.facebook.com`** — which ru
 JavaScript and is far easier to read. Fisherboy rewrites `www.facebook.com/…` to `mbasic`
 automatically. The HTML path is more brittle by nature; treat it as the fallback it is.
 
+## Logging in: let the browser show you
+
+The server has no login of yours, and pasting cookies by hand is miserable. So Fisherboy can
+open **its own browser and put it on your screen** — you log in with your hands, 2FA and
+captchas included, and it keeps the session.
+
+Next to the **Session** field there are two buttons:
+
+| Mode | What you see | Cost |
+|---|---|---|
+| **Iniciar sesión acá** (light) | The page, streamed as frames; your clicks and keystrokes are replayed on the server | Nothing extra — reuses the browser already in the image |
+| **Modo completo** (VNC) | The whole desktop: **popups, new tabs**, address bar | ~330 MB of image, one session at a time |
+
+Use the light one by default. Reach for VNC when the login opens a **popup** — "Sign in with
+Google" and most OAuth flows do — because the light mode only ever shows one page and you'd be
+stuck.
+
+Both end the same way: hit **Ya me logueé, guardar** and the session is stored under the name
+you chose. Jobs don't know or care which one you used.
+
+The VNC server listens on **127.0.0.1 only** and is never exposed: your browser reaches it
+through a WebSocket on this same API, which already requires your session and role. No extra
+port to open in your deployment. If you'd rather have the smaller image, drop the `xvfb x11vnc
+novnc` layer from the Dockerfile — the app detects they're missing and offers only the light
+mode.
+
 ## Sessions: the part that actually matters
 
 Every big network gates everything behind a login. Log in once with browser actions and name

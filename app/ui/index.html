@@ -757,6 +757,10 @@
           <div class="sess-row">
             <input id="session" name="session" autocomplete="off"
               placeholder="mi-sitio — guarda el login para los próximos jobs" />
+            <button type="button" class="dlbtn hidden" id="btn-login-vnc" title="Muestra el escritorio entero: popups, pestañas nuevas, barra de direcciones. Más pesado.">
+              <svg class="ico" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+              <span>Modo completo</span>
+            </button>
             <button type="button" class="dlbtn" id="btn-login-nav">
               <svg class="ico" viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3"/></svg>
               <span>Iniciar sesión acá</span>
@@ -1759,6 +1763,86 @@ if (actsEl) {
   });
 })();
 
+/* ===== Login por VNC (ADR-013, modo completo) =====
+   Muestra el ESCRITORIO del server con noVNC. Se ofrece solo si la imagen trae x11vnc; si no,
+   queda oculto y está el modo liviano. El VNC nunca sale al exterior: noVNC se conecta a un
+   WebSocket de esta misma API, que hace de puente hasta el 127.0.0.1 del contenedor. */
+(() => {
+  const modal = document.getElementById("vncmodal");
+  const btn = document.getElementById("btn-login-vnc");
+  if (!modal || !btn) return;
+  const marco = document.getElementById("vnc-frame"), espera = document.getElementById("vnc-wait");
+  const info = document.getElementById("vnc-info"), estado = document.getElementById("vnc-status");
+  let token = null, poll = null;
+
+  const decir = (t, malo) => { estado.textContent = t || ""; estado.style.color = malo ? "var(--err)" : ""; };
+
+  // ¿La imagen soporta el modo pesado? Si no, ni mostramos el botón.
+  fetch("/api/browser-login/vnc/available").then(r => r.json()).then(d => {
+    if (d && d.ok) btn.classList.remove("hidden");
+  }).catch(() => {});
+
+  function cerrar(avisar) {
+    if (poll) { clearInterval(poll); poll = null; }
+    if (token && avisar) fetch(`/api/browser-login/vnc/${token}`, { method: "DELETE" }).catch(() => {});
+    token = null;
+    modal.classList.add("hidden");
+    marco.hidden = true; marco.removeAttribute("src"); espera.hidden = false;
+  }
+
+  btn.addEventListener("click", async () => {
+    const nombre = (document.getElementById("session").value || "").trim();
+    const url = (form.url.value || "").trim();
+    if (!nombre) { showError("Poné primero un nombre en «Sesión de browser» (ej. mi-facebook).", "Falta el nombre"); return; }
+    if (!url) { showError("Poné arriba la URL del sitio donde te querés loguear.", "Falta la URL"); return; }
+    modal.classList.remove("hidden"); espera.hidden = false; marco.hidden = true; decir("");
+    try {
+      const r = await fetch("/api/browser-login/vnc/start", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, session: nombre, proxy: proxyCanonical() || "" }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.detail || "no se pudo abrir el escritorio");
+      token = d.token;
+      // Esperar a que el navegador esté arriba antes de conectar noVNC.
+      poll = setInterval(async () => {
+        try {
+          const s = await (await fetch(`/api/browser-login/vnc/${token}/status`)).json();
+          info.textContent = "estado: " + s.estado;
+          if (s.estado === "listo") {
+            clearInterval(poll); poll = null;
+            // noVNC arma la URL del WS como <host>/<path>; se lo damos ya resuelto.
+            marco.src = "/novnc/vnc_lite.html?autoconnect=1&resize=scale&path=" +
+              encodeURIComponent(`api/browser-login/vnc/${token}/ws`);
+            marco.hidden = false; espera.hidden = true;
+            decir("");
+          } else if (s.estado === "error") {
+            clearInterval(poll); poll = null;
+            decir(s.error || "falló", true);
+          }
+        } catch (e) { /* reintenta */ }
+      }, 900);
+    } catch (e) { cerrar(false); showError(e.message, "No se pudo abrir"); }
+  });
+
+  document.getElementById("vnc-save").addEventListener("click", async () => {
+    if (!token) return;
+    decir("guardando…");
+    try {
+      const r = await fetch(`/api/browser-login/vnc/${token}/save`, { method: "POST" });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.detail || "no se pudo guardar");
+      cerrar(false);
+      showError(`Sesión "${d.session}" guardada. Los próximos jobs con ese nombre entran ya logueados.`, "Listo");
+    } catch (e) { decir(e.message, true); }
+  });
+
+  document.getElementById("vnc-close").addEventListener("click", () => cerrar(true));
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !modal.classList.contains("hidden")) cerrar(true);
+  });
+})();
+
 function render(sobre) {
   currentSobre = sobre;
   wrap.classList.remove("hidden");
@@ -2653,6 +2737,27 @@ eyeify();
       <span>Hacé <b>click</b> y <b>escribí</b> como en cualquier navegador. Cuando estés
         adentro, apretá <b>Ya me logueé, guardar</b>.</span>
       <span id="rb-status"></span>
+    </div>
+  </div>
+</div>
+<!-- Login por VNC: el escritorio del servidor -->
+<div id="vncmodal" class="rb-back hidden">
+  <div class="rb-card">
+    <div class="rb-head">
+      <span class="rb-url" id="vnc-info">Levantando el escritorio del servidor…</span>
+      <button type="button" class="btn-pill" id="vnc-save">Ya me logueé, guardar</button>
+      <button type="button" class="modal-x" id="vnc-close" aria-label="Cerrar">
+        <svg class="ico" viewBox="0 0 24 24" style="width:14px;height:14px"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="rb-stage">
+      <iframe id="vnc-frame" style="width:100%;height:72vh;border:0;background:#000" hidden></iframe>
+      <div class="rb-wait" id="vnc-wait">Levantando pantalla virtual, VNC y navegador…</div>
+    </div>
+    <div class="rb-hint">
+      <span>Acá ves el <b>escritorio entero</b>: si el login abre un popup o una pestaña, lo
+        vas a ver. Cuando termines, apretá <b>Ya me loguée, guardar</b>.</span>
+      <span id="vnc-status"></span>
     </div>
   </div>
 </div>
