@@ -128,7 +128,8 @@ def build_default_deps(settings, *, redis_client=None) -> PipelineDeps:
         )
         return capture_xhr(u, ctx)
 
-    def _capture_page(u: str, proxy=None, cookies=None, **_ignore) -> tuple:
+    def _capture_page(u: str, proxy=None, cookies=None, actions=None, session_name="",
+                      session_owner="", **_ignore) -> tuple:
         from .fetchers.base import FetchContext
         from .fetchers.capture import capture_page
         ctx = FetchContext(
@@ -137,6 +138,8 @@ def build_default_deps(settings, *, redis_client=None) -> PipelineDeps:
             settle_s=settings.browser_settle_s, scroll=settings.browser_scroll,
             user_agent=settings.browser_user_agent, locale=settings.browser_locale,
             proxy=proxy, cookies=cookies or {},
+            actions=actions or [], session_name=session_name, session_owner=session_owner,
+            session_store=getattr(router, "session_store", None),
         )
         return capture_page(u, ctx)
 
@@ -579,9 +582,20 @@ def _social_branch(sobre: Sobre, deps: PipelineDeps) -> Sobre:
     if social.needs_session(plat) and not (overrides.get("session_name") or overrides.get("cookies")):
         _report(deps, sobre, f"Ojo: {plat} exige sesion iniciada; sin cookies vas a ver poco y nada")
 
+    # Facebook rinde mucho mas por mbasic (HTML plano, sin GraphQL ofuscado).
+    pedir = social.prefer_url(url)
+    if pedir != url:
+        _report(deps, sobre, "Usando mbasic.facebook.com: HTML plano, mas facil de leer")
+
     _report(deps, sobre, f"Abriendo {plat or 'la pagina'} y bajando hasta {max_posts} posts...")
-    endpoints = deps.capture(url, sobre.meta.get("tier_hint"), **overrides)
-    posts = social.extract_posts(plat, endpoints, max_posts=max_posts)
+    # capture_page da (html, endpoints): el JSON es lo confiable, el HTML es el plan B de
+    # Facebook. Si no esta inyectado, se cae a la captura solo-JSON.
+    html = ""
+    if deps.capture_page is not None:
+        html, endpoints = deps.capture_page(pedir, **overrides)
+    else:
+        endpoints = deps.capture(pedir, sobre.meta.get("tier_hint"), **overrides)
+    posts = social.extract_posts(plat, endpoints, max_posts=max_posts, html=html)
     _report(deps, sobre, f"{len(posts)} publicaciones extraidas de {len(endpoints)} endpoints")
 
     sobre.tier_usado = FetchTier.BROWSER

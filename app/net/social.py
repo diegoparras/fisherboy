@@ -10,15 +10,25 @@ Lo que sí aguanta, y es lo que hace este módulo:
   navegador con sesión real  →  la página llama a su propia API  →  interceptamos ESA respuesta
 
 Y sobre lo interceptado no se busca por RUTA sino por FORMA: se recorre el JSON y se levanta
-todo objeto que "parezca un post" (texto + autor + fecha). Si mañana X mueve un campo de
-`data.user.result.timeline` a otro lado, el extractor sigue andando — mientras el objeto siga
-teniendo la misma pinta. Es la diferencia entre un scraper que dura semanas y uno que dura meses.
+todo objeto que "parezca un post". Cada red trae su propio marcador de forma, estable en el
+tiempo aunque el árbol alrededor cambie:
+
+  X          `full_text`                      (el texto del tuit)
+  LinkedIn   `$type: com.linkedin.voyager…`   (el discriminador de entidad de Voyager)
+  Facebook   `__typename: Story`              (el discriminador de Relay)
+
+Si mañana mueven el objeto de lugar, el extractor sigue andando. Es la diferencia entre un
+scraper que dura semanas y uno que dura meses, y evita hardcodear los doc_id de GraphQL.
+
+Facebook tiene además un segundo camino: `mbasic.facebook.com` sirve HTML plano, sin JS. Es
+más frágil que el JSON pero a veces es lo único que hay, así que el extractor mira los dos.
 
 No reemplaza a la sesión: sin cookies de una cuenta logueada estas plataformas no muestran
 nada. Ver docs/SOCIAL.md.
 """
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
@@ -32,7 +42,7 @@ _HOSTS = {
     "reddit.com": "reddit",
 }
 
-# Cuántos posts entra, más o menos, por cada vuelta de scroll.
+# Cuántos posts entran, más o menos, por cada vuelta de scroll.
 _POSTS_POR_VUELTA = 10
 
 
@@ -54,6 +64,19 @@ def scroll_actions(max_posts: int, *, pause_s: float = 1.4) -> list[dict]:
     detecten. Es el equilibrio entre juntar datos y que la cuenta sobreviva."""
     vueltas = max(3, min(60, -(-int(max_posts) // _POSTS_POR_VUELTA) + 2))
     return [{"do": "scroll_until", "max_rounds": vueltas, "pause_s": pause_s}]
+
+
+def prefer_url(url: str) -> str:
+    """Versión de la URL que conviene pedir.
+
+    Facebook: `mbasic` sirve HTML plano, sin JS ni GraphQL ofuscado. Es MUCHO más fácil de
+    leer que el sitio normal, así que si el usuario pegó www lo mandamos ahí."""
+    parts = urlsplit(url)
+    host = (parts.hostname or "").lower()
+    if host.endswith("facebook.com") and not host.startswith("mbasic."):
+        resto = url.split(host, 1)[-1]
+        return "https://mbasic.facebook.com" + resto
+    return url
 
 
 # ---------------------------------------------------------------------------
@@ -87,6 +110,24 @@ def _num(v) -> int | None:
         return int(v)
     except (TypeError, ValueError):
         return None
+
+
+def _deep_text(obj, *claves) -> str:
+    """Busca la primera cadena no vacía bajo alguna de esas claves, a cualquier profundidad.
+
+    LinkedIn y Facebook envuelven el texto en capas ({text:{text:"…"}}, {message:{text:"…"}})
+    y la cantidad de capas cambia según el tipo de post. Buscar por clave y no por ruta
+    ahorra tener un caso especial por cada variante."""
+    for d in _walk(obj, budget=8000):
+        for k in claves:
+            v = d.get(k)
+            if isinstance(v, str) and v.strip():
+                return v
+            if isinstance(v, dict):
+                t = v.get("text")
+                if isinstance(t, str) and t.strip():
+                    return t
+    return ""
 
 
 def _iso(v) -> str:
@@ -143,12 +184,9 @@ def _x_media(legacy: dict) -> list[str]:
     return out
 
 
-def _x_posts(endpoints: list[dict], max_posts: int) -> list[dict]:
-    """Levanta tuits de lo capturado.
-
-    Marcador de forma: `full_text` (el texto completo del tuit). Es de los pocos nombres que X
-    no cambió en años y no aparece en otros objetos, así que sirve de ancla sin depender de la
-    ruta ni del doc_id de GraphQL del día."""
+def _x_posts(endpoints, max_posts, html=""):
+    """Marcador de forma: `full_text`. Es de los pocos nombres que X no cambió en años y no
+    aparece en otros objetos, así que ancla sin depender del doc_id del día."""
     vistos: set[str] = set()
     out: list[dict] = []
     for ep in endpoints:
@@ -161,8 +199,6 @@ def _x_posts(endpoints: list[dict], max_posts: int) -> list[dict]:
             texto = _first(src, "full_text", "text")
             if not isinstance(texto, str) or not texto:
                 continue
-            # `full_text` es la firma del tuit; sin él exigimos otras señales para no levantar
-            # cualquier objeto que tenga un campo "text" (hay muchísimos).
             if "full_text" not in src and not ({"created_at", "favorite_count"} <= set(src)):
                 continue
             tid = str(_first(node, "rest_id", "id_str") or _first(src, "id_str", "id") or "")
@@ -188,19 +224,196 @@ def _x_posts(endpoints: list[dict], max_posts: int) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# LinkedIn (API Voyager)
+# ---------------------------------------------------------------------------
+_LI_URN = re.compile(r"urn:li:(?:activity|share|ugcPost):(\d+)")
+
+
+def _li_urn(node: dict) -> str:
+    """El id del post sale de la URN de LinkedIn, que viaja en varios campos distintos."""
+    for k in ("entityUrn", "urn", "objectUrn", "dashEntityUrn", "preDashEntityUrn"):
+        m = _LI_URN.search(str(node.get(k) or ""))
+        if m:
+            return m.group(1)
+    meta = node.get("updateMetadata")
+    if isinstance(meta, dict):
+        m = _LI_URN.search(str(meta.get("urn") or ""))
+        if m:
+            return m.group(1)
+    return ""
+
+
+def _li_author(node: dict) -> tuple[str, str]:
+    """(handle, nombre). El handle sale del link al perfil (/in/alguien)."""
+    actor = node.get("actor") if isinstance(node.get("actor"), dict) else node
+    nombre = _deep_text(actor, "name") if isinstance(actor, dict) else ""
+    handle = ""
+    for d in _walk(actor if isinstance(actor, dict) else node, budget=4000):
+        for k in ("actionTarget", "url", "navigationUrl"):
+            m = re.search(r"linkedin\.com/(?:in|company)/([^/?#]+)", str(d.get(k) or ""))
+            if m:
+                handle = m.group(1)
+                break
+        if handle:
+            break
+    return handle, nombre
+
+
+def _li_counts(node: dict) -> tuple[int | None, int | None, int | None]:
+    """(likes, comentarios, republicaciones) de socialDetail, que también se mueve de lugar."""
+    for d in _walk(node, budget=6000):
+        if "numLikes" in d or "numComments" in d:
+            return (_num(d.get("numLikes")), _num(d.get("numComments")),
+                    _num(d.get("numShares")))
+    return None, None, None
+
+
+def _li_posts(endpoints, max_posts, html=""):
+    """Marcador de forma: el `$type` de Voyager. LinkedIn discrimina cada entidad con
+    `com.linkedin.voyager.…`, y los posts del feed son UpdateV2 / Update."""
+    vistos: set[str] = set()
+    out: list[dict] = []
+    for ep in endpoints:
+        data = ep.get("json")
+        if data is None:
+            continue
+        for node in _walk(data):
+            tipo = str(node.get("$type") or node.get("_type") or "")
+            es_update = "voyager" in tipo and ("Update" in tipo or "Share" in tipo)
+            # Algunas respuestas no traen $type; ahí sirve la combinación commentary + actor.
+            if not es_update and not ("commentary" in node or "commentaryV2" in node):
+                continue
+            texto = _deep_text(
+                node.get("commentary") or node.get("commentaryV2") or {}, "text")
+            if not texto:
+                continue
+            pid = _li_urn(node)
+            clave = pid or texto[:80]
+            if clave in vistos:
+                continue
+            vistos.add(clave)
+            handle, nombre = _li_author(node)
+            likes, comentarios, compartidos = _li_counts(node)
+            out.append(_post(
+                platform="linkedin", id=pid, text=texto,
+                url=("https://www.linkedin.com/feed/update/urn:li:activity:" + pid) if pid else "",
+                author=handle, author_name=nombre,
+                created_at=_iso(_first(node, "createdAt", "publishedAt", "createdTime")),
+                likes=likes, replies=comentarios, reposts=compartidos,
+            ))
+            if len(out) >= max_posts:
+                return out
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Facebook (GraphQL + mbasic HTML)
+# ---------------------------------------------------------------------------
+_FB_STORY_ID = re.compile(r"story_fbid=(\d+)")
+_FB_TAG = re.compile(r"<[^>]+>")
+
+
+def _fb_from_json(endpoints, max_posts, vistos):
+    """Marcador de forma: `__typename: Story`, el discriminador de Relay."""
+    out = []
+    for ep in endpoints:
+        data = ep.get("json")
+        if data is None:
+            continue
+        for node in _walk(data):
+            if str(node.get("__typename") or "") != "Story":
+                continue
+            texto = _deep_text(node.get("message") or node.get("comet_sections") or {}, "text")
+            if not texto:
+                continue
+            pid = str(_first(node, "post_id", "id", default="") or "")
+            clave = pid or texto[:80]
+            if clave in vistos:
+                continue
+            vistos.add(clave)
+            actores = node.get("actors") or []
+            actor = actores[0] if isinstance(actores, list) and actores else {}
+            likes = None
+            for d in _walk(node.get("feedback") or {}, budget=3000):
+                if "reaction_count" in d and isinstance(d["reaction_count"], dict):
+                    likes = _num(d["reaction_count"].get("count"))
+                    break
+            out.append(_post(
+                platform="facebook", id=pid, text=texto,
+                url=str(_first(node, "url", "permalink_url", default="") or ""),
+                author=str((actor or {}).get("id") or ""),
+                author_name=str((actor or {}).get("name") or ""),
+                created_at=_iso(_first(node, "creation_time", "created_time")),
+                likes=likes,
+            ))
+            if len(out) >= max_posts:
+                return out
+    return out
+
+
+def _fb_from_html(html, max_posts, vistos):
+    """Camino de `mbasic.facebook.com`: HTML plano, sin JS.
+
+    Es MÁS FRÁGIL que el JSON (es HTML de verdad, cambia sin aviso) pero a veces es lo único
+    que hay, y no necesita que la página corra GraphQL. Se ancla en el link al permalink del
+    post, que es lo más estable de esa página."""
+    if not html:
+        return []
+    out = []
+    try:
+        from lxml import html as lx
+        doc = lx.fromstring(html)
+    except Exception:  # noqa: BLE001 — sin lxml o HTML roto: no es un error del job
+        return []
+    for cont in doc.xpath("//div[@data-ft] | //article"):
+        enlaces = cont.xpath(".//a[contains(@href,'story_fbid=')]/@href")
+        pid = ""
+        for h in enlaces:
+            m = _FB_STORY_ID.search(str(h))
+            if m:
+                pid = m.group(1)
+                break
+        texto = " ".join(t.strip() for t in cont.itertext() if t.strip())[:5000]
+        if not texto:
+            continue
+        clave = pid or texto[:80]
+        if clave in vistos:
+            continue
+        vistos.add(clave)
+        autor = (cont.xpath(".//h3//a/text()") or cont.xpath(".//strong//a/text()") or [""])[0]
+        out.append(_post(
+            platform="facebook", id=pid, text=texto, author_name=str(autor).strip(),
+            url=("https://mbasic.facebook.com/story.php?story_fbid=" + pid) if pid else "",
+        ))
+        if len(out) >= max_posts:
+            break
+    return out
+
+
+def _fb_posts(endpoints, max_posts, html=""):
+    """Primero el JSON (más confiable); si no dio nada, el HTML de mbasic."""
+    vistos: set[str] = set()
+    out = _fb_from_json(endpoints, max_posts, vistos)
+    if len(out) < max_posts:
+        out += _fb_from_html(html, max_posts - len(out), vistos)
+    return out[:max_posts]
+
+
+# ---------------------------------------------------------------------------
 # Entrada única
 # ---------------------------------------------------------------------------
-_EXTRACTORES = {"x": _x_posts}
+_EXTRACTORES = {"x": _x_posts, "linkedin": _li_posts, "facebook": _fb_posts}
 
 
-def extract_posts(platform: str, endpoints: list[dict], *, max_posts: int = 200) -> list[dict]:
-    """Posts normalizados a partir de los endpoints capturados. Lista vacía si la plataforma
-    todavía no tiene extractor (el job igual entrega el HTML/JSON crudo)."""
+def extract_posts(platform: str, endpoints: list[dict], *, max_posts: int = 200,
+                  html: str = "") -> list[dict]:
+    """Posts normalizados a partir de lo capturado. `html` solo lo usa Facebook (mbasic).
+    Lista vacía si la plataforma no tiene extractor: el job igual entrega el contenido crudo."""
     fn = _EXTRACTORES.get(platform or "")
     if fn is None:
         return []
     try:
-        return fn(endpoints, max(1, int(max_posts)))
+        return fn(endpoints or [], max(1, int(max_posts)), html or "")
     except Exception:  # noqa: BLE001 — un cambio de formato no puede tumbar el job entero
         return []
 

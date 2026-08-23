@@ -226,3 +226,128 @@ def test_branch_social_anonimiza_en_modo_opaco():
     assert "Diego P." not in (sobre.content_md or "")
     assert sobre.content_json is None                      # ni el JSON crudo
     assert "records" not in sobre.meta                     # ni los registros
+
+
+# ---------------------------------------------------------------------------
+# LinkedIn (Voyager)
+# ---------------------------------------------------------------------------
+def _li_update(pid="7123456789012345678", texto="Buscamos backend senior"):
+    return {
+        "$type": "com.linkedin.voyager.feed.render.UpdateV2",
+        "entityUrn": "urn:li:activity:" + pid,
+        "commentary": {"text": {"text": texto}},
+        "actor": {
+            "name": {"text": "Ana Perez"},
+            "navigationContext": {"actionTarget": "https://www.linkedin.com/in/ana-perez/"},
+        },
+        "socialDetail": {"totalSocialActivityCounts": {
+            "numLikes": 42, "numComments": 7, "numShares": 3}},
+    }
+
+
+def test_linkedin_extrae_post():
+    posts = social.extract_posts("linkedin", _ep({"elements": [_li_update()]}))
+    assert len(posts) == 1
+    p = posts[0]
+    assert p["platform"] == "linkedin"
+    assert p["text"] == "Buscamos backend senior"
+    assert p["author_name"] == "Ana Perez"
+    assert p["author"] == "ana-perez"                    # sale del link al perfil
+    assert p["likes"] == 42 and p["replies"] == 7 and p["reposts"] == 3
+    assert p["id"] == "7123456789012345678"
+    assert "urn:li:activity:7123456789012345678" in p["url"]
+
+
+def test_linkedin_sobrevive_a_ruta_cambiada():
+    hondo = {"data": {"x": {"y": [{"z": {"elements": [_li_update()]}}]}}}
+    assert len(social.extract_posts("linkedin", _ep(hondo))) == 1
+
+
+def test_linkedin_acepta_commentaryV2_sin_type():
+    """Algunas respuestas vienen sin `$type`; ahí ancla en commentary + actor."""
+    nodo = {"commentaryV2": {"text": {"text": "sin type"}},
+            "urn": "urn:li:share:999", "actor": {"name": {"text": "Beto"}}}
+    p = social.extract_posts("linkedin", _ep({"e": [nodo]}))[0]
+    assert p["text"] == "sin type" and p["id"] == "999"
+
+
+def test_linkedin_ignora_lo_que_no_es_post():
+    ruido = {"elements": [{"$type": "com.linkedin.voyager.common.Image", "url": "x.jpg"},
+                          {"text": "un boton"}]}
+    assert social.extract_posts("linkedin", _ep(ruido)) == []
+
+
+def test_linkedin_deduplica():
+    eps = _ep({"a": [_li_update()]}) + _ep({"b": [_li_update()]})
+    assert len(social.extract_posts("linkedin", eps)) == 1
+
+
+# ---------------------------------------------------------------------------
+# Facebook (GraphQL + mbasic)
+# ---------------------------------------------------------------------------
+def _fb_story(pid="10160000000000000", texto="Hola a todos"):
+    return {
+        "__typename": "Story", "post_id": pid,
+        "message": {"text": texto},
+        "creation_time": 1739000000,
+        "url": "https://www.facebook.com/story.php?story_fbid=" + pid,
+        "actors": [{"id": "100001", "name": "Carlos Gomez"}],
+        "feedback": {"reaction_count": {"count": 15}},
+    }
+
+
+def test_facebook_extrae_de_graphql():
+    posts = social.extract_posts("facebook", _ep({"data": {"node": _fb_story()}}))
+    assert len(posts) == 1
+    p = posts[0]
+    assert p["platform"] == "facebook"
+    assert p["text"] == "Hola a todos"
+    assert p["author_name"] == "Carlos Gomez"
+    assert p["likes"] == 15
+    assert p["created_at"].startswith("2025-")            # epoch → ISO
+
+
+def test_facebook_ignora_lo_que_no_es_story():
+    ruido = {"data": [{"__typename": "Comment", "message": {"text": "un comentario"}}]}
+    assert social.extract_posts("facebook", _ep(ruido)) == []
+
+
+FB_MBASIC = """<html><body>
+<div data-ft='{"top_level_post_id":"555"}'>
+  <h3><a href="/carlos">Carlos Gomez</a></h3>
+  <p>Post desde mbasic</p>
+  <a href="/story.php?story_fbid=555&amp;id=100001">Me gusta</a>
+</div>
+<div data-ft='{"x":1}'><h3><a href="/ana">Ana</a></h3><p>Otro post</p>
+  <a href="/story.php?story_fbid=666&amp;id=2">Comentar</a></div>
+</body></html>"""
+
+
+def test_facebook_cae_al_html_de_mbasic():
+    """Sin JSON (mbasic no corre GraphQL), el extractor lee el HTML plano."""
+    posts = social.extract_posts("facebook", [], html=FB_MBASIC)
+    assert len(posts) == 2
+    assert posts[0]["id"] == "555"
+    assert "Post desde mbasic" in posts[0]["text"]
+    assert posts[0]["author_name"] == "Carlos Gomez"
+
+
+def test_facebook_prefiere_el_json_sobre_el_html():
+    """Si hay JSON, ese manda: es más confiable que parsear HTML."""
+    posts = social.extract_posts("facebook", _ep({"n": _fb_story()}), html=FB_MBASIC)
+    assert posts[0]["text"] == "Hola a todos"            # el del JSON, primero
+
+
+def test_facebook_html_roto_no_rompe():
+    assert social.extract_posts("facebook", [], html="<<<no soy html>>>") == []
+
+
+def test_prefer_url_manda_a_mbasic():
+    assert social.prefer_url("https://www.facebook.com/grupo/123") \
+        == "https://mbasic.facebook.com/grupo/123"
+    assert social.prefer_url("https://mbasic.facebook.com/x") == "https://mbasic.facebook.com/x"
+    assert social.prefer_url("https://x.com/user") == "https://x.com/user"   # otras redes no
+
+
+def test_las_tres_redes_estan_soportadas():
+    assert social.supported() == ["facebook", "linkedin", "x"]

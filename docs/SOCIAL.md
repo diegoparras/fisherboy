@@ -38,16 +38,27 @@ and picks up anything that looks like a post. When X moves a field from
 `data.user.result.timeline` to somewhere else — and it will — the extractor keeps working.
 That's the difference between a scraper that lasts weeks and one that lasts months.
 
-| Network | Status | Notes |
+| Network | Status | How |
 |---|---|---|
-| **X / Twitter** | ✅ posts | Needs a logged-in session |
-| **LinkedIn** | 🔜 detected, no extractor yet | Hardest: aggressive detection, fast bans |
-| **Facebook** | 🔜 detected, no extractor yet | `mbasic.facebook.com` is the lighter path |
+| **X / Twitter** | ✅ posts | Internal GraphQL, anchored on `full_text` |
+| **LinkedIn** | ✅ posts | Voyager API, anchored on the `$type` entity discriminator |
+| **Facebook** | ✅ posts | GraphQL (`__typename: Story`), falling back to `mbasic` HTML |
 | **Instagram** | partial | Comments + followers already via `/api/instagram/*` |
 | **Reddit / YouTube** | ✅ comments | Via `/api/comments`, no session needed for Reddit |
 
 Networks without a post extractor still work as regular scraping — you just don't get
 normalized records.
+
+### Per-network notes
+
+**LinkedIn** uses its internal *Voyager* API, whose responses are `$type`-discriminated entity
+graphs. We anchor on that discriminator rather than on a path, and pull the handle out of the
+profile link. It's the network that detects and bans fastest — keep the volume low.
+
+**Facebook** gets two paths, tried in order: the GraphQL responses (`__typename: Story`), and
+if those yield nothing, the plain HTML of **`mbasic.facebook.com`** — which runs no
+JavaScript and is far easier to read. Fisherboy rewrites `www.facebook.com/…` to `mbasic`
+automatically. The HTML path is more brittle by nature; treat it as the fallback it is.
 
 ## Sessions: the part that actually matters
 
