@@ -18,6 +18,16 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl ffmpeg unzip \
     && rm -rf /var/lib/apt/lists/*
 
+# Modo VNC del login interactivo (ADR-013): pantalla virtual + servidor VNC + cliente web.
+# Es el modo PESADO -el liviano no necesita nada de esto- pero es el unico que muestra popups
+# y pestanas nuevas, que es donde se traban los "Entrar con Google". El x11vnc escucha solo en
+# 127.0.0.1: al navegador del usuario llega por un WebSocket de la propia API.
+# Si preferis la imagen mas chica, borra esta capa: la app detecta que faltan y ofrece solo el
+# modo liviano, sin romperse.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends xvfb x11vnc novnc \
+    && rm -rf /var/lib/apt/lists/*
+
 # Runtime de JavaScript (deno) para yt-dlp: YouTube ya NO entrega los formatos completos sin
 # un JS runtime (el cliente "android vr" devuelve formatos mochos → "Requested format is not
 # available"). yt-dlp autodetecta deno en el PATH. Se instala system-wide (/usr/local/bin).
