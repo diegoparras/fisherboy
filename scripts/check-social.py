@@ -66,9 +66,53 @@ def _tuits(pagina: int, n: int = 5) -> dict:
         {"type": "TimelineAddEntries", "entries": entries}]}}}}}
 
 
+MBASIC = """<!doctype html><html><head><meta charset="utf-8"></head><body>
+<div data-ft='{"top_level_post_id":"555"}'>
+  <h3><a href="/carlos">Carlos Gomez</a></h3><p>Post desde mbasic sin JavaScript</p>
+  <a href="/story.php?story_fbid=555&amp;id=100001">Me gusta</a></div>
+<div data-ft='{"top_level_post_id":"666"}'>
+  <h3><a href="/ana">Ana Perez</a></h3><p>Segundo post</p>
+  <a href="/story.php?story_fbid=666&amp;id=100002">Comentar</a></div>
+</body></html>"""
+
+LI_PAGE = """<!doctype html><html><head><meta charset="utf-8"></head><body>
+<div id="feed" style="height:1600px">cargando...</div>
+<script>
+fetch('/voyager/api/feed/updatesV2').then(r => r.json()).then(d => {
+  document.getElementById('feed').textContent = d.elements.length + ' updates';
+});
+</script></body></html>"""
+
+
+def _li_updates(n=6):
+    """Respuesta con la forma de Voyager: entidades discriminadas por $type."""
+    els = []
+    for i in range(n):
+        els.append({
+            "$type": "com.linkedin.voyager.feed.render.UpdateV2",
+            "entityUrn": "urn:li:activity:71234567890123456" + str(i),
+            "commentary": {"text": {"text": "Oferta de trabajo numero " + str(i)}},
+            "actor": {"name": {"text": "Ana Perez"},
+                      "navigationContext": {
+                          "actionTarget": "https://www.linkedin.com/in/ana-perez/"}},
+            "socialDetail": {"totalSocialActivityCounts": {
+                "numLikes": 40 + i, "numComments": i, "numShares": 1}},
+        })
+    # Ruido: una entidad de Voyager que NO es un post. No debe colarse.
+    els.append({"$type": "com.linkedin.voyager.common.Image", "url": "logo.png"})
+    return {"elements": els}
+
+
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):                                        # noqa: N802
-        if self.path.startswith("/i/api/graphql/"):
+        if self.path.startswith("/voyager/api/"):
+            body = json.dumps(_li_updates()).encode("utf-8")
+            ctype = "application/json"
+        elif self.path.startswith("/linkedin"):
+            body, ctype = LI_PAGE.encode("utf-8"), "text/html; charset=utf-8"
+        elif self.path.startswith("/mbasic"):
+            body, ctype = MBASIC.encode("utf-8"), "text/html; charset=utf-8"
+        elif self.path.startswith("/i/api/graphql/"):
             try:
                 pagina = int(self.path.split("cursor=")[-1])
             except ValueError:
@@ -92,7 +136,7 @@ def main() -> int:
     threading.Thread(target=srv.serve_forever, daemon=True).start()
 
     from app.fetchers.base import FetchContext
-    from app.fetchers.capture import capture_xhr
+    from app.fetchers.capture import capture_page, capture_xhr
     from app.net import social
 
     fails = []
@@ -128,6 +172,29 @@ def main() -> int:
 
     print("\n\033[1m3. El tope se respeta\033[0m")
     check(len(social.extract_posts("x", endpoints, max_posts=3)) == 3, "max_posts corta la lista")
+
+    print("\n\033[1m4. LinkedIn: API Voyager interceptada\033[0m")
+    ctx_li = FetchContext(allow_private=True, headless=True, settle_s=1.2, scroll=False,
+                          timeout_s=30)
+    eps_li = capture_xhr("http://127.0.0.1:8778/linkedin", ctx_li)
+    li = social.extract_posts("linkedin", eps_li, max_posts=50)
+    check(len(li) == 6, f"extrajo {len(li)} updates (y descarto la entidad Image)")
+    if li:
+        check(li[0]["author"] == "ana-perez", f"handle del perfil: {li[0]['author']}")
+        check(li[0]["author_name"] == "Ana Perez", "nombre del autor")
+        check(isinstance(li[0]["likes"], int), f"likes: {li[0]['likes']}")
+        check("urn:li:activity:" in li[0]["url"], "URL del post armada")
+
+    print("\n\033[1m5. Facebook: HTML de mbasic (sin JavaScript)\033[0m")
+    ctx_fb = FetchContext(allow_private=True, headless=True, settle_s=0.6, scroll=False,
+                          timeout_s=30)
+    html_fb, eps_fb = capture_page("http://127.0.0.1:8778/mbasic", ctx_fb)
+    fb = social.extract_posts("facebook", eps_fb, max_posts=50, html=html_fb)
+    check(len(fb) == 2, f"extrajo {len(fb)} posts del HTML plano")
+    if fb:
+        check(fb[0]["id"] == "555", f"id del permalink: {fb[0]['id']}")
+        check("mbasic" in fb[0]["text"], "texto del post")
+        check(fb[0]["author_name"] == "Carlos Gomez", f"autor: {fb[0]['author_name']}")
 
     srv.shutdown()
     print()
