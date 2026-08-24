@@ -1690,7 +1690,7 @@ if (actsEl) {
   const img = document.getElementById("rb-frame"), espera = document.getElementById("rb-wait");
   const urlEl = document.getElementById("rb-url"), estadoEl = document.getElementById("rb-status");
   const tipeo = document.getElementById("rb-typing");
-  let token = null, timer = null, W = 1280, H = 800, blobPrev = null;
+  let token = null, timer = null, W = 1280, H = 800, blobPrev = null, seq = 0;
 
   const decir = (t, malo) => { estadoEl.textContent = t || ""; estadoEl.style.color = malo ? "var(--err)" : ""; };
 
@@ -1708,8 +1708,10 @@ if (actsEl) {
   async function tick() {
     if (!token) return;
     try {
-      const r = await fetch(`/api/browser-login/${token}/frame`, { cache: "no-store" });
+      const r = await fetch(`/api/browser-login/${token}/frame?desde=${seq}`, { cache: "no-store" });
       if (r.status === 202) { decir("arrancando…"); return; }
+      if (r.status === 204) return;              // pantalla quieta: no hay nada que redibujar
+      seq = parseInt(r.headers.get("X-Login-Seq") || "0", 10) || seq;
       if (!r.ok) { decir("la ventana se cerró", true); parar(); return; }
       const uActual = r.headers.get("X-Login-Url") || "";
       if (document.activeElement !== urlEl) urlEl.value = uActual;   // no pisar lo que tipeás
@@ -1819,8 +1821,8 @@ if (actsEl) {
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.detail || "no se pudo abrir el navegador");
-      token = d.token; W = d.ancho || 1280; H = d.alto || 800;
-      timer = setInterval(tick, 600);
+      token = d.token; W = d.ancho || 1280; H = d.alto || 800; seq = 0;
+      timer = setInterval(tick, 220);
       tick();
       setTimeout(() => tipeo.focus(), 300);
     } catch (e) {

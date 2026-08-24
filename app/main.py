@@ -15,7 +15,7 @@ import html
 import time
 import uuid
 
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import FastAPI, HTTPException, Request, Response, WebSocket
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel
 
@@ -632,21 +632,26 @@ def create_app(
                 "ancho": browser_login.ANCHO, "alto": browser_login.ALTO}
 
     @app.get("/api/browser-login/{token}/frame")
-    async def browser_login_frame(token: str, request: Request):
-        """La última foto del navegador remoto. La UI la pide en bucle."""
+    async def browser_login_frame(token: str, request: Request, desde: int = 0):
+        """La última foto del navegador remoto. La UI la pide en bucle.
+
+        `desde` es el número del último cuadro que ya tiene el cliente: si la pantalla no
+        cambió desde entonces, se devuelve 204 sin cuerpo. En una pantalla quieta (que es la
+        mayor parte del tiempo mientras leés un formulario) el tráfico baja a cero."""
         from .net import browser_login
         dueno = _login_ident(request)
         ses = browser_login.obtener(token, dueno)
         if ses is None:
             raise HTTPException(status_code=404, detail="Esa ventana de login no existe.")
-        png = ses.frame
-        if not png:
+        cab = {"Cache-Control": "no-store", "X-Login-Estado": ses.estado,
+               "X-Login-Seq": str(ses.seq), "X-Login-Url": ses.url_actual[:400]}
+        if ses.seq and desde >= ses.seq:
+            return Response(status_code=204, headers=cab)   # nada nuevo que mandar
+        img = ses.frame
+        if not img:
             # Todavía no hay primer frame (el navegador está arrancando).
             raise HTTPException(status_code=202, detail=ses.error or "arrancando")
-        return Response(content=png, media_type="image/png",
-                        headers={"Cache-Control": "no-store",
-                                 "X-Login-Estado": ses.estado,
-                                 "X-Login-Url": ses.url_actual[:400]})
+        return Response(content=img, media_type="image/jpeg", headers=cab)
 
     @app.post("/api/browser-login/{token}/event")
     async def browser_login_event(token: str, request: Request):
@@ -762,7 +767,7 @@ def create_app(
         return {"ok": browser_vnc.cerrar(token, dueno)}
 
     @app.websocket("/api/browser-login/vnc/{token}/ws")
-    async def vnc_ws(websocket, token: str):
+    async def vnc_ws(websocket: WebSocket, token: str):
         """Puente WebSocket ↔ el x11vnc local. Es lo que hace websockify, pero acá adentro.
 
         Así el VNC no necesita un puerto propio expuesto (ni tocar el deploy de EasyPanel):
