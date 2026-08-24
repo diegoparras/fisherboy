@@ -20,7 +20,8 @@ class _SesionFalsa:
 
     def __init__(self, dueno="jti-1", nombre="s", vencida=False, estado="listo"):
         self.dueno, self.nombre, self.estado = dueno, nombre, estado
-        self.frame, self.error, self.url_actual = b"PNG", "", "https://ej.com/"
+        self.frame, self.error, self.url_actual = b"JPG", "", "https://ej.com/"
+        self.seq = 1
         self.guardada, self.cerrada = False, False
         self._vencida = vencida
         self.enviados = []
@@ -138,19 +139,30 @@ def test_frame_404_si_no_es_tuyo(client_factory, monkeypatch):
     assert c.get("/api/browser-login/tok/frame").status_code == 404
 
 
-def test_frame_devuelve_png(client_factory, monkeypatch):
+def test_frame_devuelve_jpeg(client_factory, monkeypatch):
+    """JPEG y no PNG: la mitad de bytes por el mismo dibujo (medido: 54 vs 117 KB)."""
     bl._SESIONES["tok"] = _SesionFalsa(dueno="jti-mio")
     _as_role(monkeypatch, "dios", jti="jti-mio")
     c = client_factory()
     r = c.get("/api/browser-login/tok/frame")
     assert r.status_code == 200
-    assert r.headers["content-type"] == "image/png"
+    assert r.headers["content-type"] == "image/jpeg"
     assert r.headers["X-Login-Estado"] == "listo"
+
+
+def test_frame_204_si_la_pantalla_no_cambio(client_factory, monkeypatch):
+    """Pantalla quieta = cero trafico. El cliente dice hasta que cuadro tiene y no se le
+    remandan los mismos bytes."""
+    bl._SESIONES["tok"] = _SesionFalsa(dueno="jti-mio")     # seq = 1
+    _as_role(monkeypatch, "dios", jti="jti-mio")
+    c = client_factory()
+    assert c.get("/api/browser-login/tok/frame?desde=1").status_code == 204
+    assert c.get("/api/browser-login/tok/frame?desde=0").status_code == 200
 
 
 def test_frame_202_mientras_arranca(client_factory, monkeypatch):
     ses = _SesionFalsa(dueno="jti-mio")
-    ses.frame = b""
+    ses.frame, ses.seq = b"", 0        # todavia no hubo primer cuadro
     bl._SESIONES["tok"] = ses
     _as_role(monkeypatch, "dios", jti="jti-mio")
     c = client_factory()

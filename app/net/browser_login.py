@@ -23,6 +23,7 @@ vive en su propio hilo y se le habla por una cola.
 """
 from __future__ import annotations
 
+import hashlib
 import queue
 import threading
 import time
@@ -39,7 +40,11 @@ ANCHO, ALTO = 1280, 800
 
 MAX_SESIONES = 2          # cada una es un Chromium vivo; no es gratis
 TTL_S = 15 * 60           # si te olvidás abierta, se cierra sola
-_FRAME_CADA_S = 0.35      # ritmo de captura (suficiente para tipear cómodo)
+_FRAME_CADA_S = 0.15      # ritmo de captura
+# JPEG y no PNG: medido sobre una página real, el PNG pesa 117 KB y tarda 60 ms por cuadro,
+# el JPEG q70 pesa 54 KB y tarda 40 ms. La mitad de datos por el mismo dibujo — y en páginas
+# con fotos (YouTube) la diferencia es mucho mayor. Para mirar y tipear, q70 se ve igual.
+_CALIDAD_JPEG = 70
 
 
 class LoginError(Exception):
@@ -67,6 +72,8 @@ class _Sesion:
         self.guardada = False
 
         self._frame: bytes = b""
+        self._huella = ""              # hash del último cuadro
+        self.seq = 0                   # sube SOLO si la pantalla cambió (ver _guardar_frame)
         self._lock = threading.Lock()
         self._cmds: queue.Queue = queue.Queue()
         self._cerrar = threading.Event()
@@ -180,9 +187,16 @@ class _Sesion:
                             except Exception as e:  # noqa: BLE001 — un click fallido no mata todo
                                 log.info("login: evento falló", extra={"error": type(e).__name__})
                     try:
-                        png = page.screenshot(timeout=8_000)
+                        img = page.screenshot(timeout=8_000, type="jpeg",
+                                              quality=_CALIDAD_JPEG)
+                        # Si la pantalla no cambió, NO se sube el número de cuadro: el cliente
+                        # pregunta "¿hay algo nuevo desde N?" y se le contesta que no, sin
+                        # remandar los mismos bytes. En una pantalla quieta el tráfico es cero.
+                        huella = hashlib.blake2b(img, digest_size=16).hexdigest()
                         with self._lock:
-                            self._frame = png
+                            if huella != self._huella:
+                                self._frame, self._huella = img, huella
+                                self.seq += 1
                         self.url_actual = page.url
                     except Exception:  # noqa: BLE001 — página navegando: se reintenta al toque
                         pass
