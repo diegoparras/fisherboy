@@ -931,6 +931,53 @@
 </div>
 
 <!-- Modal de aviso (confirmación para cosas frágiles/riesgosas) -->
+<!-- Login interactivo: el navegador del servidor, manejado desde acá -->
+<div id="rbmodal" class="rb-back hidden">
+  <div class="rb-card" role="dialog" aria-modal="true" aria-label="Navegador del servidor">
+    <div class="rb-head">
+      <button type="button" class="mini-btn" id="rb-back-btn">&larr; atrás</button>
+      <button type="button" class="mini-btn" id="rb-reload">recargar</button>
+      <input class="rb-url rb-addr" id="rb-url" autocomplete="off" spellcheck="false"
+        placeholder="escribí una dirección y Enter — ej. youtube.com" />
+      <button type="button" class="mini-btn" id="rb-go">ir</button>
+      <button type="button" class="btn-pill" id="rb-save">Ya me logueé, guardar</button>
+      <button type="button" class="modal-x" id="rb-close" aria-label="Cerrar">
+        <svg class="ico" viewBox="0 0 24 24" style="width:14px;height:14px"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="rb-stage" id="rb-stage">
+      <div class="rb-wait" id="rb-wait">Abriendo el navegador en el servidor…</div>
+      <img id="rb-frame" alt="" hidden />
+      <input class="rb-typing" id="rb-typing" autocomplete="off" />
+    </div>
+    <div class="rb-hint">
+      <span>Hacé <b>click</b> y <b>escribí</b> como en cualquier navegador. Cuando estés
+        adentro, apretá <b>Ya me logueé, guardar</b>.</span>
+      <span id="rb-status"></span>
+    </div>
+  </div>
+</div>
+<!-- Login por VNC: el escritorio del servidor -->
+<div id="vncmodal" class="rb-back hidden">
+  <div class="rb-card">
+    <div class="rb-head">
+      <span class="rb-url" id="vnc-info">Levantando el escritorio del servidor…</span>
+      <button type="button" class="btn-pill" id="vnc-save">Ya me logueé, guardar</button>
+      <button type="button" class="modal-x" id="vnc-close" aria-label="Cerrar">
+        <svg class="ico" viewBox="0 0 24 24" style="width:14px;height:14px"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="rb-stage">
+      <iframe id="vnc-frame" style="width:100%;height:72vh;border:0;background:#000" hidden></iframe>
+      <div class="rb-wait" id="vnc-wait">Levantando pantalla virtual, VNC y navegador…</div>
+    </div>
+    <div class="rb-hint">
+      <span>Acá ves el <b>escritorio entero</b>: si el login abre un popup o una pestaña, lo
+        vas a ver. Cuando termines, apretá <b>Ya me loguée, guardar</b>.</span>
+      <span id="vnc-status"></span>
+    </div>
+  </div>
+</div>
 <div class="dl-back hidden" id="warnmodal">
   <div class="warn-card" role="alertdialog" aria-modal="true">
     <div class="warn-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
@@ -2748,52 +2795,5 @@ function eyeify(root) {
 }
 eyeify();
 </script>
-<!-- Login interactivo: el navegador del servidor, manejado desde acá -->
-<div id="rbmodal" class="rb-back hidden">
-  <div class="rb-card" role="dialog" aria-modal="true" aria-label="Navegador del servidor">
-    <div class="rb-head">
-      <button type="button" class="mini-btn" id="rb-back-btn">&larr; atrás</button>
-      <button type="button" class="mini-btn" id="rb-reload">recargar</button>
-      <input class="rb-url rb-addr" id="rb-url" autocomplete="off" spellcheck="false"
-        placeholder="escribí una dirección y Enter — ej. youtube.com" />
-      <button type="button" class="mini-btn" id="rb-go">ir</button>
-      <button type="button" class="btn-pill" id="rb-save">Ya me logueé, guardar</button>
-      <button type="button" class="modal-x" id="rb-close" aria-label="Cerrar">
-        <svg class="ico" viewBox="0 0 24 24" style="width:14px;height:14px"><path d="M18 6 6 18M6 6l12 12"/></svg>
-      </button>
-    </div>
-    <div class="rb-stage" id="rb-stage">
-      <div class="rb-wait" id="rb-wait">Abriendo el navegador en el servidor…</div>
-      <img id="rb-frame" alt="" hidden />
-      <input class="rb-typing" id="rb-typing" autocomplete="off" />
-    </div>
-    <div class="rb-hint">
-      <span>Hacé <b>click</b> y <b>escribí</b> como en cualquier navegador. Cuando estés
-        adentro, apretá <b>Ya me logueé, guardar</b>.</span>
-      <span id="rb-status"></span>
-    </div>
-  </div>
-</div>
-<!-- Login por VNC: el escritorio del servidor -->
-<div id="vncmodal" class="rb-back hidden">
-  <div class="rb-card">
-    <div class="rb-head">
-      <span class="rb-url" id="vnc-info">Levantando el escritorio del servidor…</span>
-      <button type="button" class="btn-pill" id="vnc-save">Ya me logueé, guardar</button>
-      <button type="button" class="modal-x" id="vnc-close" aria-label="Cerrar">
-        <svg class="ico" viewBox="0 0 24 24" style="width:14px;height:14px"><path d="M18 6 6 18M6 6l12 12"/></svg>
-      </button>
-    </div>
-    <div class="rb-stage">
-      <iframe id="vnc-frame" style="width:100%;height:72vh;border:0;background:#000" hidden></iframe>
-      <div class="rb-wait" id="vnc-wait">Levantando pantalla virtual, VNC y navegador…</div>
-    </div>
-    <div class="rb-hint">
-      <span>Acá ves el <b>escritorio entero</b>: si el login abre un popup o una pestaña, lo
-        vas a ver. Cuando termines, apretá <b>Ya me loguée, guardar</b>.</span>
-      <span id="vnc-status"></span>
-    </div>
-  </div>
-</div>
 </body>
 </html>
