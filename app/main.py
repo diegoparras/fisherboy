@@ -786,7 +786,12 @@ def create_app(
             await websocket.close(code=1008)
             return
 
-        await websocket.accept(subprotocol="binary")
+        # Subprotocolo: SOLO se devuelve si el cliente pidio uno. noVNC moderno abre el
+        # WebSocket con la lista VACIA; si el server igual contesta "binary", el navegador ve
+        # un subprotocolo que nunca pidio y CORTA la conexion ("connection is closed").
+        _pedidos = [x.strip() for x in
+                    (websocket.headers.get("sec-websocket-protocol") or "").split(",") if x.strip()]
+        await websocket.accept(subprotocol=(_pedidos[0] if _pedidos else None))
         try:
             stream = await anyio.connect_tcp("127.0.0.1", browser_vnc.VNC_PORT)
         except OSError:
@@ -803,8 +808,16 @@ def create_app(
         async def del_navegador_al_vnc():
             try:
                 while True:
-                    data = await websocket.receive_bytes()
-                    await stream.send(data)
+                    # receive() y no receive_bytes(): si un cliente manda un marco de TEXTO,
+                    # receive_bytes lanza y se cortaria la sesion entera por nada.
+                    msg = await websocket.receive()
+                    if msg.get("type") == "websocket.disconnect":
+                        break
+                    dato = msg.get("bytes")
+                    if dato is None and msg.get("text") is not None:
+                        dato = msg["text"].encode("latin-1", errors="ignore")
+                    if dato:
+                        await stream.send(dato)
             except Exception:  # noqa: BLE001
                 pass
 
