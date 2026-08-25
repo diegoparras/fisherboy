@@ -73,9 +73,17 @@ services:
     depends_on: [gluetun, fisherboy-redis]
     restart: unless-stopped
 
+  # Redis CON persistencia a disco. No es por la cola (un job perdido se reencola), sino por
+  # las SESIONES DE BROWSER: si Redis arranca vacío, el login que hiciste a mano en la ventana
+  # se perdió y hay que rehacerlo. Ojo: esto implica que las cookies de tus sesiones quedan
+  # escritas en el disco del server — para uso personal está bien, pero dejan de ser efímeras.
+  # appendonly (AOF) y no snapshots: pierde a lo sumo un segundo, y acá lo que importa es no
+  # tener que loguearse de nuevo.
   fisherboy-redis:
     image: redis:8-alpine
-    command: redis-server --save "" --appendonly no
+    command: redis-server --appendonly yes --appendfsync everysec
+    volumes:
+      - fisherboy_redisdata:/data
     network_mode: "service:gluetun"         # misma red: la API lo ve en 127.0.0.1
     depends_on: [gluetun]
     restart: unless-stopped
@@ -89,3 +97,6 @@ services:
     cap_drop: [ALL]
     depends_on: [gluetun]
     restart: unless-stopped
+
+volumes:
+  fisherboy_redisdata:
