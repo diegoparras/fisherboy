@@ -351,3 +351,183 @@ def test_prefer_url_manda_a_mbasic():
 
 def test_las_tres_redes_estan_soportadas():
     assert social.supported() == ["facebook", "linkedin", "x"]
+
+
+# ---------------------------------------------------------------------------
+# Extractor generico por anclas (ADR-014): la base de la auto-reparacion
+# ---------------------------------------------------------------------------
+ANCLAS_X = {"texto": "full_text", "autor": "screen_name", "autor_nombre": "name",
+            "id": "id_str", "fecha": "created_at", "likes": "favorite_count"}
+
+
+def test_anclas_extraen_igual_que_el_extractor_propio():
+    posts = social.extract_with_anchors(_ep({"d": [_tuit()]}), ANCLAS_X, platform="x")
+    assert len(posts) == 1
+    assert posts[0]["text"] == "hola mundo"
+    assert posts[0]["author"] == "diego" and posts[0]["likes"] == 12
+
+
+def test_anclas_sin_texto_no_extraen_nada():
+    """`texto` es obligatorio: sin el no hay forma de saber que objeto es un post."""
+    assert social.extract_with_anchors(_ep({"d": [_tuit()]}), {"autor": "screen_name"}) == []
+    assert social.extract_with_anchors(_ep({"d": [_tuit()]}), {}) == []
+
+
+def test_anclas_inventadas_no_sacan_nada():
+    """Si el modelo alucina nombres de campo, el resultado es vacio — nunca datos falsos."""
+    assert social.extract_with_anchors(_ep({"d": [_tuit()]}),
+                                       {"texto": "campo_que_no_existe"}) == []
+
+
+def test_anclas_respetan_el_tope():
+    muchos = [_tuit(tid=str(1750000000000000000 + i), texto=f"post {i}") for i in range(40)]
+    assert len(social.extract_with_anchors(_ep({"d": muchos}), ANCLAS_X, max_posts=5)) == 5
+
+
+# ---------------------------------------------------------------------------
+# Reparacion con IA: la IA dice DONDE, nunca QUE
+# ---------------------------------------------------------------------------
+def test_la_muestra_no_manda_la_respuesta_entera():
+    """Esas APIs devuelven megas: mandarlas enteras seria carisimo y encima peor."""
+    from app.net import social_ai
+    gigante = {"basura": ["x" * 500 for _ in range(500)], "d": [_tuit()]}
+    m = social_ai.muestra(_ep(gigante), max_chars=6000)
+    assert 0 < len(m) <= 6000
+
+
+def test_ia_descubre_y_valida_las_anclas():
+    from app.net import social_ai
+
+    def modelo_falso(sistema, pedido):
+        return '```json\n{"texto": "full_text", "autor": "screen_name", "id": "id_str"}\n```'
+
+    anclas, posts = social_ai.descubrir(_ep({"d": [_tuit()]}), "x", modelo_falso)
+    assert anclas["texto"] == "full_text"
+    assert len(posts) == 1 and posts[0]["text"] == "hola mundo"
+
+
+def test_ia_que_alucina_campos_se_descarta():
+    """La validacion es la red de seguridad: anclas que no sacan nada NO se aceptan."""
+    from app.net import social_ai
+
+    def modelo_mentiroso(sistema, pedido):
+        return '{"texto": "campo_inventado", "autor": "otro_invento"}'
+
+    anclas, posts = social_ai.descubrir(_ep({"d": [_tuit()]}), "x", modelo_mentiroso)
+    assert anclas == {} and posts == []
+
+
+def test_ia_no_puede_inventar_contenido():
+    """Aunque el modelo DEVUELVA posts en vez de nombres de campo, se ignoran: solo se
+    aceptan nombres, y los valores salen siempre del JSON real."""
+    from app.net import social_ai
+
+    def modelo_que_inventa_datos(sistema, pedido):
+        return '{"texto": "Este post no existe en la respuesta real", "autor": "fantasma"}'
+
+    anclas, posts = social_ai.descubrir(_ep({"d": [_tuit()]}), "x", modelo_que_inventa_datos)
+    assert posts == []                                    # no se colo nada inventado
+    assert all("fantasma" not in str(p) for p in posts)
+
+
+def test_ia_caida_no_rompe_el_job():
+    from app.net import social_ai
+
+    def modelo_roto(sistema, pedido):
+        raise RuntimeError("sin credito")
+
+    assert social_ai.descubrir(_ep({"d": [_tuit()]}), "x", modelo_roto) == ({}, [])
+
+
+def test_respuesta_no_json_se_ignora():
+    from app.net import social_ai
+    assert social_ai.descubrir(_ep({"d": [_tuit()]}), "x",
+                               lambda s, u: "perdon, no entendi") == ({}, [])
+
+
+def test_anclas_se_guardan_y_se_releen(fake_redis):
+    from app.net import social_ai
+    assert social_ai.guardar_anclas(fake_redis, "x", ANCLAS_X) is True
+    assert social_ai.anclas_guardadas(fake_redis, "x")["texto"] == "full_text"
+    assert social_ai.anclas_guardadas(fake_redis, "linkedin") == {}      # por plataforma
+    assert social_ai.anclas_guardadas(None, "x") == {}                   # sin redis, sin drama
+
+
+# ---------------------------------------------------------------------------
+# La cascada completa: que se repare sola cuando la plataforma cambia
+# ---------------------------------------------------------------------------
+def _formato_nuevo(tid="999", texto="X cambio todo"):
+    """Un tuit con nombres de campo DISTINTOS: el extractor propio no lo reconoce."""
+    return {"post_id": tid, "cuerpo": texto, "handle": "diego", "me_gusta": 7}
+
+
+def test_cascada_ia_repara_y_aprende(fake_redis):
+    """El escenario que importa: la plataforma cambia, el extractor de siempre no saca nada,
+    la IA descubre donde quedaron los campos, y eso QUEDA APRENDIDO para la proxima."""
+    from app.net import social_ai
+    from app.pipeline import _social_branch
+
+    llamadas = {"n": 0}
+
+    def modelo(sistema, pedido):
+        llamadas["n"] += 1
+        return '{"texto": "cuerpo", "autor": "handle", "id": "post_id", "likes": "me_gusta"}'
+
+    eps = _ep({"data": [_formato_nuevo()]})
+    deps = _deps_falsas(eps, {})
+    deps.llm_complete = modelo
+    deps.redis = fake_redis
+
+    sobre = _social_branch(_sobre_social(), deps)
+    assert len(sobre.meta["records"]) == 1
+    assert sobre.meta["records"][0]["text"] == "X cambio todo"
+    assert sobre.meta["records"][0]["author"] == "diego"
+    assert sobre.meta["social_reparado_por_ia"] is True
+    assert llamadas["n"] == 1
+
+    # Segunda vuelta: ya aprendido → NO se vuelve a llamar al modelo (gratis).
+    sobre2 = _social_branch(_sobre_social(), _con(deps, fake_redis, modelo))
+    assert len(sobre2.meta["records"]) == 1
+    assert llamadas["n"] == 1, "la segunda vez no debe gastar IA"
+    assert "social_reparado_por_ia" not in sobre2.meta
+
+
+def _con(deps, redis, modelo):
+    """Mismas deps, para la segunda pasada."""
+    deps.redis, deps.llm_complete = redis, modelo
+    return deps
+
+
+def test_sin_ia_configurada_no_rompe(fake_redis):
+    """La IA es opcional: sin LLM el job termina igual, avisando que no reconocio nada."""
+    from app.pipeline import _social_branch
+    deps = _deps_falsas(_ep({"data": [_formato_nuevo()]}), {})
+    deps.redis, deps.llm_complete = fake_redis, None
+    sobre = _social_branch(_sobre_social(), deps)
+    assert "social_note" in sobre.meta
+    assert "records" not in sobre.meta
+
+
+def test_la_ia_no_se_llama_si_el_extractor_anduvo(fake_redis):
+    """Lo determinista primero: si saco posts, no se gasta un centavo."""
+    from app.pipeline import _social_branch
+    llamadas = {"n": 0}
+
+    def modelo(s, u):
+        llamadas["n"] += 1
+        return "{}"
+
+    deps = _deps_falsas(_ep({"d": [_tuit()]}), {})
+    deps.redis, deps.llm_complete = fake_redis, modelo
+    sobre = _social_branch(_sobre_social(), deps)
+    assert len(sobre.meta["records"]) == 1
+    assert llamadas["n"] == 0
+
+
+def test_depuracion_guarda_una_muestra():
+    """Sin esto, un '0 publicaciones' es un callejon sin salida."""
+    from app.pipeline import _social_branch
+    sobre = _social_branch(_sobre_social(), _deps_falsas(_ep({"data": [_formato_nuevo()]}), {}))
+    assert sobre.meta.get("social_muestra")
+    assert "cuerpo" in sobre.meta["social_muestra"]      # se ve el nombre del campo real
+    assert sobre.meta.get("social_urls")

@@ -302,6 +302,8 @@ def create_app(
             plat = social_platform(str(req.url))
             if plat:
                 sobre.meta["social_platform"] = plat
+            if req.social_debug:
+                sobre.meta["social_debug"] = True
         if req.tarantula:
             sobre.meta["tarantula"] = True
         if req.extract_schema is not None:
