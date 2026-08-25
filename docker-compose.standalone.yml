@@ -70,7 +70,7 @@ services:
   # vieja (la otra forma de romperse), Dependabot abre un PR cuando sale una nueva.
   # Red propia (`pot`): habla con la API y el worker, pero NO ve a Redis.
   fisherboy-bgutil:
-    image: brainicism/bgutil-ytdlp-pot-provider:1.3.1@sha256:1aaa43a0ca72dfca6a6d2129a0fb4a23465c25adb1b043f8aff829a20825646b
+    image: brainicism/bgutil-ytdlp-pot-provider:1.3.2@sha256:9a96e6385ce1928da87dea07b1cab0413d2cf8c07a3b8a8bd419f53df2c3843c
     networks: [pot]
     security_opt: ["no-new-privileges:true"]
     cap_drop: [ALL]

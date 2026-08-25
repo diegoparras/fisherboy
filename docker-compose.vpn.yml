@@ -91,7 +91,7 @@ services:
   # El proveedor de PO tokens también va por el túnel: el token tiene que generarse desde la
   # MISMA IP que después baja el video, o YouTube lo rechaza.
   fisherboy-bgutil:
-    image: brainicism/bgutil-ytdlp-pot-provider:1.3.1@sha256:1aaa43a0ca72dfca6a6d2129a0fb4a23465c25adb1b043f8aff829a20825646b
+    image: brainicism/bgutil-ytdlp-pot-provider:1.3.2@sha256:9a96e6385ce1928da87dea07b1cab0413d2cf8c07a3b8a8bd419f53df2c3843c
     network_mode: "service:gluetun"
     security_opt: ["no-new-privileges:true"]
     cap_drop: [ALL]
