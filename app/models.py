@@ -69,6 +69,7 @@ class JobRequest(BaseModel):
     capture_api: bool = False             # capturar el JSON/XHR oculto en vez del HTML (ADR-010)
     social: bool = False                  # redes sociales: posts como registros (ADR-012)
     max_posts: int = Field(default=100, ge=1, le=2000)   # tope de publicaciones a extraer
+    social_debug: bool = False            # guardar una muestra de lo que devolvio la red (depurar)
     tarantula: bool = False               # araña profunda: captura el API de CADA nodo (árbol de datos)
     tier_hint: FetchTier | None = None
     callback_url: HttpUrl | None = None

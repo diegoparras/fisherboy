@@ -58,6 +58,7 @@ class PipelineDeps:
     metrics: object | None = None
     progress: Callable[[Sobre], None] | None = None             # persiste el sobre en cada paso (UI en vivo)
     save_artifact: Callable[[str, str, bytes], bool] | None = None  # (job_id, name, blob) — screenshots/PDF
+    redis: object | None = None                                 # cache de anclas aprendidas (ADR-014)
     file_download_mode: str = "both"                            # both|direct|proxy|off (FILE_DOWNLOAD_MODE)
 
 
@@ -200,6 +201,7 @@ def build_default_deps(settings, *, redis_client=None) -> PipelineDeps:
         capture=_capture,
         capture_page=_capture_page,
         save_artifact=_save_artifact,
+        redis=redis_client,
         file_download_mode=settings.file_download_mode,
     )
 
@@ -596,12 +598,50 @@ def _social_branch(sobre: Sobre, deps: PipelineDeps) -> Sobre:
     else:
         endpoints = deps.capture(pedir, sobre.meta.get("tier_hint"), **overrides)
     posts = social.extract_posts(plat, endpoints, max_posts=max_posts, html=html)
+
+    # Cascada de reparacion (ADR-014). Lo determinista primero: si saco posts, no se gasta
+    # nada. Solo cuando NO sacó nada —o sea, cuando la plataforma cambió de formato— entran
+    # los planes B y C.
+    if not posts:
+        from .net import social_ai
+        _r = getattr(deps, "redis", None)
+        # B) Anclas que ya aprendimos antes para esta red: determinista y gratis.
+        previas = social_ai.anclas_guardadas(_r, plat)
+        if previas:
+            posts = social.extract_with_anchors(endpoints, previas, max_posts=max_posts,
+                                                platform=plat)
+            if posts:
+                _report(deps, sobre, "Reparado con las anclas aprendidas antes (sin gastar IA)")
+                sobre.meta["social_anclas"] = previas
+        # C) Preguntarle al modelo DONDE quedaron los campos. Nunca produce los datos: solo
+        # nombres de campo, que se validan contra el JSON real antes de aceptarse.
+        if not posts and deps.llm_complete is not None:
+            _report(deps, sobre, "No reconoci el formato; preguntandole a la IA donde quedaron")
+            anclas, posts = social_ai.descubrir(endpoints, plat, deps.llm_complete,
+                                                max_posts=max_posts)
+            if posts:
+                social_ai.guardar_anclas(_r, plat, anclas)
+                sobre.meta["social_anclas"] = anclas
+                sobre.meta["social_reparado_por_ia"] = True
+                _report(deps, sobre, f"La IA encontro el formato nuevo: {anclas.get('texto')}. "
+                                     "Queda aprendido para los proximos jobs.")
+
     _report(deps, sobre, f"{len(posts)} publicaciones extraidas de {len(endpoints)} endpoints")
 
     sobre.tier_usado = FetchTier.BROWSER
     sobre.fetched_at = datetime.now(timezone.utc)
     sobre.meta["social_platform"] = plat
     sobre.meta["api_endpoints"] = len(endpoints)
+    # Depuracion: si no salio nada, guardar una MUESTRA de lo que devolvio la plataforma. Sin
+    # esto, un "0 publicaciones" es un callejon sin salida: no hay forma de ver que llego.
+    if not posts or sobre.meta.get("social_debug"):
+        from .net import social_ai as _sa
+        try:
+            sobre.meta["social_muestra"] = _sa.muestra(endpoints, max_chars=6000)
+            sobre.meta["social_urls"] = [e.get("url", "")[:200] for e in (endpoints or [])[:15]]
+        except Exception:  # noqa: BLE001 — la depuracion nunca puede tumbar el job
+            pass
+
     if not posts:
         # Sin posts no se inventa nada: se dice por que puede ser y se entrega lo crudo.
         sobre.meta["social_note"] = (
