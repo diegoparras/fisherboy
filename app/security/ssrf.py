@@ -29,7 +29,41 @@ _EXTRA_BLOCKED_V4 = [
 
 
 class SSRFError(ValueError):
-    """La URL apunta a un destino prohibido o malformado."""
+    """No se puede llegar a esa URL de forma segura.
+
+    Es la clase BASE y se sigue lanzando tal cual en los casos de URL
+    malformada (esquema raro, sin host). Los dos casos que un operador tiene
+    que poder distinguir tienen subclase propia: ver DestinoBloqueado y
+    NoSeResuelve.
+    """
+
+
+class DestinoBloqueado(SSRFError):
+    """La URL apunta a un destino prohibido: red interna, loopback, metadata.
+
+    ES UNA NEGATIVA DE SEGURIDAD y es el comportamiento correcto. Quien la vea
+    tiene que revisar la URL que pidió, no la red.
+    """
+
+
+class NoSeResuelve(SSRFError):
+    """El DNS no resolvió el host.
+
+    NO ES UNA NEGATIVA DE SEGURIDAD: es una falla de red o de configuración del
+    contenedor, y manda a un lugar completamente distinto.
+
+    # POR QUÉ TIENE CLASE PROPIA
+
+    Porque las dos cosas viajaban como el mismo SSRFError y el que las recibía
+    no tenía forma de separarlas. Medido el 2026-08-25 contra Oculum: su
+    colector del Boletín Oficial figuraba caído con "Error inesperado:
+    SSRFError." y el diagnóstico mandaba a mirar la URL —que era
+    `https://www.boletinoficial.gob.ar/seccion/primera`, pública y sana— cuando
+    lo que fallaba era la resolución de nombres adentro del contenedor.
+
+    Un error de seguridad y una caída de DNS piden acciones opuestas: una es
+    "revisá lo que pediste" y la otra "revisá la red de este despliegue".
+    """
 
 
 def _ip_is_blocked(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
@@ -79,7 +113,7 @@ def resolve_and_validate(url: str, *, allow_private: bool = False) -> list[str]:
     try:
         literal = ipaddress.ip_address(host)
         if not allow_private and _ip_is_blocked(literal):
-            raise SSRFError(f"Destino bloqueado (IP {host}).")
+            raise DestinoBloqueado(f"Destino bloqueado (IP {host}).")
         return [str(literal)]
     except ValueError:
         pass  # no es IP literal; resolvemos por DNS
@@ -87,7 +121,7 @@ def resolve_and_validate(url: str, *, allow_private: bool = False) -> list[str]:
     try:
         infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
     except socket.gaierror as e:
-        raise SSRFError(f"No se pudo resolver el host {host!r}.") from e
+        raise NoSeResuelve(f"No se pudo resolver el host {host!r}: {e}") from e
 
     ips: list[str] = []
     for info in infos:
@@ -97,11 +131,11 @@ def resolve_and_validate(url: str, *, allow_private: bool = False) -> list[str]:
         except ValueError:
             continue
         if not allow_private and _ip_is_blocked(ip):
-            raise SSRFError(f"El host {host!r} resuelve a un destino bloqueado ({addr}).")
+            raise DestinoBloqueado(f"El host {host!r} resuelve a un destino bloqueado ({addr}).")
         ips.append(str(ip))
 
     if not ips:
-        raise SSRFError(f"El host {host!r} no resolvió a ninguna IP utilizable.")
+        raise NoSeResuelve(f"El host {host!r} no resolvió a ninguna IP utilizable.")
     return ips
 
 
