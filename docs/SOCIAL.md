@@ -123,6 +123,45 @@ Posts are personal data. `privacy_mode` applies here like everywhere else, and i
 `reversible` **nothing raw leaves** — the records are masked too, not just the text body. If
 you're feeding an LLM or sharing results, prefer `opaco`.
 
+## When a network changes shape (self-repair)
+
+The hidden cost of any social scraper is upkeep: platforms move fields every few weeks and the
+extractor quietly returns nothing. Fisherboy turns that into something that fixes itself:
+
+```
+built-in extractor  →  got posts?  → yes: done. free, instant.
+                                   → no:  anchors learned earlier?  → yes: free again
+                                                                    → no:  ask the model
+```
+
+The model is asked **where the fields went**, never for the data:
+
+> "the body is in `full_text`, the author in `screen_name`, likes in `favorite_count`"
+
+Three properties make this safe and cheap:
+
+1. **The AI can't invent posts.** It returns *field names* only; the values always come out of
+   the real JSON the platform returned. A hallucinated field name simply doesn't exist —
+2. **…and that gets caught by validation.** Proposed anchors are run against the captured JSON
+   and only kept if they actually produce posts. No posts, no deal.
+3. **What it learns is cached** (30 days, per network). You pay one call the first time a
+   platform changes; every job after that is deterministic and free again.
+
+Only a small **sample** of candidate objects goes to the model — those API responses are
+megabytes, and sending them whole would be both expensive and worse (the model drowns in menus
+and telemetry).
+
+It's entirely optional: without `LLM_API_BASE_URL` configured, nothing changes — you just get
+the "couldn't recognise the format" note instead of a repair.
+
+## Debugging: seeing what actually came back
+
+When extraction yields nothing, the envelope now carries `meta.social_muestra` — a sample of
+what the platform actually returned — plus `meta.social_urls`. Without it, "0 posts" is a dead
+end: no way to tell whether it's a missing login or a changed format.
+
+Force it on a successful run with `"social_debug": true`.
+
 ## Maintenance
 
 The hidden cost of any social scraper is upkeep: GraphQL `doc_id`s rotate every few weeks.
