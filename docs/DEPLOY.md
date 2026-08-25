@@ -126,6 +126,22 @@ have to add it as its own service**, because EasyPanel doesn't read the compose 
 > the digest pin is your main lever there — keep the service without a public domain so it's
 > only reachable inside the project.
 
+### Redis: turn on persistence, or you'll be logging in again
+
+The compose files run Redis with `--appendonly yes` and a volume, on purpose. It's not about
+the queue — a lost job just gets re-queued — it's about the **browser sessions**: if Redis comes
+back empty, the login you did by hand in the browser window is gone and you have to redo it.
+
+**EasyPanel doesn't read the compose file**, so if you created the Redis service by hand there,
+change it in EasyPanel: command `redis-server --appendonly yes --appendfsync everysec`, and give
+it a volume mounted at `/data`.
+
+Note what this implies: your session cookies end up **written to the server's disk** instead of
+living only in memory. For personal use that's the right trade; just know it's a trade.
+
+Sessions also expire on their own after `BROWSER_SESSION_TTL_S` (7 days by default; set it to
+`2592000` for 30).
+
 ### Is it working?
 
 `GET /api/download/pot/health` (role ángel/dios) answers without you having to fail a
