@@ -426,3 +426,89 @@ def supported() -> list[str]:
 def needs_session(platform: str) -> bool:
     """¿Esta red exige sesión logueada para mostrar algo? (Todas las grandes, en 2026.)"""
     return (platform or "") in {"x", "linkedin", "facebook", "instagram"}
+
+
+# ---------------------------------------------------------------------------
+# Extractor GENÉRICO por nombres de campo (ADR-014)
+# ---------------------------------------------------------------------------
+# Los extractores de arriba tienen el ancla escrita a mano. Este toma las anclas como DATO:
+# {"texto": "full_text", "autor": "screen_name", ...}. Sirve para dos cosas — que una red sin
+# extractor propio funcione igual, y que cuando una plataforma cambie de formato se pueda
+# reparar sin tocar código (las anclas nuevas las descubre la IA; ver net/social_ai.py).
+#
+# Importante: quien descubre las anclas NUNCA produce los datos. Las anclas son solo nombres
+# de campo; los valores salen siempre del JSON real que devolvió la plataforma.
+ANCLAS = ("texto", "autor", "autor_nombre", "id", "fecha", "likes", "respuestas", "compartidos")
+
+
+def _walk_con_padres(obj, budget: int = 200_000, max_ancestros: int = 2):
+    """Como _walk pero entregando (nodo, ancestros). Hace falta porque el texto suele vivir en
+    un sub-objeto ("legacy" en X, "message" en Facebook) mientras el autor y los contadores son
+    HERMANOS, colgando del objeto padre. Buscando solo hacia adentro nunca se los encuentra.
+
+    Se guardan pocos ancestros a proposito: subir demasiado haria que un post levante el autor
+    del post de al lado."""
+    stack, n = [(obj, ())], 0
+    while stack and n < budget:
+        cur, ancestros = stack.pop()
+        n += 1
+        if isinstance(cur, dict):
+            yield cur, ancestros
+            hijos = ancestros[-max_ancestros:] + (cur,)
+            stack.extend((v, hijos) for v in cur.values())
+        elif isinstance(cur, list):
+            stack.extend((v, ancestros) for v in cur)
+
+
+def extract_with_anchors(endpoints: list[dict], anclas: dict, *, max_posts: int = 200,
+                         platform: str = "") -> list[dict]:
+    """Levanta posts usando los nombres de campo de `anclas`. `texto` es obligatorio: sin él
+    no hay forma de saber qué objeto es un post."""
+    campo_texto = str((anclas or {}).get("texto") or "")
+    if not campo_texto:
+        return []
+    vistos: set[str] = set()
+    out: list[dict] = []
+
+    def val(raices, clave: str):
+        """El valor del campo `clave` buscando en el nodo y en sus ancestros cercanos. Las APIs
+        reparten los datos de un mismo post entre varias capas."""
+        nombre = (anclas or {}).get(clave)
+        if not nombre:
+            return None
+        for raiz in raices:
+            for d in _walk(raiz, budget=4000):
+                v = d.get(nombre)
+                if v not in (None, "", [], {}):
+                    return v.get("text") if isinstance(v, dict) and "text" in v else v
+        return None
+
+    for ep in endpoints or []:
+        data = ep.get("json")
+        if data is None:
+            continue
+        for nodo, ancestros in _walk_con_padres(data):
+            crudo = nodo.get(campo_texto)
+            if isinstance(crudo, dict):
+                crudo = crudo.get("text")
+            if not isinstance(crudo, str) or not crudo.strip():
+                continue
+            # Se busca primero en el nodo del texto y despues en sus ancestros (del mas cercano
+            # al mas lejano), que es donde suelen estar el autor y los contadores.
+            raices = (nodo,) + tuple(reversed(ancestros))
+            ident = str(val(raices, "id") or "") or crudo[:80]
+            if ident in vistos:
+                continue
+            vistos.add(ident)
+            out.append(_post(
+                platform=platform or "", id=str(val(raices, "id") or ""), text=crudo,
+                author=str(val(raices, "autor") or ""),
+                author_name=str(val(raices, "autor_nombre") or ""),
+                created_at=_iso(val(raices, "fecha")),
+                likes=_num(val(raices, "likes")),
+                replies=_num(val(raices, "respuestas")),
+                reposts=_num(val(raices, "compartidos")),
+            ))
+            if len(out) >= max_posts:
+                return out
+    return out
