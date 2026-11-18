@@ -106,11 +106,35 @@ Job fields: `url`, `rol`, `privacy_mode` (`opaco`/`reversible`/`directo`), `outp
 ### MCP
 
 The same pipeline is exposed as MCP tools (`submit_job`, `get_job`, `revert`) so n8n,
-Claude Code or Escriba can enqueue without hand‑writing HTTP:
+Claude Code or Escriba can enqueue without hand‑writing HTTP.
+
+It is served **over HTTP on your own deployment**, at `/mcp`, with the same `API_TOKEN` as
+the REST API:
+
+```
+https://your-fisherboy/mcp        Authorization: Bearer <API_TOKEN>
+```
+
+```bash
+claude mcp add fisherboy --transport http https://your-fisherboy/mcp   --header "Authorization: Bearer $API_TOKEN"
+```
+
+Two knobs, both in `.env`:
+
+| Variable | What it does |
+|---|---|
+| `MCP_ROLE` | The server's role — both the **default** and the **ceiling**. A caller can ask for *less*, never more. `dios` puts every weapon behind that one token. |
+| `MCP_HTTP` | `0` stops publishing it on the web (stdio keeps working). |
+
+**Fail‑closed**: with no `API_TOKEN` set, `/mcp` rejects everything rather than standing
+open. It still runs over stdio too, which is what Escriba uses internally:
 
 ```bash
 python -m app.mcp_server      # requires fastmcp
 ```
+
+Full guide, including how to wire it into Claude Code or Claude Desktop:
+[`docs/MCP.md`](docs/MCP.md).
 
 ---
 
