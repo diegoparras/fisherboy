@@ -99,7 +99,25 @@ Campos del job: `url`, `rol`, `privacy_mode` (`opaco`/`reversible`/`directo`), `
 ### MCP
 
 El mismo pipeline se expone como herramientas MCP (`submit_job`, `get_job`, `revert`) para que
-n8n, Claude Code o Escriba encolen sin hablar HTTP a mano: `python -m app.mcp_server`.
+n8n, Claude Code o Escriba encolen sin hablar HTTP a mano.
+
+Se publica **en tu propio deploy**, en `/mcp`, con el mismo `API_TOKEN` que el REST:
+
+```
+https://tu-fisherboy/mcp        Authorization: Bearer <API_TOKEN>
+```
+
+```bash
+claude mcp add fisherboy --transport http https://tu-fisherboy/mcp   --header "Authorization: Bearer $API_TOKEN"
+```
+
+`MCP_ROLE` es el rol del servidor: es el **default** y el **techo** a la vez — el que llama
+puede pedir *menos*, nunca más. Con `MCP_ROLE=dios` quedan todas las armas detrás de ese
+token, así que el token es todo el perímetro. `MCP_HTTP=0` lo saca de la web (stdio sigue
+andando, que es lo que usa Escriba: `python -m app.mcp_server`).
+
+**Fail-closed**: sin `API_TOKEN` configurado, `/mcp` rechaza todo en vez de quedar abierto.
+Guía completa: [`docs/MCP.md`](../MCP.md).
 
 ---
 

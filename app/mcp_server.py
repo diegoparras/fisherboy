@@ -35,7 +35,10 @@ def _mcp_role() -> str:
 _RANK = {"humano": 0, "angel": 1, "dios": 2}
 
 
-def build_server():
+def build_server(*, queue=None, policy=None):
+    """Arma el servidor MCP. `queue` y `policy` se pueden inyectar: el gateway le pasa los
+    MISMOS que usa el REST cuando lo monta sobre HTTP, para que las dos puertas compartan
+    cola y política en vez de abrir conexiones paralelas (y para poder testearlo)."""
     try:
         from fastmcp import FastMCP
     except ImportError as e:  # pragma: no cover
@@ -45,15 +48,15 @@ def build_server():
 
     settings = get_settings()
     setup_logging(settings.log_level)
-    policy = get_policy(settings.privacy_matrix_path)
-    queue = get_queue(settings)
+    policy = policy or get_policy(settings.privacy_matrix_path)
+    queue = queue if queue is not None else get_queue(settings)
 
     mcp = FastMCP("fisherboy")
 
     @mcp.tool()
     def submit_job(
         url: str,
-        rol: str = "humano",
+        rol: str | None = None,
         privacy_mode: str | None = None,
         output_format: str = "markdown",
         callback_url: str | None = None,
@@ -78,10 +81,19 @@ def build_server():
         `tier_hint` (0-3) fuerza el tier de fetch mínimo. `crawl_depth`/`max_pages`
         habilitan el crawl multipágina. `extract_schema` (con output_format='json')
         dispara la extracción estructurada por LLM.
+
+        `rol` es OPCIONAL: sin él se usa el techo del servidor (MCP_ROLE). Pasarlo solo
+        sirve para PEDIR MENOS; un rol mayor al techo se ignora.
         """
+        # El rol se resuelve ANTES de armar el pedido: el techo (MCP_ROLE) es el default y el
+        # caller solo puede bajarlo. Antes `rol` venía con default "humano", así que el techo
+        # no se aplicaba nunca salvo que el caller lo pidiera — MCP_ROLE no servía de nada.
+        ceiling = _mcp_role()
+        pedido = (rol or "").strip().lower() or None
+        effective = pedido if (pedido and _RANK.get(pedido, 9) <= _RANK[ceiling]) else ceiling
         req = JobRequest(
             url=url,
-            rol=rol,
+            rol=effective,
             privacy_mode=privacy_mode,
             output_format=output_format,
             callback_url=callback_url,
@@ -99,15 +111,9 @@ def build_server():
             cookies=cookies,
             cookies_browser=cookies_browser,
         )
-        # Rol efectivo: techo del servidor (MCP_ROLE), nunca el que pida el caller hacia
-        # arriba. Solo se respeta un downgrade (rol pedido <= techo).
         from .security import ratelimit
         if not ratelimit.allow(queue._r, "jobs:mcp", limit=settings.max_jobs_per_min):
             raise ValueError("Demasiados jobs; probá en un minuto.")
-        ceiling = _mcp_role()
-        effective = ceiling
-        if req.rol is not None and _RANK.get(req.rol.value, 9) <= _RANK[ceiling]:
-            effective = req.rol.value
         try:
             from .models import Rol
             rol_enum = Rol(effective)
@@ -205,6 +211,27 @@ def _anon_for_revert():
 
     s = get_settings()
     return AnonimalClient(s.anonimal_url, service_token=s.anonimal_token)
+
+
+def build_http_app(*, queue=None, policy=None, path: str = "/"):
+    """El mismo servidor, pero como app ASGI montable (transporte HTTP streamable).
+
+    Es lo que permite publicarlo en https://<dominio>/mcp en vez de solo por stdio. OJO: la
+    app que devuelve trae su PROPIO lifespan y sin engancharlo el gestor de sesiones de
+    FastMCP nunca arranca y el endpoint queda colgado — el gateway lo conecta al suyo."""
+    import inspect
+
+    srv = build_server(queue=queue, policy=policy)
+    extra = {}
+    if "host_origin_protection" in inspect.signature(srv.http_app).parameters:
+        # fastmcp >= 3.4 puede validar las cabeceras Host/Origin: es una defensa anti
+        # DNS-rebinding pensada para servidores MCP que escuchan en localhost y podría
+        # alcanzar un navegador. Acá el MCP vive detrás de tu proxy inverso con tu propio
+        # dominio y de un token, así que activarla solo rompe el acceso legítimo (el Host
+        # que llega es el del dominio, no loopback). Se fija EXPLÍCITO y no se deja en el
+        # default de la librería para que un rebuild con otra versión no tumbe /mcp.
+        extra["host_origin_protection"] = False
+    return srv.http_app(path=path, **extra)
 
 
 def run() -> None:
