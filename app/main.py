@@ -59,6 +59,84 @@ class DownloadZipRequest(BaseModel):
     name: str | None = None
 
 
+class _ColaDiferida:
+    """Fachada que resuelve la cola recién cuando se la usa.
+
+    El servidor MCP captura la cola al construirse, pero acá hay que construirlo ANTES de
+    que exista `app` (su lifespan tiene que entrar en el constructor de FastAPI) y antes de
+    que la cola esté resuelta. Esto deja la conexión a Redis para el primer uso real, igual
+    que el REST: así montar el MCP no fuerza un Redis en los tests."""
+
+    def __init__(self, resolver):
+        self._resolver = resolver
+
+    def __getattr__(self, nombre):
+        return getattr(self._resolver(), nombre)
+
+
+class _McpSinBarra:
+    """Hace que /mcp sea lo MISMO que /mcp/, sin el 307 de Starlette.
+
+    Starlette monta en "/mcp" con regex "^/mcp/(?P<path>.*)$", así que "/mcp" pelado cae en
+    un redirect. El SDK oficial lo sigue, pero no todo cliente sigue redirects en un POST con
+    cuerpo, y la URL que la gente escribe y pega es siempre la de sin barra. Se reescribe el
+    path antes del router y listo."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") in ("http", "websocket") and scope.get("path") == "/mcp":
+            scope = dict(scope, path="/mcp/", raw_path=b"/mcp/")
+        await self.app(scope, receive, send)
+
+
+class _PuertaMcp:
+    """Puerta del MCP publicado por HTTP: exige el mismo API_TOKEN que el REST.
+
+    FAIL-CLOSED a propósito: `_api_role` devuelve None cuando no hay API_TOKEN configurado,
+    así que un deploy sin token deja el MCP inaccesible en vez de abierto. Es un wrapper ASGI
+    y no middleware de FastAPI porque la app del MCP va montada, no enrutada: el middleware
+    de FastAPI no corre sobre lo montado.
+
+    El rol NO sale del pedido: lo fija el operador con MCP_ROLE (ver mcp_server._mcp_role).
+    Tener el token no permite elegirse un rol."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "lifespan":       # el ciclo de vida no se autentica
+            await self.app(scope, receive, send)
+            return
+        from starlette.datastructures import Headers
+        if auth._api_role(Headers(scope=scope)) is None:
+            await JSONResponse(
+                {"detail": "MCP: falta o no coincide el API_TOKEN "
+                           "(mandalo en Authorization: Bearer <token> o X-API-Key)."},
+                status_code=401,
+                headers={"WWW-Authenticate": "Bearer"},
+            )(scope, receive, send)
+            return
+        await self.app(scope, receive, send)
+
+
+def _app_mcp(resolver_cola, policy):
+    """App ASGI del servidor MCP para montar en /mcp, o None si no se monta.
+
+    Se apaga con MCP_HTTP=0. Si falta `fastmcp` (es una dependencia opcional) se avisa y se
+    sigue sin MCP: ni el REST ni la UI dependen de él."""
+    import os as _os
+    if (_os.getenv("MCP_HTTP", "1") or "1").strip().lower() in ("0", "false", "no", "off"):
+        return None
+    try:
+        from .mcp_server import build_http_app
+        return build_http_app(queue=_ColaDiferida(resolver_cola), policy=policy, path="/")
+    except Exception as e:  # noqa: BLE001 — el MCP es accesorio; que no tumbe el arranque
+        log.warning("MCP por HTTP no montado (%s: %s)", type(e).__name__, e)
+        return None
+
+
 def create_app(
     settings: Settings | None = None,
     *,
@@ -77,15 +155,31 @@ def create_app(
         if _w:
             log.warning("SEGURIDAD: %s", _w)
 
-    app = FastAPI(title="Fisherboy", version=__version__)
-    app.state.settings = settings
-    app.state.queue = queue
-    app.state.policy = policy or get_policy(settings.privacy_matrix_path)
+    # Celda y no app.state: el servidor MCP necesita una referencia a la cola antes de que
+    # exista `app` (su lifespan va en el constructor de FastAPI).
+    _cola: list[JobQueue | None] = [queue]
 
     def _queue() -> JobQueue:
-        if app.state.queue is None:  # construcción perezosa: el worker/redis no hace falta en tests
-            app.state.queue = get_queue(settings)
-        return app.state.queue
+        if _cola[0] is None:  # construcción perezosa: el worker/redis no hace falta en tests
+            _cola[0] = get_queue(settings)
+        return _cola[0]
+
+    _policy = policy or get_policy(settings.privacy_matrix_path)
+
+    # El MCP se arma ANTES de la app porque trae su propio lifespan (el gestor de sesiones
+    # de streamable-http): sin engancharlo al de FastAPI el endpoint queda colgado.
+    _mcp = _app_mcp(_queue, _policy)
+
+    app = FastAPI(title="Fisherboy", version=__version__,
+                  lifespan=_mcp.lifespan if _mcp is not None else None)
+    app.state.settings = settings
+    app.state.queue = queue
+    app.state.policy = _policy
+    app.state.mcp_http = _mcp is not None
+    if _mcp is not None:
+        app.mount("/mcp", _PuertaMcp(_mcp))
+        # /mcp y /mcp/ sirven lo mismo: la gente escribe la URL de las dos formas.
+        app.add_middleware(_McpSinBarra)
 
     # Cliente OIDC hacia Lockatus (solo modo federado; construcción perezosa).
     app.state.lk = None

@@ -13,7 +13,7 @@ jsonschema>=4.20        # valida la extracción estructurada del LLM
 prometheus-client>=0.20 # métricas (Capa 8)
 
 # MCP (sidekick): n8n / Claude Code / Escriba encolan por MCP. Opcional para REST.
-fastmcp>=2.0
+fastmcp>=3.0,<4        # 3.x: http_app() para publicar el MCP en /mcp
 
 # --- Tiers de fetch altos (Capa 3, ADR-006). El router los detecta solos.
 #   tier 1 (TLS fingerprint):
