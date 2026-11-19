@@ -35,6 +35,7 @@ from .logging import get_logger
 from .models import FetchTier, JobStatus, OutputFormat, PrivacyMode, Sobre
 from .output.formats import bundle_pages, title_from_markdown, to_llms_txt
 from .privacy.anonimal_client import AnonimalClient, AnonimalError, build_opaco
+from .security.ssrf import SSRFError
 
 log = get_logger("fisherboy.pipeline")
 
@@ -935,6 +936,27 @@ def process_job(sobre: Sobre, deps: PipelineDeps) -> Sobre:
         if deps.metrics is not None:
             deps.metrics.inc_job("error")
         log.warning("fail-closed: anonimización falló", extra={"job_id": sobre.job_id})
+    except SSRFError as e:
+        # NO ES UN ERROR INESPERADO Y NO PUEDE CAER EN EL CATCH-ALL DE ABAJO.
+        #
+        # El catch-all esconde str(e) a propósito —el mensaje de una excepción
+        # que nadie previó puede llevar rutas o internals— y eso está bien. Pero
+        # SSRFError es un error de dominio, PREVISTO, y su mensaje es seguro:
+        # lleva sólo el host que el propio llamador pidió.
+        #
+        # LO QUE COSTÓ ESCONDERLO, medido el 2026-08-25: el colector del Boletín
+        # Oficial de Oculum figuraba caído con "Error inesperado: SSRFError." y
+        # nada más. La URL era pública y sana; lo que fallaba era el DNS del
+        # contenedor. Con el nombre de la clase pelado, el diagnóstico mandaba a
+        # revisar la URL, que era exactamente lo que no había que tocar.
+        sobre.status = JobStatus.ERROR
+        sobre.error = str(e)
+        if deps.metrics is not None:
+            deps.metrics.inc_job("error")
+        log.warning(
+            "job rechazado por el guard de destino",
+            extra={"job_id": sobre.job_id, "clase": type(e).__name__, "error": str(e)},
+        )
     except Exception as e:  # noqa: BLE001 — red de seguridad: nunca tumbar el worker
         sobre.status = JobStatus.ERROR
         sobre.error = f"Error inesperado: {type(e).__name__}."
