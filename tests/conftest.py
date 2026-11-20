@@ -44,6 +44,15 @@ def fake_queue() -> JobQueue:
 
 
 @pytest.fixture
+def portal_maqueta():
+    """Maqueta local de un portal servida en 127.0.0.1 (ver tests/portal_maqueta.py)."""
+    from tests.portal_maqueta import Maqueta
+
+    with Maqueta() as m:
+        yield m
+
+
+@pytest.fixture
 def client_factory(fake_queue):
     from fastapi.testclient import TestClient
 

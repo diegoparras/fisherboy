@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>Maqueta de portal -Consulta</title></head>
+<body>
+<h1 id="titulo">Comprobantes</h1>
+<label for="fechaEmision">Fecha de emision</label>
+<input id="fechaEmision" type="text" placeholder="dd/mm/aaaa - dd/mm/aaaa">
+<button id="buscarComprobantes">Buscar</button>
+<div id="resultados" style="display:none">
+  <a class="buttons-csv" id="exportarCsv" href="#">CSV</a>
+  <table id="tablaDataTables"><tbody></tbody></table>
+</div>
+<script>
+  var q = new URLSearchParams(location.search);
+  document.getElementById('titulo').textContent = q.get('tipo') === 'R' ? 'Comprobantes recibidos' : 'Comprobantes emitidos';
+  document.getElementById('buscarComprobantes').onclick = function () {
+    if (!/^\d{2}\/\d{2}\/\d{4} - \d{2}\/\d{2}\/\d{4}$/.test(document.getElementById('fechaEmision').value)) return;
+    fetch('ajax.do?f=listaResultados&' + q.toString()).then(function (r) { return r.json(); }).then(function (d) {
+      var tb = document.querySelector('#tablaDataTables tbody');
+      tb.innerHTML = '';
+      d.data.forEach(function (fila) {
+        var tr = document.createElement('tr');
+        tr.innerHTML = fila.map(function (c) { return '<td>' + c + '</td>'; }).join('');
+        tb.appendChild(tr);
+      });
+      document.getElementById('exportarCsv').href = 'export.csv?' + q.toString();
+      document.getElementById('resultados').style.display = '';
+    });
+  };
+</script>
+</body></html>

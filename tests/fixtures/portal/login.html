@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>Maqueta de portal -Acceso con Clave Fiscal</title></head>
+<body>
+<!-- Maqueta de prueba: imita los ids de un login real (auth.portal.example.com). -->
+<form id="F1" onsubmit="return false">
+  <div id="paso1">
+    <label for="F1:username">CUIT/CUIL</label>
+    <input id="F1:username" name="F1:username" type="text">
+    <button id="F1:btnSiguiente" type="button">Siguiente</button>
+  </div>
+  <div id="paso2" style="display:none">
+    <label for="F1:password">Clave</label>
+    <input id="F1:password" name="F1:password" type="password">
+    <div id="captcha" style="display:none">
+      <label><input id="captcha-ok" type="checkbox"> No soy un robot</label>
+    </div>
+    <button id="F1:btnIngresar" type="button">Ingresar</button>
+  </div>
+  <div id="F1:msg" role="alert"></div>
+</form>
+<script>
+  var conCaptcha = new URLSearchParams(location.search).get('captcha') === '1';
+  document.getElementById('F1:btnSiguiente').onclick = function () {
+    if (!document.getElementById('F1:username').value) return;
+    document.getElementById('paso1').style.display = 'none';
+    document.getElementById('paso2').style.display = '';
+    if (conCaptcha) document.getElementById('captcha').style.display = '';
+  };
+  document.getElementById('F1:btnIngresar').onclick = function () {
+    var msg = document.getElementById('F1:msg');
+    if (conCaptcha && !document.getElementById('captcha-ok').checked) {
+      msg.textContent = 'Resolve el captcha';
+      return;
+    }
+    if (document.getElementById('F1:password').value !== 'clave-de-prueba') {
+      msg.textContent = 'Clave o usuario incorrecto';
+      return;
+    }
+    location.href = 'portal.html';
+  };
+</script>
+</body></html>

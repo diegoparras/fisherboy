@@ -1,0 +1,4 @@
+Fecha;Tipo;Punto de Venta;Número Desde;Número Hasta;Cód. Autorización;Tipo Doc. Receptor;Nro. Doc. Receptor;Denominación Receptor;Tipo Cambio;Moneda;Imp. Neto Gravado;Imp. Neto No Gravado;Imp. Op. Exentas;IVA;Imp. Total
+02/11/2026;11 - Factura C;1;125;125;76451234567890;80;30711111118;EMPRESA DE PRUEBA SA;1,00;$;0,00;0,00;0,00;0,00;150000,00
+05/11/2026;13 - Nota de Crédito C;1;12;12;76451234567891;80;30711111118;EMPRESA DE PRUEBA SA;1,00;$;0,00;0,00;0,00;0,00;20000,50
+10/11/2026;6 - Factura B;2;48;48;76451234567892;96;28111222;CONSUMIDOR DE PRUEBA;1,00;$;1.000,00;0,00;0,00;210,00;1.210,00

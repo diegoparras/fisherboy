@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>Maqueta de portal -Mis Documentos</title></head>
+<body>
+<h1>Mis Documentos</h1>
+<button id="btnEmitidos">Emitidos</button>
+<button id="btnRecibidos">Recibidos</button>
+<script>
+  var extra = location.search ? '&' + location.search.slice(1) : '';
+  document.getElementById('btnEmitidos').onclick = function () { location.href = 'consulta.html?tipo=E' + extra; };
+  document.getElementById('btnRecibidos').onclick = function () { location.href = 'consulta.html?tipo=R' + extra; };
+</script>
+</body></html>
