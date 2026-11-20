@@ -80,3 +80,14 @@ class Maqueta:
     def __exit__(self, *exc) -> None:
         self._srv.shutdown()
         self._srv.server_close()
+
+
+if __name__ == "__main__":  # pragma: no cover — servirla sola (prueba de punta a punta)
+    import os
+    import sys
+
+    puerto = int(sys.argv[1]) if len(sys.argv) > 1 else 8765
+    handler = type("H", (_Handler,), {"modo": {"zip": os.environ.get("MAQUETA_ZIP") == "1"}})
+    srv = ThreadingHTTPServer(("0.0.0.0", puerto), partial(handler, directory=str(DIR)))
+    print(f"maqueta del portal en :{puerto}", flush=True)
+    srv.serve_forever()
