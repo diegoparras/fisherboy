@@ -3,6 +3,26 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semántico. Cada versión publicada tiene su sección: sin ella, el CI no publica.
 
+## [1.10.0] - 2026-11-20
+
+### Nuevo
+- **La sesión de agente puede guardar el login.** Con `session` y `mantener`, las cookies y el
+  almacenamiento quedan guardados al terminar y se reutilizan en la siguiente: el segundo
+  ingreso al mismo portal ya no pide clave ni segundo factor.
+- **Si la IA falla, la sesión no muere.** Con `mantener`, un paso que la IA no logra deja la
+  sesión en `esperando_humano` en vez de cortarla con error: la persona resuelve y la sesión
+  sigue desde ahí.
+- **Resumen al terminar.** `done` devuelve en lenguaje natural qué encontró, con los datos
+  reales restaurados (la IA trabaja con marcadores, el resumen final los rehidrata).
+- **Freno antes de lo que no se deshace.** Un paso que parece irreversible (confirmar, enviar,
+  pagar, borrar) pausa y pide un OK explícito antes de tocarlo, en vez de ejecutarlo y avisar
+  después. Nuevo módulo `app/net/irreversible.py`; `POST /api/agent/{t}/ok` y `/no`.
+- **Preguntar qué hay en un punto de la pantalla**, para cuando el recorrido necesita leer algo
+  que no está en el selector esperado.
+- **Dominios por sesión.** Cada sesión puede declarar su propia allowlist; sigue sin poder
+  ampliar la de `AGENT_ALLOWED_DOMAINS`, solo acotarla. Con `AGENT_ALLOWED_DOMAINS=*` el
+  pedido está obligado a decir en qué dominios trabaja.
+
 ## [1.9.1] - 2026-11-20
 
 ### Nuevo

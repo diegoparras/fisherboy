@@ -829,12 +829,21 @@ def create_app(
             raise HTTPException(status_code=403, detail="La sesión de agente está apagada "
                                                         "(AGENT_ALLOWED_DOMAINS vacío).")
         pedidos = [str(d).strip().lower() for d in (body.get("dominios") or []) if str(d).strip()]
-        dominios = [d for d in pedidos if any(d == p or d.endswith("." + p) for p in permitidos)]
-        if not dominios:
-            dominios = list(permitidos)
+        if permitidos == ["*"]:
+            # Abierto: cada sesión dice sus dominios (una lista vacía sería «sin límite»).
+            if not pedidos or any(d == "*" for d in pedidos):
+                raise HTTPException(status_code=400, detail="Con AGENT_ALLOWED_DOMAINS=* cada sesión "
+                                                            "tiene que traer sus `dominios`.")
+            dominios = pedidos
+        else:
+            dominios = [d for d in pedidos if any(d == p or d.endswith("." + p) for p in permitidos)]
+            if not dominios:
+                dominios = list(permitidos)
         if not url or not recipe.dominio_permitido(url, dominios):
             raise HTTPException(status_code=400, detail="`url` falta o está fuera de los dominios "
                                                         "permitidos para la sesión de agente.")
+        # El login guardado con ese nombre (se carga al arrancar y se guarda al terminar).
+        session = str(body.get("session") or "").strip()[:80]
         llm = None
         if body.get("ia") and settings.llm_api_base_url and settings.llm_api_key:
             from .extractors.llm_extract import LLMClient
@@ -846,7 +855,8 @@ def create_app(
                 variables=body.get("variables") or {}, secretos=body.get("secretos") or {},
                 dominios=dominios, ia=bool(llm), objetivo=str(body.get("objetivo") or ""),
                 llm_complete=llm, allow_private=settings.allow_private_targets,
-                locale=settings.browser_locale)
+                locale=settings.browser_locale, session=session, mantener=bool(body.get("mantener")),
+                store=_login_store() if session else None)
         except browser_agent.AgentError as e:
             raise HTTPException(status_code=429 if "sesiones" in str(e) else 400,
                                 detail=str(e)) from e
@@ -893,6 +903,38 @@ def create_app(
         except browser_agent.AgentError as e:
             raise HTTPException(status_code=409, detail=str(e)) from e
         return {"ok": True, "estado": ses.estado}
+
+    @app.post("/api/agent/{token}/ok")
+    async def agent_ok(token: str, request: Request):
+        """La persona da el OK para lo que no se deshace (el freno lo puso el código)."""
+        from .net import browser_agent
+        ses = _agente(token, request)
+        try:
+            ses.ok()
+        except browser_agent.AgentError as e:
+            raise HTTPException(status_code=409, detail=str(e)) from e
+        return {"ok": True}
+
+    @app.post("/api/agent/{token}/no")
+    async def agent_no(token: str, request: Request):
+        from .net import browser_agent
+        ses = _agente(token, request)
+        try:
+            ses.no()
+        except browser_agent.AgentError as e:
+            raise HTTPException(status_code=409, detail=str(e)) from e
+        return {"ok": True}
+
+    @app.get("/api/agent/{token}/punto")
+    async def agent_punto(token: str, request: Request, x: float = 0, y: float = 0, activo: int = 0):
+        """Qué elemento hay en ese punto (o el que tiene el foco). Sólo lee la página."""
+        import asyncio
+        from .net import browser_agent
+        ses = _agente(token, request)
+        try:
+            return await asyncio.to_thread(ses.punto, x, y, bool(activo))
+        except browser_agent.AgentError as e:
+            raise HTTPException(status_code=409, detail=str(e)) from e
 
     @app.post("/api/agent/{token}/resume")
     async def agent_resume(token: str, request: Request):
