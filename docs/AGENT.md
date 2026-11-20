@@ -27,6 +27,7 @@ que la abrió: la de otro devuelve 404.
 | POST | `/api/agent/{t}/takeover` | Tomar el control |
 | POST | `/api/agent/{t}/resume` | Devolver el control a la receta / IA |
 | GET | `/api/agent/{t}/files/{n}` | Archivo descargado `n` |
+| GET | `/api/agent/{t}/captures` | Respuestas JSON capturadas (el estado solo trae la cantidad) |
 | DELETE | `/api/agent/{t}` | Cerrar |
 
 ```jsonc

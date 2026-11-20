@@ -106,6 +106,15 @@ def test_dominios_no_amplian_allowlist(client_factory, monkeypatch):
     assert r.status_code == 400
 
 
+def test_capturas_van_por_su_propio_endpoint(client_factory):
+    ses = _Falsa()
+    ses.capturas = [{"url": "https://x/listaResultados", "json": {"data": [1]}}]
+    ba._SESIONES["tok"] = ses
+    c = client_factory()
+    r = c.get("/api/agent/tok/captures")
+    assert r.status_code == 200 and r.json() == {"capturas": ses.capturas}
+
+
 def test_archivo_y_frame(client_factory):
     ba._SESIONES["tok"] = _Falsa()
     c = client_factory()

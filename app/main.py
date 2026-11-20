@@ -885,6 +885,11 @@ def create_app(
         ses.devolver()
         return {"ok": True, "estado": ses.estado}
 
+    @app.get("/api/agent/{token}/captures")
+    async def agent_captures(token: str, request: Request):
+        """Respuestas JSON capturadas (paso `capture`). Aparte del resumen: pueden pesar."""
+        return {"capturas": list(_agente(token, request).capturas)}
+
     @app.get("/api/agent/{token}/files/{n}")
     async def agent_file(token: str, n: int, request: Request):
         ses = _agente(token, request)
