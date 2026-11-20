@@ -44,9 +44,9 @@ def fake_queue() -> JobQueue:
 
 
 @pytest.fixture
-def arca_maqueta():
-    """Maqueta local de ARCA servida en 127.0.0.1 (ver tests/arca_maqueta.py)."""
-    from tests.arca_maqueta import Maqueta
+def portal_maqueta():
+    """Maqueta local de un portal servida en 127.0.0.1 (ver tests/portal_maqueta.py)."""
+    from tests.portal_maqueta import Maqueta
 
     with Maqueta() as m:
         yield m

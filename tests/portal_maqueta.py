@@ -1,7 +1,7 @@
-"""Maqueta local de ARCA (login, portal, Mis Comprobantes) para probar la sesión de agente.
+"""Maqueta local de un portal (login, portal, Mis Documentos) para probar la sesión de agente.
 
 Imita los ids y el recorrido reales (login en dos pasos, servicio que se abre en otra pestaña,
-representado, emitidos/recibidos, búsqueda por AJAX y exportación CSV) sin tocar ARCA ni usar
+representado, emitidos/recibidos, búsqueda por AJAX y exportación CSV) sin tocar el sitio real ni usar
 una clave fiscal real. La clave válida de la maqueta es `clave-de-prueba`.
 
 `modo` se cambia desde el test: `zip=True` exporta un ZIP con el CSV adentro, `vacio=True`
@@ -17,7 +17,7 @@ from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-DIR = Path(__file__).parent / "fixtures" / "arca"
+DIR = Path(__file__).parent / "fixtures" / "portal"
 CLAVE_VALIDA = "clave-de-prueba"
 
 
@@ -57,7 +57,7 @@ class _Handler(SimpleHTTPRequestHandler):
             if self.modo.get("zip"):
                 buf = io.BytesIO()
                 with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-                    z.writestr("Mis Comprobantes Emitidos.csv", datos)
+                    z.writestr("Mis Documentos Emitidos.csv", datos)
                 return self._responder(buf.getvalue(), "application/zip", "comprobantes.zip")
             return self._responder(datos, "text/csv; charset=utf-8", "comprobantes.csv")
         return super().do_GET()
@@ -82,12 +82,12 @@ class Maqueta:
         self._srv.server_close()
 
 
-if __name__ == "__main__":  # pragma: no cover — servirla sola (prueba de punta a punta con Arcanum)
+if __name__ == "__main__":  # pragma: no cover — servirla sola, para probar a mano
     import os
     import sys
 
     puerto = int(sys.argv[1]) if len(sys.argv) > 1 else 8765
     handler = type("H", (_Handler,), {"modo": {"zip": os.environ.get("MAQUETA_ZIP") == "1"}})
     srv = ThreadingHTTPServer(("0.0.0.0", puerto), partial(handler, directory=str(DIR)))
-    print(f"maqueta de ARCA en :{puerto}", flush=True)
+    print(f"maqueta de portal en :{puerto}", flush=True)
     srv.serve_forever()

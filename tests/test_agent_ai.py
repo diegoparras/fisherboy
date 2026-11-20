@@ -16,17 +16,17 @@ def test_enmascara_cuit_y_restaura():
 
 
 def test_mismo_valor_mismo_marcador_y_mapeo_compartido():
-    t1, mapeo = agent_ai.enmascarar("CUIT 20263630743")
-    t2, mapeo = agent_ai.enmascarar("otra vez 20263630743 y 30711111118", mapeo)
+    t1, mapeo = agent_ai.enmascarar("CUIT 20111111112")
+    t2, mapeo = agent_ai.enmascarar("otra vez 20111111112 y 30711111118", mapeo)
     assert "«CUIT_1»" in t1 and "«CUIT_1»" in t2 and "«CUIT_2»" in t2
 
 
 def test_prompt_no_incluye_valor_de_secreto():
     elementos = [{"ref": 1, "tag": "input", "tipo": "password", "id": "F1:password", "valor": ""}]
-    system, user = agent_ai.armar_prompt("Ingresar a ARCA", "https://auth.afip.gob.ar/",
-                                         elementos, [], ["clave_fiscal"])
+    system, user = agent_ai.armar_prompt("Ingresar al portal", "https://portal.example.com/",
+                                         elementos, [], ["clave_portal"])
     assert "dato" in system.lower()
-    assert "{{secret:clave_fiscal}}" in system + user
+    assert "{{secret:clave_portal}}" in system + user
     assert "F1:password" in user
 
 

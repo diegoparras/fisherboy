@@ -49,9 +49,9 @@ def test_redactar_no_expone_secreto():
 
 
 def test_dominio_permitido():
-    assert recipe.dominio_permitido("https://auth.afip.gob.ar/x", ["afip.gob.ar"])
-    assert recipe.dominio_permitido("https://afip.gob.ar/", ["afip.gob.ar"])
-    assert not recipe.dominio_permitido("https://afip.gob.ar.evil.com", ["afip.gob.ar"])
-    assert not recipe.dominio_permitido("https://example.com", ["afip.gob.ar"])
-    assert recipe.dominio_permitido("about:blank", ["afip.gob.ar"])
+    assert recipe.dominio_permitido("https://portal.example.com/x", ["portal.example.com"])
+    assert recipe.dominio_permitido("https://portal.example.com/", ["portal.example.com"])
+    assert not recipe.dominio_permitido("https://portal.example.com.evil.com", ["portal.example.com"])
+    assert not recipe.dominio_permitido("https://example.com", ["portal.example.com"])
+    assert recipe.dominio_permitido("about:blank", ["portal.example.com"])
     assert recipe.dominio_permitido("https://example.com", [])

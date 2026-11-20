@@ -10,8 +10,8 @@ del servidor que:
 3. se pausa en **`esperando_humano`** cuando aparece un captcha o un segundo factor, y deja que
    cualquiera con acceso **tome el control** en vivo y lo devuelva.
 
-La usa Arcanum para bajar Mis Comprobantes de ARCA, pero sirve para cualquier sitio de la
-allowlist.
+Sirve para cualquier sitio de la allowlist: un portal con login, un trámite con captcha,
+un listado que se exporta.
 
 ## API
 
@@ -36,18 +36,18 @@ que la abrió: la de otro devuelve 404.
 ```jsonc
 POST /api/agent/start
 {
-  "url": "https://auth.afip.gob.ar/contribuyente_/login.xhtml",
+  "url": "https://portal.example.com/contribuyente_/login.xhtml",
   "receta": [
     {"do": "type", "sel": "[id='F1:username']", "text": "{{var:cuit_login}}"},
     {"do": "click", "sel": "[id='F1:btnSiguiente']"},
-    {"do": "human_if", "sel": "#captcha", "motivo": "ARCA pide un captcha"},
-    {"do": "type", "sel": "[id='F1:password']", "text": "{{secret:clave_fiscal}}"},
+    {"do": "human_if", "sel": "#captcha", "motivo": "el portal pide un captcha"},
+    {"do": "type", "sel": "[id='F1:password']", "text": "{{secret:clave_portal}}"},
     {"do": "click", "sel": "[id='F1:btnIngresar']"},
-    {"do": "wait_url", "contains": "portal", "objetivo": "Entrar al portal de ARCA"}
+    {"do": "wait_url", "contains": "portal", "objetivo": "Entrar al portal"}
   ],
   "variables": {"cuit_login": "20111111112"},
-  "secretos": {"clave_fiscal": "..."},
-  "dominios": ["afip.gob.ar"],
+  "secretos": {"clave_portal": "..."},
+  "dominios": ["portal.example.com"],
   "ia": true
 }
 ```
