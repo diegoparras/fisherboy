@@ -791,6 +791,115 @@ def create_app(
         dueno = _login_ident(request)
         return {"ok": browser_login.cerrar(token, dueno)}
 
+    # --- Sesión de agente: receta + IA + humano (docs/AGENT.md) -------------------
+    def _agente(token: str, request: Request):
+        from .net import browser_agent
+        ses = browser_agent.obtener(token, _login_ident(request))
+        if ses is None:
+            raise HTTPException(status_code=404, detail="Esa sesión de agente no existe.")
+        return ses
+
+    @app.post("/api/agent/start")
+    async def agent_start(request: Request):
+        """Abre una sesión de agente. `secretos` se usa adentro y no vuelve en ninguna respuesta."""
+        from .net import browser_agent, recipe
+        dueno = _login_ident(request)
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            body = {}
+        url = str(body.get("url") or "").strip()
+        permitidos = settings.agent_allowed_domains
+        if not permitidos:
+            raise HTTPException(status_code=403, detail="La sesión de agente está apagada "
+                                                        "(AGENT_ALLOWED_DOMAINS vacío).")
+        pedidos = [str(d).strip().lower() for d in (body.get("dominios") or []) if str(d).strip()]
+        dominios = [d for d in pedidos if any(d == p or d.endswith("." + p) for p in permitidos)]
+        if not dominios:
+            dominios = list(permitidos)
+        if not url or not recipe.dominio_permitido(url, dominios):
+            raise HTTPException(status_code=400, detail="`url` falta o está fuera de los dominios "
+                                                        "permitidos para la sesión de agente.")
+        llm = None
+        if body.get("ia") and settings.llm_api_base_url and settings.llm_api_key:
+            from .extractors.llm_extract import LLMClient
+            llm = LLMClient(settings.llm_api_base_url, settings.llm_api_key,
+                            settings.llm_model).complete
+        try:
+            token, ses = browser_agent.abrir(
+                url, dueno=dueno, receta=body.get("receta") or [],
+                variables=body.get("variables") or {}, secretos=body.get("secretos") or {},
+                dominios=dominios, ia=bool(llm), objetivo=str(body.get("objetivo") or ""),
+                llm_complete=llm, allow_private=settings.allow_private_targets,
+                locale=settings.browser_locale)
+        except browser_agent.AgentError as e:
+            raise HTTPException(status_code=429 if "sesiones" in str(e) else 400,
+                                detail=str(e)) from e
+        log.info("sesión de agente abierta", extra={"ia": bool(llm), "pasos": len(body.get("receta") or [])})
+        return {"token": token, "estado": ses.estado, "ia": bool(llm),
+                "ancho": browser_agent.ANCHO, "alto": browser_agent.ALTO}
+
+    @app.get("/api/agent/{token}")
+    async def agent_status(token: str, request: Request):
+        return _agente(token, request).resumen()
+
+    @app.get("/api/agent/{token}/frame")
+    async def agent_frame(token: str, request: Request, desde: int = 0):
+        ses = _agente(token, request)
+        cab = {"Cache-Control": "no-store", "X-Agent-Estado": ses.estado,
+               "X-Agent-Seq": str(ses.seq), "X-Agent-Url": ses.url_actual[:400]}
+        if ses.seq and desde >= ses.seq:
+            return Response(status_code=204, headers=cab)
+        img = ses.frame
+        if not img:
+            return Response(status_code=202, headers=cab)
+        return Response(content=img, media_type="image/jpeg", headers=cab)
+
+    @app.post("/api/agent/{token}/event")
+    async def agent_event(token: str, request: Request):
+        from .net import browser_agent
+        ses = _agente(token, request)
+        try:
+            cmd = await request.json()
+        except Exception:  # noqa: BLE001
+            cmd = {}
+        try:
+            ses.enviar(cmd if isinstance(cmd, dict) else {})
+        except browser_agent.AgentError as e:
+            raise HTTPException(status_code=409, detail=str(e)) from e
+        return {"ok": True, "estado": ses.estado}
+
+    @app.post("/api/agent/{token}/takeover")
+    async def agent_takeover(token: str, request: Request):
+        from .net import browser_agent
+        ses = _agente(token, request)
+        try:
+            ses.tomar_control()
+        except browser_agent.AgentError as e:
+            raise HTTPException(status_code=409, detail=str(e)) from e
+        return {"ok": True, "estado": ses.estado}
+
+    @app.post("/api/agent/{token}/resume")
+    async def agent_resume(token: str, request: Request):
+        ses = _agente(token, request)
+        ses.devolver()
+        return {"ok": True, "estado": ses.estado}
+
+    @app.get("/api/agent/{token}/files/{n}")
+    async def agent_file(token: str, n: int, request: Request):
+        ses = _agente(token, request)
+        meta = next((a for a in ses.archivos if a.get("n") == n), None)
+        if meta is None:
+            raise HTTPException(status_code=404, detail="Ese archivo no es de esta sesión.")
+        nombre = str(meta.get("nombre") or f"archivo-{n}").replace('"', "")
+        return Response(content=ses.blob(n), media_type=meta.get("tipo") or "application/octet-stream",
+                        headers={"Content-Disposition": f'attachment; filename="{nombre}"'})
+
+    @app.delete("/api/agent/{token}")
+    async def agent_close(token: str, request: Request):
+        from .net import browser_agent
+        return {"ok": browser_agent.cerrar(token, _login_ident(request))}
+
     # --- Modo VNC: el escritorio del server (popups, pestañas) --------------------
     # Archivos del cliente noVNC (los trae el paquete `novnc` de Debian). Se montan solo si
     # estan: sin ellos el modo VNC no se ofrece y el liviano anda igual.
