@@ -19,7 +19,7 @@ from fastapi import FastAPI, HTTPException, Request, Response, WebSocket
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel
 
-from . import __version__
+from . import __version__, novedades
 from .config import Settings, get_settings
 from .logging import get_logger, setup_logging
 from .models import JobRequest, JobStatus, Rol, RevertRequest, Sobre
@@ -289,6 +289,21 @@ def create_app(
                         secure=settings.cookie_secure, samesite="lax",
                         max_age=auth.SESSION_TTL, path="/")
         return resp
+
+    # Qué cambió desde la última versión que vio este navegador (sale del CHANGELOG.md).
+    # ?desde=X.Y.Z -> las posteriores hasta la actual; sin desde -> solo la actual;
+    # ?todas=1 -> el historial hasta la que corre. Misma auth que el resto de la API.
+    @app.get("/api/novedades")
+    async def get_novedades(request: Request, desde: str | None = None, todas: str | None = None):
+        if auth.role_from_request(request) is None:
+            raise HTTPException(status_code=401, detail="Necesitás iniciar sesión.")
+        versiones = novedades.todas()
+        if todas == "1":
+            elegidas = novedades.hasta(versiones, __version__)
+        else:
+            vista = desde if novedades.es_version(desde) else None
+            elegidas = novedades.desde(versiones, vista, __version__)
+        return {"version": __version__, "versiones": [v.a_dict() for v in elegidas]}
 
     @app.get("/api/me")
     async def me(request: Request):
@@ -1623,4 +1638,7 @@ def create_app(
     return app
 
 
+# Cartel de arranque (versión + qué cambia): lo PRIMERO que escribe el proceso de la API en los
+# registros del contenedor (EasyPanel), antes de los avisos y logs de create_app. Nunca tira.
+novedades.imprimir_cartel("api")
 app = create_app()

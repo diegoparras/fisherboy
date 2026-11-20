@@ -1,4 +1,4 @@
-"""La maqueta del portal levanta y sirve el recorrido que usan los tests de la sesión de agente."""
+"""La maqueta de portal levanta y sirve el recorrido que usan los tests de la sesión de agente."""
 from __future__ import annotations
 
 import io

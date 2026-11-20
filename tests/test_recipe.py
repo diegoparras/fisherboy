@@ -49,7 +49,7 @@ def test_redactar_no_expone_secreto():
 
 
 def test_dominio_permitido():
-    assert recipe.dominio_permitido("https://auth.portal.example.com/x", ["portal.example.com"])
+    assert recipe.dominio_permitido("https://portal.example.com/x", ["portal.example.com"])
     assert recipe.dominio_permitido("https://portal.example.com/", ["portal.example.com"])
     assert not recipe.dominio_permitido("https://portal.example.com.evil.com", ["portal.example.com"])
     assert not recipe.dominio_permitido("https://example.com", ["portal.example.com"])

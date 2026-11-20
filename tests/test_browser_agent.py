@@ -44,7 +44,7 @@ def _receta(buscar_sel="#buscarComprobantes", objetivo_buscar=""):
         {"do": "type", "sel": "[id='F1:username']", "text": "{{var:cuit_login}}"},
         {"do": "click", "sel": "[id='F1:btnSiguiente']"},
         {"do": "human_if", "sel": "#captcha", "motivo": "el portal pide resolver un captcha"},
-        {"do": "type", "sel": "[id='F1:password']", "text": "{{secret:clave_fiscal}}"},
+        {"do": "type", "sel": "[id='F1:password']", "text": "{{secret:clave_portal}}"},
         {"do": "click", "sel": "[id='F1:btnIngresar']"},
         {"do": "wait_url", "contains": "portal", "timeout_s": 4},
         {"do": "click", "sel": "#servicio-mcmp"},
@@ -64,7 +64,7 @@ def _abrir(m, *, url="login.html", receta=None, clave=CLAVE, dominios=("127.0.0.
         m.base + url, dueno="t", receta=receta if receta is not None else _receta(),
         variables={"cuit_login": "20111111112", "cuit": "20111111112",
                    "rango": "01/11/2026 - 18/11/2026"},
-        secretos={"clave_fiscal": clave}, dominios=list(dominios), allow_private=True, **kw)
+        secretos={"clave_portal": clave}, dominios=list(dominios), allow_private=True, **kw)
     return ses
 
 
@@ -90,7 +90,7 @@ def test_secreto_no_queda_en_log(portal_maqueta):
     _esperar(ses, {"terminado", "error"})
     volcado = json.dumps(ses.resumen(), ensure_ascii=False)
     assert CLAVE not in volcado
-    assert "{{secret:clave_fiscal}}" in volcado
+    assert "{{secret:clave_portal}}" in volcado
 
 
 def test_clave_incorrecta_falla_con_motivo(portal_maqueta):
@@ -174,13 +174,13 @@ def test_objetivo_con_secreto_no_lo_revela_a_la_ia(portal_maqueta):
         vistos.append(system + user)
         return '{"accion": "done"}'
 
-    receta = [{"do": "goal", "objetivo": "Escribir la clave {{secret:clave_fiscal}} en Clave"},
+    receta = [{"do": "goal", "objetivo": "Escribir la clave {{secret:clave_portal}} en Clave"},
               {"do": "click", "sel": "#noExiste", "timeout_s": 1,
-               "objetivo": "Usar {{secret:clave_fiscal}} para {{var:cuit_login}}"}]
+               "objetivo": "Usar {{secret:clave_portal}} para {{var:cuit_login}}"}]
     ses = _abrir(portal_maqueta, receta=receta, ia=True, llm_complete=falso)
     assert _esperar(ses, {"terminado", "error"}) == "terminado", ses.error
     assert len(vistos) == 2
-    assert all(CLAVE not in v and "{{secret:clave_fiscal}}" in v for v in vistos)
+    assert all(CLAVE not in v and "{{secret:clave_portal}}" in v for v in vistos)
 
 
 def test_captura_json(portal_maqueta):
@@ -207,10 +207,10 @@ def test_ia_no_puede_tipear_el_secreto_fuera_de_un_campo_de_clave(portal_maqueta
         if len(vistos) == 1:
             ref = next(json.loads(linea)["ref"] for linea in user.splitlines()
                        if linea.startswith("{") and '"F1:username"' in linea)
-            return json.dumps({"accion": "type", "ref": ref, "texto": "{{secret:clave_fiscal}}"})
+            return json.dumps({"accion": "type", "ref": ref, "texto": "{{secret:clave_portal}}"})
         return '{"accion": "done"}'
 
-    receta = [{"do": "goal", "objetivo": "Escribir la clave {{secret:clave_fiscal}}"}]
+    receta = [{"do": "goal", "objetivo": "Escribir la clave {{secret:clave_portal}}"}]
     ses = _abrir(portal_maqueta, receta=receta, ia=True, llm_complete=falso)
     _esperar(ses, {"terminado", "error"})
     assert len(vistos) == 2
@@ -226,7 +226,7 @@ def test_secreto_en_la_url_no_llega_a_la_ia(portal_maqueta):
         vistos.append(user)
         return '{"accion": "done"}'
 
-    receta = [{"do": "goto", "url": portal_maqueta.base + "portal.html?q={{secret:clave_fiscal}}"},
+    receta = [{"do": "goto", "url": portal_maqueta.base + "portal.html?q={{secret:clave_portal}}"},
               {"do": "goal", "objetivo": "mirar"}]
     ses = _abrir(portal_maqueta, receta=receta, ia=True, llm_complete=falso)
     _esperar(ses, {"terminado", "error"})
@@ -235,7 +235,7 @@ def test_secreto_en_la_url_no_llega_a_la_ia(portal_maqueta):
 
 
 def test_receta_no_puede_escribir_el_secreto_en_un_campo_de_texto(portal_maqueta):
-    receta = [{"do": "type", "sel": "[id='F1:username']", "text": "{{secret:clave_fiscal}}"}]
+    receta = [{"do": "type", "sel": "[id='F1:username']", "text": "{{secret:clave_portal}}"}]
     ses = _abrir(portal_maqueta, receta=receta, ia=False)
     assert _esperar(ses, {"terminado", "error"}) == "error"
     assert "campo que no es de clave" in ses.error

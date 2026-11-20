@@ -64,6 +64,14 @@ docker pull ghcr.io/diegoparras/fisherboy:latest
 
 📖 **Full deployment guide** (Docker Desktop step‑by‑step, EasyPanel, env reference, going to production): [`docs/DEPLOY.md`](docs/DEPLOY.md).
 
+**Version and what's new on every deploy.** Each release bumps the patch and says what changed,
+from a single source: the `## [X.Y.Z]` section of [`CHANGELOG.md`](CHANGELOG.md) (without it the
+image is not published). The first thing the API and the worker print when they start is a banner
+with the version, the date, which process it is (API or worker, and its mode) and the list of
+changes, so it shows up first in the container logs (EasyPanel → service → logs). The web UI shows
+**What's new** once per browser after an update (also in the menu and in **About**), the image is
+also tagged `:X.Y.Z` and every push to `main` creates the GitHub Release `vX.Y.Z` with those notes.
+
 ---
 
 ## 🧭 Two modes
