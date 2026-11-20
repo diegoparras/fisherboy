@@ -9,3 +9,4 @@ license = { text = "MIT" }
 pythonpath = ["."]
 testpaths = ["tests"]
 addopts = "-q"
+markers = ["browser: levanta un Chromium real (Playwright)"]
