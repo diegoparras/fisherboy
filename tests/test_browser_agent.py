@@ -1,4 +1,4 @@
-"""Sesión de agente (receta + IA + humano) contra la maqueta local de ARCA, con Chromium real."""
+"""Sesión de agente (receta + IA + humano) contra la maqueta local de un portal, con Chromium real."""
 from __future__ import annotations
 
 import json
@@ -43,8 +43,8 @@ def _receta(buscar_sel="#buscarComprobantes", objetivo_buscar=""):
     return [
         {"do": "type", "sel": "[id='F1:username']", "text": "{{var:cuit_login}}"},
         {"do": "click", "sel": "[id='F1:btnSiguiente']"},
-        {"do": "human_if", "sel": "#captcha", "motivo": "ARCA pide resolver un captcha"},
-        {"do": "type", "sel": "[id='F1:password']", "text": "{{secret:clave_fiscal}}"},
+        {"do": "human_if", "sel": "#captcha", "motivo": "el portal pide resolver un captcha"},
+        {"do": "type", "sel": "[id='F1:password']", "text": "{{secret:clave_portal}}"},
         {"do": "click", "sel": "[id='F1:btnIngresar']"},
         {"do": "wait_url", "contains": "portal", "timeout_s": 4},
         {"do": "click", "sel": "#servicio-mcmp"},
@@ -62,9 +62,9 @@ def _receta(buscar_sel="#buscarComprobantes", objetivo_buscar=""):
 def _abrir(m, *, url="login.html", receta=None, clave=CLAVE, dominios=("127.0.0.1",), **kw):
     _, ses = ba.abrir(
         m.base + url, dueno="t", receta=receta if receta is not None else _receta(),
-        variables={"cuit_login": "20263630743", "cuit": "20263630743",
+        variables={"cuit_login": "20111111112", "cuit": "20111111112",
                    "rango": "01/11/2026 - 18/11/2026"},
-        secretos={"clave_fiscal": clave}, dominios=list(dominios), allow_private=True, **kw)
+        secretos={"clave_portal": clave}, dominios=list(dominios), allow_private=True, **kw)
     return ses
 
 
@@ -77,32 +77,32 @@ def _esperar(ses, estados, timeout=40):
     raise AssertionError(f"la sesión quedó en {ses.estado}: {ses.error} {ses.log[-3:]}")
 
 
-def test_receta_completa_baja_csv(arca_maqueta):
-    ses = _abrir(arca_maqueta, ia=False)
+def test_receta_completa_baja_csv(portal_maqueta):
+    ses = _abrir(portal_maqueta, ia=False)
     assert _esperar(ses, {"terminado", "error"}) == "terminado", ses.error
     assert len(ses.archivos) == 1
     assert ses.blob(0).decode("utf-8").startswith("Fecha;Tipo")
     assert ses.archivos[0]["nombre"].endswith(".csv")
 
 
-def test_secreto_no_queda_en_log(arca_maqueta):
-    ses = _abrir(arca_maqueta, ia=False)
+def test_secreto_no_queda_en_log(portal_maqueta):
+    ses = _abrir(portal_maqueta, ia=False)
     _esperar(ses, {"terminado", "error"})
     volcado = json.dumps(ses.resumen(), ensure_ascii=False)
     assert CLAVE not in volcado
-    assert "{{secret:clave_fiscal}}" in volcado
+    assert "{{secret:clave_portal}}" in volcado
 
 
-def test_clave_incorrecta_falla_con_motivo(arca_maqueta):
-    ses = _abrir(arca_maqueta, clave="otra", ia=False)
+def test_clave_incorrecta_falla_con_motivo(portal_maqueta):
+    ses = _abrir(portal_maqueta, clave="otra", ia=False)
     assert _esperar(ses, {"terminado", "error"}) == "error"
     assert "wait_url" in ses.error
     assert ses.resumen()["alerta"] == "Clave o usuario incorrecto"
     assert "otra" not in json.dumps(ses.resumen())
 
 
-def test_captcha_pausa_y_humano_resuelve(arca_maqueta):
-    ses = _abrir(arca_maqueta, url="login.html?captcha=1", ia=False)
+def test_captcha_pausa_y_humano_resuelve(portal_maqueta):
+    ses = _abrir(portal_maqueta, url="login.html?captcha=1", ia=False)
     assert _esperar(ses, {"esperando_humano", "error"}) == "esperando_humano"
     assert "captcha" in ses.motivo_humano
     ses.enviar({"tipo": "click_sel", "sel": "#captcha-ok"})
@@ -111,8 +111,8 @@ def test_captcha_pausa_y_humano_resuelve(arca_maqueta):
     assert _esperar(ses, {"terminado", "error"}) == "terminado", ses.error
 
 
-def test_tomar_control_y_devolver(arca_maqueta):
-    ses = _abrir(arca_maqueta, receta=[{"do": "wait", "s": 1}] + _receta(), ia=False)
+def test_tomar_control_y_devolver(portal_maqueta):
+    ses = _abrir(portal_maqueta, receta=[{"do": "wait", "s": 1}] + _receta(), ia=False)
     ses.tomar_control()
     assert _esperar(ses, {"humano", "error"}) == "humano"
     ses.enviar({"tipo": "tecla", "tecla": "Shift"})     # en modo humano los eventos entran
@@ -120,21 +120,21 @@ def test_tomar_control_y_devolver(arca_maqueta):
     assert _esperar(ses, {"terminado", "error"}) == "terminado", ses.error
 
 
-def test_evento_fuera_de_modo_humano_rechazado(arca_maqueta):
-    ses = _abrir(arca_maqueta, ia=False)
+def test_evento_fuera_de_modo_humano_rechazado(portal_maqueta):
+    ses = _abrir(portal_maqueta, ia=False)
     with pytest.raises(ba.AgentError):
         ses.enviar({"tipo": "click", "x": 1, "y": 1})
     _esperar(ses, {"terminado", "error"})
 
 
-def test_dominio_no_permitido(arca_maqueta):
+def test_dominio_no_permitido(portal_maqueta):
     receta = [{"do": "goto", "url": "https://example.com/"}]
-    ses = _abrir(arca_maqueta, receta=receta, ia=False)
+    ses = _abrir(portal_maqueta, receta=receta, ia=False)
     assert _esperar(ses, {"terminado", "error"}) == "error"
     assert "dominio" in ses.error
 
 
-def test_ia_repara_paso_roto(arca_maqueta):
+def test_ia_repara_paso_roto(portal_maqueta):
     llamadas = []
 
     def falso(system, user):
@@ -147,44 +147,44 @@ def test_ia_repara_paso_roto(arca_maqueta):
         return '{"accion": "done", "motivo": "busque"}'
 
     receta = _receta(buscar_sel="#botonQueNoExiste", objetivo_buscar="Apretar el boton Buscar")
-    ses = _abrir(arca_maqueta, receta=receta, ia=True, llm_complete=falso)
+    ses = _abrir(portal_maqueta, receta=receta, ia=True, llm_complete=falso)
     assert _esperar(ses, {"terminado", "error"}) == "terminado", ses.error
     assert len(llamadas) == 2
     assert any(p.get("origen") == "ia" for p in ses.log)
 
 
-def test_ia_ve_cuit_enmascarado(arca_maqueta):
+def test_ia_ve_cuit_enmascarado(portal_maqueta):
     vistos = []
 
     def falso(system, user):
         vistos.append(user)
         return '{"accion": "done"}'
 
-    receta = [{"do": "goal", "objetivo": "Elegir el representado 20263630743"}]
-    ses = _abrir(arca_maqueta, url="setear.html", receta=receta, ia=True, llm_complete=falso)
+    receta = [{"do": "goal", "objetivo": "Elegir el representado 20111111112"}]
+    ses = _abrir(portal_maqueta, url="setear.html", receta=receta, ia=True, llm_complete=falso)
     _esperar(ses, {"terminado", "error"})
-    assert vistos and "20263630743" not in vistos[0]
+    assert vistos and "20111111112" not in vistos[0]
     assert re.search(r"«CUIT_\d»", vistos[0])
 
 
-def test_objetivo_con_secreto_no_lo_revela_a_la_ia(arca_maqueta):
+def test_objetivo_con_secreto_no_lo_revela_a_la_ia(portal_maqueta):
     vistos = []
 
     def falso(system, user):
         vistos.append(system + user)
         return '{"accion": "done"}'
 
-    receta = [{"do": "goal", "objetivo": "Escribir la clave {{secret:clave_fiscal}} en Clave"},
+    receta = [{"do": "goal", "objetivo": "Escribir la clave {{secret:clave_portal}} en Clave"},
               {"do": "click", "sel": "#noExiste", "timeout_s": 1,
-               "objetivo": "Usar {{secret:clave_fiscal}} para {{var:cuit_login}}"}]
-    ses = _abrir(arca_maqueta, receta=receta, ia=True, llm_complete=falso)
+               "objetivo": "Usar {{secret:clave_portal}} para {{var:cuit_login}}"}]
+    ses = _abrir(portal_maqueta, receta=receta, ia=True, llm_complete=falso)
     assert _esperar(ses, {"terminado", "error"}) == "terminado", ses.error
     assert len(vistos) == 2
-    assert all(CLAVE not in v and "{{secret:clave_fiscal}}" in v for v in vistos)
+    assert all(CLAVE not in v and "{{secret:clave_portal}}" in v for v in vistos)
 
 
-def test_captura_json(arca_maqueta):
-    ses = _abrir(arca_maqueta, ia=False)
+def test_captura_json(portal_maqueta):
+    ses = _abrir(portal_maqueta, ia=False)
     _esperar(ses, {"terminado", "error"})
     assert len(ses.capturas) >= 1
     assert ses.capturas[0]["json"]["data"][0][1] == "Factura C"
@@ -192,14 +192,14 @@ def test_captura_json(arca_maqueta):
     assert ses.resumen()["capturas"] == len(ses.capturas)
 
 
-def test_tope_de_sesiones(arca_maqueta):
-    _abrir(arca_maqueta, receta=[{"do": "wait", "s": 5}], ia=False)
-    _abrir(arca_maqueta, receta=[{"do": "wait", "s": 5}], ia=False)
+def test_tope_de_sesiones(portal_maqueta):
+    _abrir(portal_maqueta, receta=[{"do": "wait", "s": 5}], ia=False)
+    _abrir(portal_maqueta, receta=[{"do": "wait", "s": 5}], ia=False)
     with pytest.raises(ba.AgentError):
-        _abrir(arca_maqueta, receta=[{"do": "wait", "s": 5}], ia=False)
+        _abrir(portal_maqueta, receta=[{"do": "wait", "s": 5}], ia=False)
 
 
-def test_ia_no_puede_tipear_el_secreto_fuera_de_un_campo_de_clave(arca_maqueta):
+def test_ia_no_puede_tipear_el_secreto_fuera_de_un_campo_de_clave(portal_maqueta):
     vistos = []
 
     def falso(system, user):
@@ -207,11 +207,11 @@ def test_ia_no_puede_tipear_el_secreto_fuera_de_un_campo_de_clave(arca_maqueta):
         if len(vistos) == 1:
             ref = next(json.loads(linea)["ref"] for linea in user.splitlines()
                        if linea.startswith("{") and '"F1:username"' in linea)
-            return json.dumps({"accion": "type", "ref": ref, "texto": "{{secret:clave_fiscal}}"})
+            return json.dumps({"accion": "type", "ref": ref, "texto": "{{secret:clave_portal}}"})
         return '{"accion": "done"}'
 
-    receta = [{"do": "goal", "objetivo": "Escribir la clave {{secret:clave_fiscal}}"}]
-    ses = _abrir(arca_maqueta, receta=receta, ia=True, llm_complete=falso)
+    receta = [{"do": "goal", "objetivo": "Escribir la clave {{secret:clave_portal}}"}]
+    ses = _abrir(portal_maqueta, receta=receta, ia=True, llm_complete=falso)
     _esperar(ses, {"terminado", "error"})
     assert len(vistos) == 2
     assert all(CLAVE not in v for v in vistos)
@@ -219,23 +219,23 @@ def test_ia_no_puede_tipear_el_secreto_fuera_de_un_campo_de_clave(arca_maqueta):
     assert CLAVE not in json.dumps(ses.resumen()) and CLAVE not in ses.url_actual
 
 
-def test_secreto_en_la_url_no_llega_a_la_ia(arca_maqueta):
+def test_secreto_en_la_url_no_llega_a_la_ia(portal_maqueta):
     vistos = []
 
     def falso(system, user):
         vistos.append(user)
         return '{"accion": "done"}'
 
-    receta = [{"do": "goto", "url": arca_maqueta.base + "portal.html?q={{secret:clave_fiscal}}"},
+    receta = [{"do": "goto", "url": portal_maqueta.base + "portal.html?q={{secret:clave_portal}}"},
               {"do": "goal", "objetivo": "mirar"}]
-    ses = _abrir(arca_maqueta, receta=receta, ia=True, llm_complete=falso)
+    ses = _abrir(portal_maqueta, receta=receta, ia=True, llm_complete=falso)
     _esperar(ses, {"terminado", "error"})
     assert vistos and all(CLAVE not in v for v in vistos)
     assert CLAVE not in ses.url_actual
 
 
-def test_receta_no_puede_escribir_el_secreto_en_un_campo_de_texto(arca_maqueta):
-    receta = [{"do": "type", "sel": "[id='F1:username']", "text": "{{secret:clave_fiscal}}"}]
-    ses = _abrir(arca_maqueta, receta=receta, ia=False)
+def test_receta_no_puede_escribir_el_secreto_en_un_campo_de_texto(portal_maqueta):
+    receta = [{"do": "type", "sel": "[id='F1:username']", "text": "{{secret:clave_portal}}"}]
+    ses = _abrir(portal_maqueta, receta=receta, ia=False)
     assert _esperar(ses, {"terminado", "error"}) == "error"
     assert "campo que no es de clave" in ses.error
