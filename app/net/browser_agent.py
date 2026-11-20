@@ -35,6 +35,7 @@ from urllib.parse import urlsplit
 from ..logging import get_logger
 from ..security.ssrf import resolve_and_validate
 from . import agent_ai, recipe
+from .irreversible import irreversible
 
 log = get_logger("fisherboy.browser_agent")
 
@@ -50,7 +51,19 @@ _TIMEOUT_DEFAULT_S = 15.0
 # `objetivo` NO va: es para la IA y se resuelve aparte, sin secretos (sustituir_variables).
 _CAMPOS_SUSTITUIBLES = ("text", "value", "url", "sel", "contains", "key")
 
-ESTADOS_VIVOS = ("arrancando", "corriendo", "esperando_humano", "humano")
+ESTADOS_VIVOS = ("arrancando", "corriendo", "esperando_humano", "humano", "esperando_ok")
+
+# Lo que dice un elemento, para decidir si tocarlo no se deshace (ver irreversible.py).
+_INFO_JS = r"""
+(el) => {
+  if (!el) return {tag: "", type: "", texto: "", ariaLabel: "", enFormulario: false};
+  const c = el.closest("button,a,[role=button],input,select,textarea,label") || el;
+  return {tag: c.tagName.toLowerCase(), type: (c.getAttribute("type") || "").toLowerCase(),
+          texto: (c.innerText || c.value || "").trim().slice(0, 120),
+          ariaLabel: (c.getAttribute("aria-label") || "").slice(0, 120), enFormulario: !!c.closest("form")};
+}
+"""
+_PUNTO_JS = "({x, y, activo}) => (" + _INFO_JS + ")(activo ? document.activeElement : document.elementFromPoint(x, y))"
 
 
 class AgentError(Exception):
@@ -63,6 +76,10 @@ class _Cerrada(Exception):
 
 class _PasoFallido(Exception):
     """Interno: un paso no opcional de la receta falló."""
+
+
+class _DijoQueNo(Exception):
+    """Interno: la persona no dio el OK para algo que no se deshace."""
 
 
 class _SesionAgente:
@@ -84,6 +101,12 @@ class _SesionAgente:
         # quien la maneje desde afuera) en vez de terminar en error.
         self.session, self.mantener, self._store = session or "", bool(mantener), store
         self.resumen_texto = ""
+        # El OK antes de lo que no se deshace: lo pide el código (irreversible.py), no la IA.
+        self.ok_pedido: dict | None = None
+        self._decision: str | None = None
+        self._ok_evento = threading.Event()
+        # Preguntas a la página desde la API (`punto`): se responden en el hilo de la sesión.
+        self._consultas: queue.Queue = queue.Queue()
 
         self.estado = "arrancando"
         self.error = ""
@@ -143,6 +166,35 @@ class _SesionAgente:
     def cerrar(self) -> None:
         self._cerrar.set()
         self._devuelto.set()
+        self._ok_evento.set()
+
+    def ok(self) -> None:
+        self._decidir("si")
+
+    def no(self) -> None:
+        self._decidir("no")
+
+    def _decidir(self, decision: str) -> None:
+        if self.estado != "esperando_ok":
+            raise AgentError("La sesión no está esperando un OK.")
+        self._decision = decision
+        self._ok_evento.set()
+
+    def consultar_js(self, js: str, args=None, timeout: float = 3.0):
+        """Evalúa `js` en la página, en el hilo de la sesión. Para leer, nunca para actuar."""
+        if self.estado not in ESTADOS_VIVOS:
+            raise AgentError("La sesión ya terminó.")
+        caja: dict = {"ev": threading.Event()}
+        self._consultas.put((js, args, caja))
+        if not caja["ev"].wait(timeout):
+            raise AgentError("La página no respondió a tiempo.")
+        if "e" in caja:
+            raise AgentError(caja["e"])
+        return caja.get("r")
+
+    def punto(self, x: float = 0, y: float = 0, activo: bool = False) -> dict:
+        """Qué elemento hay en (x, y), o el que tiene el foco: {tag, type, texto, ariaLabel, enFormulario}."""
+        return self.consultar_js(_PUNTO_JS, {"x": float(x), "y": float(y), "activo": bool(activo)})
 
     def resumen(self) -> dict:
         """Lo que se le puede devolver a cualquiera con acceso: sin secretos ni bytes."""
@@ -150,6 +202,7 @@ class _SesionAgente:
             "estado": self.estado, "error": self.error, "motivo_humano": self.motivo_humano,
             "alerta": self.alerta, "url": self.url_actual, "seq": self.seq, "ia": self.ia,
             "log": list(self.log), "archivos": list(self.archivos), "resumen": self.resumen_texto,
+            "ok_pedido": dict(self.ok_pedido) if self.ok_pedido else None,
             # Solo la cantidad: los JSON van por /api/agent/{t}/captures (el resumen se sondea).
             "capturas": len(self.capturas),
         }
@@ -204,6 +257,7 @@ class _SesionAgente:
                 cmd = self._cmds.get(timeout=_TICK_S)
             except queue.Empty:
                 cmd = None
+            self._atender_consultas()
             if cmd is not None and self.estado in ("humano", "esperando_humano"):
                 try:
                     self._aplicar_humano(cmd)
@@ -287,6 +341,37 @@ class _SesionAgente:
         except Exception:  # noqa: BLE001
             pass
         return True
+
+    def _atender_consultas(self) -> None:
+        while True:
+            try:
+                js, args, caja = self._consultas.get_nowait()
+            except queue.Empty:
+                return
+            try:
+                caja["r"] = self._page.evaluate(js, args) if args is not None else self._page.evaluate(js)
+            except Exception as e:  # noqa: BLE001
+                caja["e"] = self._limpiar(str(e).splitlines()[0][:160] if str(e) else type(e).__name__)
+            finally:
+                caja["ev"].set()
+
+    def _modo_ok(self, texto: str, motivo: str) -> bool:
+        """Frena hasta que una persona diga sí o no. True = sí."""
+        self.estado, self.ok_pedido, self._decision = "esperando_ok", {"texto": texto, "motivo": motivo}, None
+        self._ok_evento.clear()
+        self._anotar({"do": "ok", "texto": texto, "motivo": motivo, "origen": "humano"})
+        self._bombear(hasta=self._ok_evento)
+        self._vivo()
+        decision = self._decision
+        self.estado, self.ok_pedido = "corriendo", None
+        return decision == "si"
+
+    def _frenar_si_no_se_deshace(self, info: dict, accion: str, motivo: str) -> None:
+        if irreversible(info or {}, accion):
+            texto = (info or {}).get("texto") or (info or {}).get("ariaLabel") or (
+                "Enter en el formulario" if accion == "enter" else "el botón")
+            if not self._modo_ok(str(texto)[:120], motivo):
+                raise _DijoQueNo()
 
     def _modo_humano(self, estado: str, motivo: str) -> None:
         self.estado, self.motivo_humano = estado, motivo
@@ -464,6 +549,12 @@ class _SesionAgente:
             try:
                 self._accion_ia(accion)
                 entrada["ok"] = True
+            except _Cerrada:
+                raise
+            except _DijoQueNo:
+                self._anotar({**entrada, "ok": False, "error": "Diego dijo que no"})
+                self.resumen_texto = "No lo hice: Diego dijo que no."
+                return True
             except Exception as e:  # noqa: BLE001
                 entrada.update(ok=False, error=self._limpiar(str(e).splitlines()[0][:160]))
             self._anotar(entrada)
@@ -474,7 +565,9 @@ class _SesionAgente:
     def _accion_ia(self, a: dict) -> None:
         page, acc = self._page, a["accion"]
         sel = f'[data-fb-ref="{a["ref"]}"]' if "ref" in a else ""
+        motivo = agent_ai.restaurar(str(a.get("motivo") or ""), self._mapeo)[:300]
         if acc == "click":
+            self._frenar_si_no_se_deshace(page.eval_on_selector(sel, _INFO_JS), "click", motivo)
             page.click(sel, timeout=8_000)
         elif acc == "type":
             crudo = agent_ai.restaurar(str(a["texto"]), self._mapeo)
@@ -488,7 +581,11 @@ class _SesionAgente:
         elif acc == "select":
             page.select_option(sel, agent_ai.restaurar(str(a["valor"]), self._mapeo), timeout=8_000)
         elif acc == "press":
-            page.keyboard.press(str(a["tecla"])[:24])
+            tecla = str(a["tecla"])[:24]
+            if tecla.lower() == "enter":
+                activo = page.evaluate("() => (" + _INFO_JS + ")(document.activeElement)")
+                self._frenar_si_no_se_deshace(activo, "enter", motivo)
+            page.keyboard.press(tecla)
         elif acc == "goto":
             destino = agent_ai.restaurar(str(a["url"]), self._mapeo)
             self._chequear_destino(destino)

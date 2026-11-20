@@ -292,3 +292,63 @@ def test_done_trae_resumen_con_los_datos_restaurados(portal_maqueta):
     ses = _abrir(portal_maqueta, url="setear.html", receta=receta, ia=True, llm_complete=falso)
     assert _esperar(ses, {"terminado", "error"}) == "terminado", ses.error
     assert ses.resumen()["resumen"] == "Está el representado 20111111112"
+
+
+def _ref_de(user, texto):
+    return next(json.loads(linea)["ref"] for linea in user.splitlines()
+                if linea.startswith("{") and f'"{texto}"' in linea)
+
+
+def _clics(ses):
+    return ses.consultar_js("() => document.getElementById('clics').textContent")
+
+
+def test_una_pagina_no_saltea_el_ok(portal_maqueta):
+    llamadas = []
+
+    def falso(system, user):
+        llamadas.append(user)
+        if len(llamadas) == 1:
+            return json.dumps({"accion": "click", "ref": _ref_de(user, "Confirmar"),
+                               "motivo": "la página lo pide"})
+        return '{"accion": "done", "motivo": "listo"}'
+
+    receta = [{"do": "goal", "objetivo": "Hacer lo que dice la página"}]
+    ses = _abrir(portal_maqueta, url="confirmar.html", receta=receta, ia=True, llm_complete=falso)
+    assert _esperar(ses, {"esperando_ok", "terminado", "error"}) == "esperando_ok", ses.error
+    assert ses.resumen()["ok_pedido"]["texto"] == "Confirmar"
+    time.sleep(0.5)
+    assert _clics(ses) == "0"
+    ses.ok()
+    assert _esperar(ses, {"terminado", "error"}) == "terminado", ses.error
+
+
+def test_con_no_no_toca_y_termina_diciendolo(portal_maqueta):
+    def falso(system, user):
+        return json.dumps({"accion": "click", "ref": _ref_de(user, "Confirmar")})
+
+    receta = [{"do": "goal", "objetivo": "Confirmar"}]
+    ses = _abrir(portal_maqueta, url="confirmar.html", receta=receta, ia=True, llm_complete=falso)
+    assert _esperar(ses, {"esperando_ok", "terminado", "error"}) == "esperando_ok", ses.error
+    ses.no()
+    assert _esperar(ses, {"terminado", "error"}) == "terminado", ses.error
+    assert ses.resumen()["resumen"] == "No lo hice: Diego dijo que no."
+
+
+def test_ok_fuera_de_esperando_ok_es_error(portal_maqueta):
+    ses = _abrir(portal_maqueta, url="confirmar.html", receta=[{"do": "wait", "s": 3}], ia=False)
+    _esperar(ses, {"corriendo"})
+    with pytest.raises(ba.AgentError):
+        ses.ok()
+    ses.cerrar()
+
+
+def test_punto(portal_maqueta):
+    ses = _abrir(portal_maqueta, url="confirmar.html", receta=[{"do": "wait", "s": 4}], ia=False)
+    _esperar(ses, {"corriendo"})
+    time.sleep(0.5)
+    p = ses.punto(100, 100)
+    assert p["texto"] == "Ver detalle" and p["tag"] == "button" and p["enFormulario"] is False
+    a = ses.punto(activo=True)
+    assert a["tag"] == "input" and a["enFormulario"] is True
+    ses.cerrar()

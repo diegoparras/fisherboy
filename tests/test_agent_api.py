@@ -44,6 +44,13 @@ class _Falsa:
     def cerrar(self):
         self.estado = "cerrado"
 
+    def ok(self):
+        if self.estado != "esperando_ok":
+            raise ba.AgentError("no espera OK")
+
+    def no(self):
+        self.ok()
+
 
 def _abrir_falso(monkeypatch):
     capturado = {}
@@ -137,3 +144,25 @@ def test_start_pasa_session_y_mantener(client_factory, monkeypatch):
     assert capturado["session"] == "portal-guardado"
     assert capturado["mantener"] is True
     assert capturado["store"] is not None
+
+
+def test_ok_y_no_dan_409_fuera_de_esperando_ok(client_factory, monkeypatch):
+    _abrir_falso(monkeypatch)
+    c = client_factory()
+    c.post("/api/agent/start", json={"url": "https://auth.portal.example.com/", "receta": [{"do": "wait", "s": 0}]})
+    assert c.post("/api/agent/tok/ok").status_code == 409
+    assert c.post("/api/agent/tok/no").status_code == 409
+
+
+def test_con_asterisco_hace_falta_decir_los_dominios(client_factory, monkeypatch):
+    capturado = _abrir_falso(monkeypatch)
+    c = client_factory(AGENT_ALLOWED_DOMAINS="*")
+    r = c.post("/api/agent/start", json={"url": "https://ejemplo.com/", "objetivo": "x"})
+    assert r.status_code == 400
+    r = c.post("/api/agent/start", json={"url": "https://www.ejemplo.com/", "objetivo": "x",
+                                          "dominios": ["ejemplo.com"]})
+    assert r.status_code == 200, r.text
+    assert capturado["dominios"] == ["ejemplo.com"]
+    r = c.post("/api/agent/start", json={"url": "https://otro.com/", "objetivo": "x",
+                                          "dominios": ["ejemplo.com"]})
+    assert r.status_code == 400
