@@ -239,3 +239,56 @@ def test_receta_no_puede_escribir_el_secreto_en_un_campo_de_texto(portal_maqueta
     ses = _abrir(portal_maqueta, receta=receta, ia=False)
     assert _esperar(ses, {"terminado", "error"}) == "error"
     assert "campo que no es de clave" in ses.error
+
+
+class _StoreEnMemoria:
+    def __init__(self):
+        self.guardado = {}
+
+    def load(self, dueno, nombre):
+        return self.guardado.get((dueno, nombre))
+
+    def save(self, dueno, nombre, estado):
+        self.guardado[(dueno, nombre)] = estado
+        return True
+
+
+def test_sesion_guardada_se_usa_y_se_guarda(portal_maqueta):
+    store = _StoreEnMemoria()
+    s1 = _abrir(portal_maqueta, url="galleta.html?poner=1", receta=[{"do": "wait", "s": 0.3}],
+                ia=False, session="sesion-guardada", store=store)
+    assert _esperar(s1, {"terminado", "error"}) == "terminado", s1.error
+    guardado = store.load("t", "sesion-guardada")
+    assert guardado and any(c["name"] == "visto" for c in guardado["cookies"])
+    # La segunda arranca con ese login: la página ve la galleta sin volver a ponerla.
+    s2 = _abrir(portal_maqueta, url="galleta.html",
+                receta=[{"do": "wait_for", "sel": "#con-galleta", "timeout_s": 3}],
+                ia=False, session="sesion-guardada", store=store)
+    assert _esperar(s2, {"terminado", "error"}) == "terminado", s2.error
+
+
+def test_mantener_pasa_a_esperando_humano(portal_maqueta):
+    receta = [{"do": "goal", "objetivo": "Hacer algo imposible"}]
+    ses = _abrir(portal_maqueta, url="setear.html", receta=receta, ia=True,
+                 llm_complete=lambda system, user: "no sé", mantener=True)
+    assert _esperar(ses, {"esperando_humano", "error", "terminado"}) == "esperando_humano", ses.error
+    assert ses.motivo_humano.startswith("La IA no pudo: ")
+    ses.cerrar()
+
+
+def test_sin_mantener_la_falla_sigue_siendo_error(portal_maqueta):
+    receta = [{"do": "goal", "objetivo": "Hacer algo imposible"}]
+    ses = _abrir(portal_maqueta, url="setear.html", receta=receta, ia=True,
+                 llm_complete=lambda system, user: "no sé")
+    assert _esperar(ses, {"esperando_humano", "error", "terminado"}) == "error"
+
+
+def test_done_trae_resumen_con_los_datos_restaurados(portal_maqueta):
+    def falso(system, user):
+        assert "20111111112" not in user
+        return '{"accion": "done", "motivo": "Está el representado «CUIT_1»"}'
+
+    receta = [{"do": "goal", "objetivo": "Fijate qué representado aparece primero"}]
+    ses = _abrir(portal_maqueta, url="setear.html", receta=receta, ia=True, llm_complete=falso)
+    assert _esperar(ses, {"terminado", "error"}) == "terminado", ses.error
+    assert ses.resumen()["resumen"] == "Está el representado 20111111112"

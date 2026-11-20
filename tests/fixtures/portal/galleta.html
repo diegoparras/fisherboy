@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>Maqueta - galleta</title></head>
+<body>
+<h1>Galleta</h1>
+<script>
+  if (location.search.indexOf('poner') >= 0) document.cookie = 'visto=1; path=/; max-age=3600';
+  if (document.cookie.indexOf('visto=1') >= 0) {
+    var d = document.createElement('div'); d.id = 'con-galleta'; d.textContent = 'ya estuviste';
+    document.body.appendChild(d);
+  }
+</script>
+</body></html>

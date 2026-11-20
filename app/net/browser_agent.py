@@ -68,7 +68,8 @@ class _PasoFallido(Exception):
 class _SesionAgente:
     def __init__(self, url: str, *, dueno: str, receta: list, variables: dict, secretos: dict,
                  dominios: list[str], ia: bool, objetivo: str = "", llm_complete=None,
-                 allow_private: bool = False, locale: str = "es-AR") -> None:
+                 allow_private: bool = False, locale: str = "es-AR", session: str = "",
+                 mantener: bool = False, store=None) -> None:
         self.url, self.dueno = url, dueno
         self.receta = recipe.validar_receta(receta)
         self.variables = {str(k): str(v) for k, v in (variables or {}).items()}
@@ -78,6 +79,11 @@ class _SesionAgente:
         self.objetivo = objetivo or ""
         self._llm = llm_complete
         self.allow_private, self.locale = allow_private, locale
+        # `session`: el login guardado con ese nombre (el mismo store de browser_login).
+        # `mantener`: si la IA no puede, la sesión no se cierra: espera a una persona (o a
+        # quien la maneje desde afuera) en vez de terminar en error.
+        self.session, self.mantener, self._store = session or "", bool(mantener), store
+        self.resumen_texto = ""
 
         self.estado = "arrancando"
         self.error = ""
@@ -143,7 +149,7 @@ class _SesionAgente:
         return {
             "estado": self.estado, "error": self.error, "motivo_humano": self.motivo_humano,
             "alerta": self.alerta, "url": self.url_actual, "seq": self.seq, "ia": self.ia,
-            "log": list(self.log), "archivos": list(self.archivos),
+            "log": list(self.log), "archivos": list(self.archivos), "resumen": self.resumen_texto,
             # Solo la cantidad: los JSON van por /api/agent/{t}/captures (el resumen se sondea).
             "capturas": len(self.capturas),
         }
@@ -296,6 +302,22 @@ class _SesionAgente:
         if self._pedido_humano.is_set():
             self._modo_humano("humano", "Control tomado por una persona")
 
+    def _cargar_sesion(self):
+        if not (self.session and self._store is not None):
+            return None
+        try:
+            return self._store.load(self.dueno, self.session)
+        except Exception:  # noqa: BLE001 — sin store, se arranca sin login
+            return None
+
+    def _guardar_sesion(self) -> None:
+        if not (self.session and self._store is not None and self._ctx is not None):
+            return
+        try:
+            self._store.save(self.dueno, self.session, self._ctx.storage_state())
+        except Exception as e:  # noqa: BLE001 — no guardar no corta la tarea
+            log.info("agente: no se pudo guardar la sesión", extra={"error": type(e).__name__})
+
     def _alerta_visible(self) -> str:
         try:
             for el in self._page.query_selector_all("[role=alert], .alert-danger, .error"):
@@ -429,6 +451,9 @@ class _SesionAgente:
                        **{k: v for k, v in accion.items() if k != "accion"}}
             if accion["accion"] == "done":
                 self._anotar({**entrada, "ok": True})
+                # Lo que encontró, para quien pidió la tarea: con los datos de verdad.
+                self.resumen_texto = agent_ai.restaurar(
+                    self._limpiar(str(accion.get("motivo") or ""))[:2000], self._mapeo)
                 return True
             if accion["accion"] == "human":
                 self._anotar({**entrada, "ok": True})
@@ -513,24 +538,40 @@ class _SesionAgente:
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=True)
                 try:
-                    self._ctx = browser.new_context(
-                        viewport={"width": ANCHO, "height": ALTO}, locale=self.locale,
-                        accept_downloads=True)
+                    opts = {"viewport": {"width": ANCHO, "height": ALTO}, "locale": self.locale,
+                            "accept_downloads": True}
+                    previo = self._cargar_sesion()
+                    if previo:
+                        opts["storage_state"] = previo
+                    self._ctx = browser.new_context(**opts)
                     self._ctx.route("**/*", self._guardia)
                     self._ctx.on("response", self._al_responder)
                     self._page = self._ctx.new_page()
                     self._page.goto(self.url, timeout=45_000, wait_until="domcontentloaded")
                     self.estado = "corriendo"
                     self._foto()
-                    if self.receta:
-                        self._correr_receta()
-                    elif self.objetivo:
-                        if not self.ia:
-                            raise _PasoFallido("sin receta ni IA no hay nada que hacer")
-                        if not self._agente(self.objetivo):
-                            raise _PasoFallido("la IA no pudo cumplir el objetivo")
-                    self._foto()
-                    self.estado = "terminado"
+                    try:
+                        try:
+                            if self.receta:
+                                self._correr_receta()
+                            elif self.objetivo:
+                                if not self.ia:
+                                    raise _PasoFallido("sin receta ni IA no hay nada que hacer")
+                                if not self._agente(self.objetivo):
+                                    raise _PasoFallido("la IA no pudo cumplir el objetivo")
+                        except _PasoFallido as e:
+                            if not self.mantener:
+                                raise
+                            # Sigue viva: quien la maneja desde afuera (o una persona) toma
+                            # el control; cuando lo devuelve, la sesión termina.
+                            motivo = self._limpiar(str(e).splitlines()[0][:200] if str(e) else "")
+                            self._modo_humano("esperando_humano", "La IA no pudo: " + motivo)
+                        self._foto()
+                        self.estado = "terminado"
+                        self._guardar_sesion()
+                    except _Cerrada:
+                        self._guardar_sesion()
+                        raise
                 finally:
                     browser.close()
         except _Cerrada:
@@ -566,7 +607,8 @@ def _limpiar_registro() -> None:
 def abrir(url: str, *, dueno: str, receta: list, variables: dict | None = None,
           secretos: dict | None = None, dominios: list[str] | None = None, ia: bool = False,
           objetivo: str = "", llm_complete=None, allow_private: bool = False,
-          locale: str = "es-AR") -> tuple[str, _SesionAgente]:
+          locale: str = "es-AR", session: str = "", mantener: bool = False,
+          store=None) -> tuple[str, _SesionAgente]:
     with _REG_LOCK:
         _limpiar_registro()
         vivas = [s for s in _SESIONES.values() if s.estado in ESTADOS_VIVOS]
@@ -577,7 +619,8 @@ def abrir(url: str, *, dueno: str, receta: list, variables: dict | None = None,
             ses = _SesionAgente(url, dueno=dueno, receta=receta, variables=variables or {},
                                 secretos=secretos or {}, dominios=list(dominios or []), ia=ia,
                                 objetivo=objetivo, llm_complete=llm_complete,
-                                allow_private=allow_private, locale=locale)
+                                allow_private=allow_private, locale=locale, session=session,
+                                mantener=mantener, store=store)
         except ValueError as e:
             raise AgentError(str(e)) from e
         token = uuid.uuid4().hex
