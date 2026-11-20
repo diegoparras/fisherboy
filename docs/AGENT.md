@@ -91,8 +91,6 @@ vez, TTL 20 minutos.
   eliminar, publicar, suscribir, contratar o finalizar (y sus formas en inglés), o antes de un
   Enter dentro de un formulario, la sesión pasa a `esperando_ok` y espera `/ok` o `/no`. Lo decide
   código (`app/net/irreversible.py`), no la IA. El estado trae `ok_pedido: {texto, motivo}`.
-- **Dominios abiertos.** Con `AGENT_ALLOWED_DOMAINS=*` cualquier dominio sirve, pero cada sesión
-  tiene que traer su `dominios` (sin eso, 400): una lista vacía sería «sin límite».
 
 - **Secretos.** `{{secret:nombre}}` se resuelve al ejecutar el paso, adentro de la sesión. El
   log guarda el placeholder; los secretos viven solo en memoria y se borran al terminar. Nunca
@@ -100,7 +98,13 @@ vez, TTL 20 minutos.
   colara.
 - **Dominios.** Toda navegación (receta, IA, humano, pestañas nuevas) pasa por la allowlist de
   la sesión y por el chequeo SSRF; fuera de la lista, el pedido se aborta. La lista sale de
-  `AGENT_ALLOWED_DOMAINS` y el request solo puede acotarla.
+  `AGENT_ALLOWED_DOMAINS`, que tiene tres modos:
+
+  | Valor | Qué pasa |
+  |---|---|
+  | vacío (default) | La sesión de agente está **apagada**: `/api/agent/start` devuelve 403. Se enciende a mano, porque el agente opera sitios de terceros con credenciales de quien lo instala. |
+  | `dominio.com,otro.org` | Lista fija del servidor, subdominios incluidos. El pedido puede **acotarla** con su propio `dominios`, nunca ampliarla. |
+  | `*` | Cada sesión **tiene que** traer su `dominios` (sin eso, 400). No es sin límite: mueve la decisión del servidor a quien abre la sesión. |
 - **La IA** ve la página como lista de elementos (no capturas), con los CUIT, emails,
   tarjetas, teléfonos e IP reemplazados por marcadores (`«CUIT_1»`). Solo puede devolver una
   acción de una lista cerrada (`click`, `type`, `select`, `press`, `goto`, `wait`, `done`,
