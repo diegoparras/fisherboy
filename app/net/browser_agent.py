@@ -47,7 +47,8 @@ MAX_BYTES_CAPTURA = 512 * 1024
 _CALIDAD_JPEG = 70
 _TICK_S = 0.15
 _TIMEOUT_DEFAULT_S = 15.0
-_CAMPOS_SUSTITUIBLES = ("text", "value", "url", "sel", "contains", "key", "objetivo")
+# `objetivo` NO va: es para la IA y se resuelve aparte, sin secretos (sustituir_variables).
+_CAMPOS_SUSTITUIBLES = ("text", "value", "url", "sel", "contains", "key")
 
 ESTADOS_VIVOS = ("arrancando", "corriendo", "esperando_humano", "humano")
 
@@ -391,7 +392,7 @@ class _SesionAgente:
     def _agente(self, objetivo: str) -> bool:
         """Bucle observar -> decidir -> actuar. True si la IA declara el objetivo cumplido."""
         objetivo_m, self._mapeo = agent_ai.enmascarar(
-            recipe.sustituir(objetivo, self.variables, {}), self._mapeo)
+            recipe.sustituir_variables(objetivo, self.variables), self._mapeo)
         historial: list[dict] = []
         for _ in range(agent_ai.MAX_PASOS_IA):
             self._vivo()
