@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import signal
 
+from . import novedades
 from .callbacks import post_callback
 from .config import get_settings
 from .logging import get_logger, setup_logging
@@ -48,6 +49,9 @@ def handle_one(queue: JobQueue, deps: PipelineDeps, settings, job_id: str) -> So
 
 
 def run() -> None:
+    # Cartel de arranque (versión + qué cambia): lo PRIMERO que escribe el worker en los
+    # registros del contenedor (EasyPanel). Nunca tira.
+    novedades.imprimir_cartel("worker")
     settings = get_settings()
     setup_logging(settings.log_level)
     signal.signal(signal.SIGTERM, _stop)

@@ -68,6 +68,8 @@ RUN patchright install --with-deps chromium \
 
 COPY app ./app
 COPY privacy_matrix.yaml ./privacy_matrix.yaml
+# Novedades por version: el cartel de arranque (API y worker) y la UI las leen de aca.
+COPY CHANGELOG.md ./CHANGELOG.md
 
 # Hardening: corre como usuario sin privilegios (no root).
 RUN useradd -m -u 10001 fisher && chown -R fisher:fisher /app

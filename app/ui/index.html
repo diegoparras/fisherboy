@@ -208,6 +208,20 @@
   .lang-row .langsel { margin-left: auto; font-family: inherit; font-size: 12.5px; color: var(--text); background: var(--card-2); border: 1px solid var(--border); border-radius: 7px; padding: 4px 7px; cursor: pointer; }
   .lang-row .langsel:hover { border-color: var(--accent); }
 
+  /* ===== Novedades (qué cambió en cada versión, sale del CHANGELOG.md) ===== */
+  .nov-card { width: min(560px, 94vw); }
+  .nov-body { max-height: min(60vh, 520px); overflow: auto; margin-top: 4px; }
+  .nov-ver { margin: 14px 0 4px; display: flex; align-items: baseline; gap: 10px; }
+  .nov-ver b { font-family: var(--mono); font-size: 14px; }
+  .nov-ver span { color: var(--muted); font-size: 12.5px; font-family: var(--mono); }
+  .nov-sec { margin: 8px 0 2px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  .nov-list { margin: 2px 0 6px; padding-left: 18px; font-size: 13.5px; line-height: 1.5; color: var(--text); }
+  .nov-list li { margin: 3px 0; }
+  .nov-list code { font-family: var(--mono); font-size: 12px; }
+  .nov-vacio { color: var(--muted); font-size: 13.5px; }
+  button.linkbtn { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font: inherit; font-weight: 400; }
+  button.linkbtn:hover { background: none; text-decoration: underline; }
+
   /* ===== Ojito mostrar/ocultar contraseña (compartido en la suite) ===== */
   .pass-wrap { position: relative; display: flex; align-items: center; }
   .pass-wrap > input { flex: 1 1 auto; padding-right: 38px; }
@@ -588,6 +602,7 @@
             <select class="langsel" id="langsel" aria-label="Idioma"></select>
           </div>
           <button class="menu-item" id="settingsBtn" role="menuitem"><span><svg class="mi-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span><span data-i18n="nav.settings">Configuración</span></button>
+          <button class="menu-item" id="newsBtn" role="menuitem"><span><svg class="mi-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></svg></span><span data-i18n="nav.news">Novedades</span></button>
           <button class="menu-item" id="aboutBtn" role="menuitem"><span><svg class="mi-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg></span><span data-i18n="nav.about">Acerca de</span></button>
           <div class="menu-sep"></div>
           <button class="menu-item danger hidden" id="logoutBtn" role="menuitem"><span><svg class="mi-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg></span><span data-i18n="nav.logout">Salir</span></button>
@@ -1003,12 +1018,23 @@
     <h3 class="modal-tit" data-i18n="about.title" style="text-align:center;padding-right:0">Acerca de Fisherboy</h3>
     <p class="modal-cuerpo" data-i18n="about.body">Tu sidekick en la extracción de datos web: cualquier página, lista para tu IA.</p>
     <dl class="about-rows" style="text-align:left;justify-content:center;max-width:280px;margin-left:auto;margin-right:auto">
-      <dt data-i18n="about.versionLbl">Versión</dt><dd id="about-version">—</dd>
+      <dt data-i18n="about.versionLbl">Versión</dt><dd><span id="about-version">—</span> · <button type="button" class="linkbtn" id="about-news" data-i18n="news.whatChanged">Qué cambió</button></dd>
       <dt data-i18n="about.modeLbl">Modo</dt><dd id="about-mode">—</dd>
       <dt data-i18n="about.roleLbl">Rol en la suite</dt><dd data-i18n="about.role">Satélite del hub Escriba</dd>
       <dt data-i18n="about.repoLbl">Repositorio</dt><dd><a class="link" href="https://github.com/diegoparras/fisherboy" target="_blank" rel="noopener">github.com/diegoparras/fisherboy</a></dd>
     </dl>
     <p class="about-foot">Diego Parras · Ecosistema Escriba</p>
+  </div>
+</div>
+
+<!-- Modal: novedades (qué cambió desde la última versión vista; sale del CHANGELOG.md) -->
+<div class="modal-back hidden" id="novModal">
+  <div class="modal-card nov-card" role="dialog" aria-modal="true" aria-labelledby="nov-tit">
+    <button type="button" class="modal-x" id="nov-close" data-i18n-aria="about.close" aria-label="Cerrar"><svg class="ico" viewBox="0 0 24 24" style="width:14px;height:14px"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    <h3 class="modal-tit" id="nov-tit" data-i18n="news.title">Novedades</h3>
+    <p class="modal-cuerpo" id="nov-bajada"></p>
+    <div class="nov-body" id="nov-body"></div>
+    <div class="modal-acciones"><button type="button" id="nov-ok" data-i18n="news.ok">Entendido</button></div>
   </div>
 </div>
 
@@ -1128,6 +1154,59 @@ document.getElementById("about-close").addEventListener("click", closeAbout);
 aboutModal.addEventListener("click", (e) => { if (e.target === aboutModal) closeAbout(); });
 window.addEventListener("keydown", (e) => { if (e.key === "Escape" && !aboutModal.classList.contains("hidden")) closeAbout(); });
 try { applyTheme(localStorage.getItem("fb-theme") || "light"); } catch (e) { applyTheme("light"); }
+
+/* ---------- Novedades: qué cambió en cada versión (sale del CHANGELOG.md) ---------- */
+// Se avisa UNA vez por navegador después de cada actualización: localStorage guarda la
+// última versión vista. Las notas vienen de /api/novedades (misma sesión que el resto).
+const NOV_KEY = "fb-version-vista";
+const novModal = document.getElementById("novModal");
+const novT = (k, v) => (window.I18N ? window.I18N.t(k, v) : k);
+function novEsc(s) {
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+// Primero se escapa TODO el texto; recién después se convierten **negrita** y `código`.
+function novMd(s) {
+  return novEsc(s).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/`([^`]+)`/g, "<code>$1</code>");
+}
+function novHtml(versiones) {
+  return versiones.map((v) =>
+    `<div class="nov-ver"><b>v${novEsc(v.version)}</b>${v.fecha ? `<span>${novEsc(v.fecha)}</span>` : ""}</div>` +
+    v.secciones.map((s) => `<div class="nov-sec">${novMd(s.titulo)}</div><ul class="nov-list">${s.items.map((i) => `<li>${novMd(i)}</li>`).join("")}</ul>`).join("")
+  ).join("");
+}
+function verNovedades(r, bajada) {
+  document.getElementById("nov-bajada").innerHTML = bajada;
+  document.getElementById("nov-body").innerHTML = r.versiones.length
+    ? novHtml(r.versiones) : `<p class="nov-vacio">${novEsc(novT("news.empty"))}</p>`;
+  novModal.classList.remove("hidden");
+  document.getElementById("nov-ok").focus();
+}
+function closeNov() { novModal.classList.add("hidden"); }
+async function novPedir(q) {
+  const r = await fetch("/api/novedades" + q);
+  if (!r.ok) throw new Error(String(r.status));
+  return r.json();
+}
+async function avisarNovedades() {
+  let vista = null; try { vista = localStorage.getItem(NOV_KEY); } catch (e) {}
+  let r; try { r = await novPedir(vista ? "?desde=" + encodeURIComponent(vista) : ""); } catch (e) { return; }
+  try { localStorage.setItem(NOV_KEY, r.version); } catch (e) {}
+  if (vista === r.version || !r.versiones.length) return;
+  verNovedades(r, novT("news.updated", { v: novEsc(r.version) }));
+}
+async function novedadesTodas() {
+  closeMenu(); closeAbout();
+  try {
+    const r = await novPedir("?todas=1");
+    verNovedades({ ...r, versiones: r.versiones.slice(0, 15) }, novT("news.installed", { v: novEsc(r.version) }));
+  } catch (e) { /* sin sesión o sin red: no hay nada que mostrar */ }
+}
+document.getElementById("newsBtn").addEventListener("click", novedadesTodas);
+document.getElementById("about-news").addEventListener("click", novedadesTodas);
+document.getElementById("nov-close").addEventListener("click", closeNov);
+document.getElementById("nov-ok").addEventListener("click", closeNov);
+novModal.addEventListener("click", (e) => { if (e.target === novModal) closeNov(); });
+window.addEventListener("keydown", (e) => { if (e.key === "Escape" && !novModal.classList.contains("hidden")) closeNov(); });
 
 /* ---------- opciones avanzadas (toggle) ---------- */
 const advToggle = document.getElementById("adv-toggle");
@@ -1253,6 +1332,7 @@ async function checkSession() {
     COMMENTS_DL = !!d.comments_download;
     applyCaps(d.role, d.caps, d.auth_enabled);
     applyAllowedModes(d.allowed_modes);
+    setTimeout(avisarNovedades, 400);   // "Fisherboy se actualizó a la vX.Y.Z" (una vez)
   } catch (e) { showLogin(); }
 }
 
