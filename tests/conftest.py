@@ -44,6 +44,15 @@ def fake_queue() -> JobQueue:
 
 
 @pytest.fixture
+def arca_maqueta():
+    """Maqueta local de ARCA servida en 127.0.0.1 (ver tests/arca_maqueta.py)."""
+    from tests.arca_maqueta import Maqueta
+
+    with Maqueta() as m:
+        yield m
+
+
+@pytest.fixture
 def client_factory(fake_queue):
     from fastapi.testclient import TestClient
 
