@@ -188,6 +188,8 @@ def test_captura_json(arca_maqueta):
     _esperar(ses, {"terminado", "error"})
     assert len(ses.capturas) >= 1
     assert ses.capturas[0]["json"]["data"][0][1] == "Factura C"
+    # El resumen (que se sondea cada 2 s) lleva solo la cantidad, no los JSON.
+    assert ses.resumen()["capturas"] == len(ses.capturas)
 
 
 def test_tope_de_sesiones(arca_maqueta):
@@ -195,3 +197,45 @@ def test_tope_de_sesiones(arca_maqueta):
     _abrir(arca_maqueta, receta=[{"do": "wait", "s": 5}], ia=False)
     with pytest.raises(ba.AgentError):
         _abrir(arca_maqueta, receta=[{"do": "wait", "s": 5}], ia=False)
+
+
+def test_ia_no_puede_tipear_el_secreto_fuera_de_un_campo_de_clave(arca_maqueta):
+    vistos = []
+
+    def falso(system, user):
+        vistos.append(system + user)
+        if len(vistos) == 1:
+            ref = next(json.loads(linea)["ref"] for linea in user.splitlines()
+                       if linea.startswith("{") and '"F1:username"' in linea)
+            return json.dumps({"accion": "type", "ref": ref, "texto": "{{secret:clave_fiscal}}"})
+        return '{"accion": "done"}'
+
+    receta = [{"do": "goal", "objetivo": "Escribir la clave {{secret:clave_fiscal}}"}]
+    ses = _abrir(arca_maqueta, receta=receta, ia=True, llm_complete=falso)
+    _esperar(ses, {"terminado", "error"})
+    assert len(vistos) == 2
+    assert all(CLAVE not in v for v in vistos)
+    assert any(p.get("ok") is False and "clave" in p.get("error", "") for p in ses.log if p.get("origen") == "ia")
+    assert CLAVE not in json.dumps(ses.resumen()) and CLAVE not in ses.url_actual
+
+
+def test_secreto_en_la_url_no_llega_a_la_ia(arca_maqueta):
+    vistos = []
+
+    def falso(system, user):
+        vistos.append(user)
+        return '{"accion": "done"}'
+
+    receta = [{"do": "goto", "url": arca_maqueta.base + "portal.html?q={{secret:clave_fiscal}}"},
+              {"do": "goal", "objetivo": "mirar"}]
+    ses = _abrir(arca_maqueta, receta=receta, ia=True, llm_complete=falso)
+    _esperar(ses, {"terminado", "error"})
+    assert vistos and all(CLAVE not in v for v in vistos)
+    assert CLAVE not in ses.url_actual
+
+
+def test_receta_no_puede_escribir_el_secreto_en_un_campo_de_texto(arca_maqueta):
+    receta = [{"do": "type", "sel": "[id='F1:username']", "text": "{{secret:clave_fiscal}}"}]
+    ses = _abrir(arca_maqueta, receta=receta, ia=False)
+    assert _esperar(ses, {"terminado", "error"}) == "error"
+    assert "campo que no es de clave" in ses.error

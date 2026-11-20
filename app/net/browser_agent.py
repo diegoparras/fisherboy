@@ -144,7 +144,8 @@ class _SesionAgente:
             "estado": self.estado, "error": self.error, "motivo_humano": self.motivo_humano,
             "alerta": self.alerta, "url": self.url_actual, "seq": self.seq, "ia": self.ia,
             "log": list(self.log), "archivos": list(self.archivos),
-            "capturas": list(self.capturas),
+            # Solo la cantidad: los JSON van por /api/agent/{t}/captures (el resumen se sondea).
+            "capturas": len(self.capturas),
         }
 
     # --- utilidades del hilo ---------------------------------------------------
@@ -180,7 +181,7 @@ class _SesionAgente:
                 if huella != self._huella:
                     self._frame, self._huella = img, huella
                     self.seq += 1
-            self.url_actual = page.url
+            self.url_actual = self._limpiar(page.url)
         except Exception:  # noqa: BLE001 — navegando: la próxima sale
             pass
 
@@ -312,9 +313,16 @@ class _SesionAgente:
         except (TypeError, ValueError):
             return int(default_s * 1000)
 
-    def _ejecutar(self, paso: dict) -> dict:
+    def _solo_campo_de_clave(self, sel: str) -> None:
+        tipo = self._page.eval_on_selector(sel, "e => (e.type || '').toLowerCase()")
+        if tipo != "password":
+            raise _PasoFallido("la receta intentó escribir una clave en un campo que no es de clave")
+
+    def _ejecutar(self, paso: dict, original: dict | None = None) -> dict:
         """Corre UN paso ya resuelto. Devuelve datos extra para el log. Lanza ante falla."""
         do, page = paso["do"], self._page
+        if do in ("type", "fill") and "{{secret:" in str((original or paso).get("text", "")):
+            self._solo_campo_de_clave(paso["sel"])
         extra: dict = {}
         if do == "wait":
             self._bombear(segundos=float(paso.get("s", 1) or 0))
@@ -402,11 +410,13 @@ class _SesionAgente:
             except Exception:  # noqa: BLE001 — navegando
                 self._bombear(segundos=0.5)
                 continue
+            # Todo lo que va al modelo pasa por _limpiar ANTES de enmascarar: si un secreto
+            # quedo en un campo de texto o en la URL, el modelo ve «***» y no el valor.
             for el in elementos:
-                for k in ("texto", "valor", "placeholder"):
+                for k in ("texto", "valor", "placeholder", "id", "nombre"):
                     if el.get(k):
-                        el[k], self._mapeo = agent_ai.enmascarar(str(el[k]), self._mapeo)
-            url_m, self._mapeo = agent_ai.enmascarar(self._page.url, self._mapeo)
+                        el[k], self._mapeo = agent_ai.enmascarar(self._limpiar(str(el[k])), self._mapeo)
+            url_m, self._mapeo = agent_ai.enmascarar(self._limpiar(self._page.url), self._mapeo)
             system, user = agent_ai.armar_prompt(objetivo_m, url_m, elementos, historial,
                                                  sorted(self._secretos))
             try:
@@ -442,9 +452,14 @@ class _SesionAgente:
         if acc == "click":
             page.click(sel, timeout=8_000)
         elif acc == "type":
-            texto = recipe.sustituir(agent_ai.restaurar(str(a["texto"]), self._mapeo),
-                                     self.variables, self._secretos)
-            page.fill(sel, texto, timeout=8_000)
+            crudo = agent_ai.restaurar(str(a["texto"]), self._mapeo)
+            if "{{secret:" in crudo:
+                # Un secreto solo va a un campo de clave: si la IA se equivoca de campo (o el
+                # texto de la página la empuja a otro), el valor terminaría a la vista.
+                tipo = page.eval_on_selector(sel, "e => (e.type || '').toLowerCase()")
+                if tipo != "password":
+                    raise _PasoFallido("la IA intentó escribir una clave en un campo que no es de clave")
+            page.fill(sel, recipe.sustituir(crudo, self.variables, self._secretos), timeout=8_000)
         elif acc == "select":
             page.select_option(sel, agent_ai.restaurar(str(a["valor"]), self._mapeo), timeout=8_000)
         elif acc == "press":
@@ -469,7 +484,7 @@ class _SesionAgente:
             self._si_piden_control()
             entrada = {"n": i + 1, **recipe.redactar(paso), "origen": "receta"}
             try:
-                extra = self._ejecutar(self._resolver(paso))
+                extra = self._ejecutar(self._resolver(paso), paso)
                 entrada.update(extra, ok=True)
                 self._anotar(entrada)
             except _Cerrada:
