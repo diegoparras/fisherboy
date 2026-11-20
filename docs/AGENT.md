@@ -26,6 +26,9 @@ que la abrió: la de otro devuelve 404.
 | POST | `/api/agent/{t}/event` | Evento humano. 409 si la sesión no está en modo humano |
 | POST | `/api/agent/{t}/takeover` | Tomar el control |
 | POST | `/api/agent/{t}/resume` | Devolver el control a la receta / IA |
+| POST | `/api/agent/{t}/ok` | Dar el OK a lo que no se deshace (409 si no está en `esperando_ok`) |
+| POST | `/api/agent/{t}/no` | Negarlo: la IA no lo toca y la sesión termina con «No lo hice: Diego dijo que no.» |
+| GET | `/api/agent/{t}/punto?x=&y=` | Qué elemento hay en ese punto; con `activo=1`, el que tiene el foco. Sólo lee |
 | GET | `/api/agent/{t}/files/{n}` | Archivo descargado `n` |
 | GET | `/api/agent/{t}/captures` | Respuestas JSON capturadas (el estado solo trae la cantidad) |
 | DELETE | `/api/agent/{t}` | Cerrar |
@@ -60,7 +63,7 @@ Campos opcionales del `start`:
 
 El estado trae `resumen`: lo que la IA dijo al terminar (`done`), con los datos de verdad.
 
-Estados: `arrancando`, `corriendo`, `esperando_humano`, `humano`, `terminado`, `error`,
+Estados: `arrancando`, `corriendo`, `esperando_humano`, `esperando_ok`, `humano`, `terminado`, `error`,
 `cerrado`. Eventos humanos: `click {x,y}`, `doble {x,y}`, `click_sel {sel}`, `texto {texto}`,
 `tecla {tecla}`, `scroll {dy}`, `navegar {url}`, `atras`, `recargar`. El navegador mide 1280x800.
 
@@ -82,6 +85,14 @@ Cualquier paso acepta `objetivo` (lo que la IA intenta si el paso falla), `optio
 vez, TTL 20 minutos.
 
 ## Seguridad
+
+- **Lo que no se deshace.** Antes de que la IA haga clic sobre un elemento `type=submit` o cuyo
+  texto o `aria-label` dice enviar, comprar, pagar, confirmar, aceptar, transferir, borrar,
+  eliminar, publicar, suscribir, contratar o finalizar (y sus formas en inglés), o antes de un
+  Enter dentro de un formulario, la sesión pasa a `esperando_ok` y espera `/ok` o `/no`. Lo decide
+  código (`app/net/irreversible.py`), no la IA. El estado trae `ok_pedido: {texto, motivo}`.
+- **Dominios abiertos.** Con `AGENT_ALLOWED_DOMAINS=*` cualquier dominio sirve, pero cada sesión
+  tiene que traer su `dominios` (sin eso, 400): una lista vacía sería «sin límite».
 
 - **Secretos.** `{{secret:nombre}}` se resuelve al ejecutar el paso, adentro de la sesión. El
   log guarda el placeholder; los secretos viven solo en memoria y se borran al terminar. Nunca
