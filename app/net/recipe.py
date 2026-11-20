@@ -71,6 +71,16 @@ def sustituir(valor: str, variables: dict, secretos: dict) -> str:
     return _PLACEHOLDER.sub(_rep, str(valor))
 
 
+def sustituir_variables(valor: str, variables: dict) -> str:
+    """Como `sustituir`, pero deja los `{{secret:...}}` intactos. Es lo que ve la IA: un
+    objetivo puede nombrar una clave por su placeholder, nunca por su valor."""
+    def _rep(m: re.Match) -> str:
+        if m.group(1) == "secret" or m.group(2) not in variables:
+            return m.group(0)
+        return str(variables[m.group(2)])
+    return _PLACEHOLDER.sub(_rep, str(valor))
+
+
 def redactar(paso: dict) -> dict:
     """Copia del paso apta para el log: placeholders tal cual, nunca valores sustituidos."""
     return {k: v for k, v in paso.items() if k != "_resuelto"}

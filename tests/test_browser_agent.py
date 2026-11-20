@@ -167,6 +167,22 @@ def test_ia_ve_cuit_enmascarado(arca_maqueta):
     assert re.search(r"«CUIT_\d»", vistos[0])
 
 
+def test_objetivo_con_secreto_no_lo_revela_a_la_ia(arca_maqueta):
+    vistos = []
+
+    def falso(system, user):
+        vistos.append(system + user)
+        return '{"accion": "done"}'
+
+    receta = [{"do": "goal", "objetivo": "Escribir la clave {{secret:clave_fiscal}} en Clave"},
+              {"do": "click", "sel": "#noExiste", "timeout_s": 1,
+               "objetivo": "Usar {{secret:clave_fiscal}} para {{var:cuit_login}}"}]
+    ses = _abrir(arca_maqueta, receta=receta, ia=True, llm_complete=falso)
+    assert _esperar(ses, {"terminado", "error"}) == "terminado", ses.error
+    assert len(vistos) == 2
+    assert all(CLAVE not in v and "{{secret:clave_fiscal}}" in v for v in vistos)
+
+
 def test_captura_json(arca_maqueta):
     ses = _abrir(arca_maqueta, ia=False)
     _esperar(ses, {"terminado", "error"})
