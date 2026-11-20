@@ -17,7 +17,7 @@ def _registro_limpio():
 class _Falsa:
     def __init__(self, dueno="dios", estado="corriendo", **kw):
         self.dueno, self.estado = dueno, estado
-        self.seq, self.frame, self.url_actual = 1, b"JPG", "https://auth.portal.example.com/"
+        self.seq, self.frame, self.url_actual = 1, b"JPG", "https://portal.example.com/"
         self.eventos, self.kw = [], kw
         self.archivos = [{"n": 0, "nombre": "c.csv", "tipo": "text/csv", "bytes": 3}]
 
@@ -61,19 +61,19 @@ def _abrir_falso(monkeypatch):
 def test_start_requiere_auth(client_factory, monkeypatch):
     monkeypatch.setattr(auth, "identity_from_request", lambda r: (None, None))
     c = client_factory()
-    r = c.post("/api/agent/start", json={"url": "https://auth.portal.example.com/", "receta": []})
+    r = c.post("/api/agent/start", json={"url": "https://portal.example.com/", "receta": []})
     assert r.status_code == 401
 
 
 def test_resumen_no_devuelve_secretos(client_factory, monkeypatch):
     capturado = _abrir_falso(monkeypatch)
-    c = client_factory()
+    c = client_factory(AGENT_ALLOWED_DOMAINS="portal.example.com")
     r = c.post("/api/agent/start", json={
-        "url": "https://auth.portal.example.com/", "receta": [{"do": "wait", "s": 0}],
-        "secretos": {"clave_fiscal": "super-secreta"}})
+        "url": "https://portal.example.com/", "receta": [{"do": "wait", "s": 0}],
+        "secretos": {"clave_portal": "super-secreta"}})
     assert r.status_code == 200, r.text
     assert "super-secreta" not in r.text
-    assert capturado["secretos"] == {"clave_fiscal": "super-secreta"}
+    assert capturado["secretos"] == {"clave_portal": "super-secreta"}
     estado = c.get("/api/agent/tok")
     assert estado.status_code == 200 and "super-secreta" not in estado.text
 
@@ -96,9 +96,9 @@ def test_event_fuera_de_modo_humano_409(client_factory):
 
 def test_dominios_no_amplian_allowlist(client_factory, monkeypatch):
     capturado = _abrir_falso(monkeypatch)
-    c = client_factory(AGENT_ALLOWED_DOMAINS="portal.example.com,otro.example.com")
+    c = client_factory(AGENT_ALLOWED_DOMAINS="portal.example.com")
     r = c.post("/api/agent/start", json={
-        "url": "https://auth.portal.example.com/", "receta": [],
+        "url": "https://portal.example.com/", "receta": [],
         "dominios": ["portal.example.com", "evil.com"]})
     assert r.status_code == 200
     assert capturado["dominios"] == ["portal.example.com"]
