@@ -1,7 +1,7 @@
 """Qué no se deshace: enviar, comprar, pagar, borrar, publicar.
 
-Lo decide código, antes de tocar, mirando el elemento: no lo decide la IA. La misma lista vive en
-SecretarIA (`packages/core/src/navegador/irreversible.ts`): si cambia una, cambia la otra.
+Lo decide código, antes de tocar, mirando el elemento: no lo decide la IA. Si el cliente que
+maneja la sesión tiene su propia copia de esta lista, las dos se cambian juntas.
 """
 from __future__ import annotations
 
