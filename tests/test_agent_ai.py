@@ -23,10 +23,10 @@ def test_mismo_valor_mismo_marcador_y_mapeo_compartido():
 
 def test_prompt_no_incluye_valor_de_secreto():
     elementos = [{"ref": 1, "tag": "input", "tipo": "password", "id": "F1:password", "valor": ""}]
-    system, user = agent_ai.armar_prompt("Ingresar a el portal", "https://auth.portal.example.com/",
-                                         elementos, [], ["clave_fiscal"])
+    system, user = agent_ai.armar_prompt("Ingresar al portal", "https://portal.example.com/",
+                                         elementos, [], ["clave_portal"])
     assert "dato" in system.lower()
-    assert "{{secret:clave_fiscal}}" in system + user
+    assert "{{secret:clave_portal}}" in system + user
     assert "F1:password" in user
 
 

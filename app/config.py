@@ -113,7 +113,7 @@ class Settings:
         # request puede ACOTAR esta lista, nunca ampliarla. Vacía = la sesión de agente se apaga.
         self.agent_allowed_domains = [
             d.strip().lower() for d in
-            (e.get("AGENT_ALLOWED_DOMAINS", "portal.example.com,otro.example.com") or "").split(",")
+            (e.get("AGENT_ALLOWED_DOMAINS", "") or "").split(",")
             if d.strip()
         ]
         # Acciones de browser (ADR-011): operar la página antes de extraerla.
