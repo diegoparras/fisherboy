@@ -109,6 +109,13 @@ class Settings:
             "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         )
         self.browser_locale = e.get("BROWSER_LOCALE", "es-AR")
+        # Sesión de agente (docs/AGENT.md): los únicos dominios a los que puede navegar. El
+        # request puede ACOTAR esta lista, nunca ampliarla. Vacía = la sesión de agente se apaga.
+        self.agent_allowed_domains = [
+            d.strip().lower() for d in
+            (e.get("AGENT_ALLOWED_DOMAINS", "afip.gob.ar,arca.gob.ar") or "").split(",")
+            if d.strip()
+        ]
         # Acciones de browser (ADR-011): operar la página antes de extraerla.
         # TTL de las sesiones guardadas (cookies+localStorage de un login, en Redis).
         self.browser_session_ttl_s = int(e.get("BROWSER_SESSION_TTL_S", str(7 * 24 * 3600)))
