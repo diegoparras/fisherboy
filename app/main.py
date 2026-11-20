@@ -820,6 +820,8 @@ def create_app(
         if not url or not recipe.dominio_permitido(url, dominios):
             raise HTTPException(status_code=400, detail="`url` falta o está fuera de los dominios "
                                                         "permitidos para la sesión de agente.")
+        # El login guardado con ese nombre (se carga al arrancar y se guarda al terminar).
+        session = str(body.get("session") or "").strip()[:80]
         llm = None
         if body.get("ia") and settings.llm_api_base_url and settings.llm_api_key:
             from .extractors.llm_extract import LLMClient
@@ -831,7 +833,8 @@ def create_app(
                 variables=body.get("variables") or {}, secretos=body.get("secretos") or {},
                 dominios=dominios, ia=bool(llm), objetivo=str(body.get("objetivo") or ""),
                 llm_complete=llm, allow_private=settings.allow_private_targets,
-                locale=settings.browser_locale)
+                locale=settings.browser_locale, session=session, mantener=bool(body.get("mantener")),
+                store=_login_store() if session else None)
         except browser_agent.AgentError as e:
             raise HTTPException(status_code=429 if "sesiones" in str(e) else 400,
                                 detail=str(e)) from e

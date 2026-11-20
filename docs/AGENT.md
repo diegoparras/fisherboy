@@ -49,6 +49,17 @@ POST /api/agent/start
 }
 ```
 
+Campos opcionales del `start`:
+
+- `objetivo` sin `receta`: la IA trabaja sola sobre ese objetivo.
+- `session`: el nombre de un login guardado (el mismo store que `/api/browser-login`). Se carga al
+  arrancar y se vuelve a guardar al terminar o al cerrar.
+- `mantener: true`: si la IA no puede, la sesión no termina en `error`: pasa a `esperando_humano`
+  con un `motivo_humano` que empieza con `La IA no pudo: `, para que una persona (o quien la maneje
+  desde afuera) tome el control. Cuando lo devuelve, la sesión termina.
+
+El estado trae `resumen`: lo que la IA dijo al terminar (`done`), con los datos de verdad.
+
 Estados: `arrancando`, `corriendo`, `esperando_humano`, `humano`, `terminado`, `error`,
 `cerrado`. Eventos humanos: `click {x,y}`, `doble {x,y}`, `click_sel {sel}`, `texto {texto}`,
 `tecla {tecla}`, `scroll {dy}`, `navegar {url}`, `atras`, `recargar`. El navegador mide 1280x800.

@@ -125,3 +125,15 @@ def test_archivo_y_frame(client_factory):
     assert fr.status_code == 200 and fr.headers["x-agent-estado"] == "corriendo"
     assert c.get("/api/agent/tok/frame?desde=1").status_code == 204
     assert c.delete("/api/agent/tok").json() == {"ok": True}
+
+
+def test_start_pasa_session_y_mantener(client_factory, monkeypatch):
+    capturado = _abrir_falso(monkeypatch)
+    c = client_factory()
+    r = c.post("/api/agent/start", json={
+        "url": "https://auth.afip.gob.ar/", "objetivo": "Mirar algo",
+        "session": "secretaria-afip.gob.ar", "mantener": True, "ia": True})
+    assert r.status_code == 200, r.text
+    assert capturado["session"] == "secretaria-afip.gob.ar"
+    assert capturado["mantener"] is True
+    assert capturado["store"] is not None
