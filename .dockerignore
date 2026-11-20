@@ -8,6 +8,7 @@
 tests/
 docs/
 *.md
+!CHANGELOG.md
 docker-compose*.yml
 .gitignore
 .dockerignore
