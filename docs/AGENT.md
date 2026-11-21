@@ -22,12 +22,12 @@ que la abrió: la de otro devuelve 404.
 |---|---|---|
 | POST | `/api/agent/start` | Abre la sesión. Body abajo. Devuelve `{token, estado, ia, ancho, alto}` |
 | GET | `/api/agent/{t}` | Estado, log, archivos y capturas (sin secretos) |
-| GET | `/api/agent/{t}/frame?desde=N` | Última foto JPEG. 204 si no cambió desde `N`, 202 si todavía no hay |
+| GET | `/api/agent/{t}/frame?desde=N` | Última foto JPEG. 204 si no cambió desde `N`, 202 si todavía no hay. Con `esperar_ms`, espera la próxima (ver abajo) |
 | POST | `/api/agent/{t}/event` | Evento humano. 409 si la sesión no está en modo humano |
 | POST | `/api/agent/{t}/takeover` | Tomar el control |
 | POST | `/api/agent/{t}/resume` | Devolver el control a la receta / IA |
 | POST | `/api/agent/{t}/ok` | Dar el OK a lo que no se deshace (409 si no está en `esperando_ok`) |
-| POST | `/api/agent/{t}/no` | Negarlo: la IA no lo toca y la sesión termina con «No lo hice: Diego dijo que no.» |
+| POST | `/api/agent/{t}/no` | Negarlo: la IA no lo toca y la sesión termina con «No lo hice: quien maneja la sesión dijo que no.» |
 | GET | `/api/agent/{t}/punto?x=&y=` | Qué elemento hay en ese punto; con `activo=1`, el que tiene el foco. Sólo lee |
 | GET | `/api/agent/{t}/files/{n}` | Archivo descargado `n` |
 | GET | `/api/agent/{t}/captures` | Respuestas JSON capturadas (el estado solo trae la cantidad) |
@@ -62,6 +62,31 @@ Campos opcionales del `start`:
   desde afuera) tome el control. Cuando lo devuelve, la sesión termina.
 
 El estado trae `resumen`: lo que la IA dijo al terminar (`done`), con los datos de verdad.
+
+### Ver la pantalla sin demora: `esperar_ms`
+
+`GET /api/agent/{t}/frame?desde=N` contesta lo que hay y corta. Si la foto no cambió, el
+cliente recibe 204 y vuelve a preguntar unos milisegundos después — y ese ida y vuelta es
+justo lo que se siente cuando una persona está manejando: hace clic y ve el resultado bastante
+después.
+
+Con `esperar_ms` (0–5000) el pedido **se queda esperando**: vuelve en el instante en que la
+foto cambia, o con 204 al cumplirse el tiempo.
+
+```
+GET /api/agent/{t}/frame?desde=12&esperar_ms=3000
+  → 200 con el JPEG en cuanto la pantalla cambia (X-Agent-Seq: 13)
+  → 204 si pasaron los 3 s sin que cambiara (volvé a pedir con el mismo `desde`)
+```
+
+Sin el parámetro, el comportamiento es el de siempre. No hace falta acertarle al valor: pedir
+3–5 s y volver a pedir en cuanto llega la respuesta es todo lo que necesita un cliente.
+
+Medido contra un Chromium real, de que se aplica el clic a que la imagen nueva está lista:
+**135 ms de mediana (p95 255) bajan a 50 ms (p95 96)**. Por dentro no hay bucle de consulta:
+el hilo del navegador despierta a los que esperan cuando la imagen cambia. Y la espera corre
+fuera del bucle de eventos de la API, así que un pedido colgado no frena a los demás — el
+estado y los eventos siguen respondiendo mientras otro espera.
 
 Estados: `arrancando`, `corriendo`, `esperando_humano`, `esperando_ok`, `humano`, `terminado`, `error`,
 `cerrado`. Eventos humanos: `click {x,y}`, `doble {x,y}`, `click_sel {sel}`, `texto {texto}`,

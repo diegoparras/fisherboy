@@ -46,6 +46,25 @@ MAX_BYTES_ARCHIVO = 20 * 1024 * 1024
 MAX_CAPTURAS = 50
 MAX_BYTES_CAPTURA = 512 * 1024
 _CALIDAD_JPEG = 70
+# Cada cuanto se mira la pantalla. NO se baja cuando maneja una persona, y vale explicar por
+# que, porque la intuicion dice lo contrario:
+#
+#   Medido contra Chromium real, de aplicar el clic a tener la imagen (dos pasadas, n=15):
+#     cliente preguntando cada 150 ms      135 / 165 ms de mediana   (p95 255 / 232)
+#     con la espera larga de /frame         50 /  51 ms              (p95  96 /  89)
+#     y encima bajando el tick a 80 ms      65 /  54 ms              (p95 109 / 144)
+#
+#   O sea: lo que saca la demora es la espera larga (Pantalla.esperar), no el ritmo. Con la
+#   espera larga, lo que queda es el costo de sacar la captura (~44 ms, el minimo medido);
+#   duplicar la cantidad de capturas solo deja al hilo del navegador mas ocupado, y un clic
+#   que llega mientras hay una captura en curso espera a que termine. De ahi el p95 peor.
+#
+#   Lo mismo con la calidad: bajar de 70 a 55 ahorra 8% de bytes (12.1K -> 11.1K promedio en
+#   las pantallas de la maqueta), que no justifica el halo de compresion sobre el texto.
+#
+# Un tick mas corto SI daria una pantalla mas fluida cuando cambia sola (una pagina cargando
+# se veria a 12 cuadros/s en vez de 6.6). Si algun dia eso importa mas que la latencia del
+# clic, el numero esta aca y la medicion esta arriba.
 _TICK_S = 0.15
 _TIMEOUT_DEFAULT_S = 15.0
 # `objetivo` NO va: es para la IA y se resuelve aparte, sin secretos (sustituir_variables).
@@ -80,6 +99,70 @@ class _PasoFallido(Exception):
 
 class _DijoQueNo(Exception):
     """Interno: la persona no dio el OK para algo que no se deshace."""
+
+
+class Pantalla:
+    """La última foto del navegador, su número de orden, y la espera de quien la mira.
+
+    Vive aparte de la sesión porque el que escribe las fotos (el hilo del navegador) y los que
+    las miran (los pedidos HTTP) no se conocen entre ellos.
+
+    `esperar` es lo que evita que el cliente pregunte en bucle: en vez de pedir cada 150 ms y
+    recibir «no cambió nada», se queda esperando y se lo despierta en el momento en que la foto
+    cambia. Para una persona manejando el navegador, esa diferencia es la que se siente.
+    """
+
+    def __init__(self) -> None:
+        self._img = b""
+        self._huella = ""
+        self._seq = 0
+        self._cerrada = False
+        # Una Condition y no un Event: hay que despertar a TODOS los que miran, y cada uno
+        # compara contra su propio `desde`.
+        self._cond = threading.Condition()
+
+    @property
+    def seq(self) -> int:
+        with self._cond:
+            return self._seq
+
+    @property
+    def img(self) -> bytes:
+        with self._cond:
+            return self._img
+
+    def poner(self, img: bytes) -> bool:
+        """Guarda la foto SI cambió, y despierta a los que esperan. Devuelve si cambió.
+
+        La huella es lo que hace que una pantalla quieta no genere tráfico: misma imagen,
+        mismo número, nadie se despierta."""
+        huella = hashlib.blake2b(img, digest_size=16).hexdigest()
+        with self._cond:
+            if huella == self._huella:
+                return False
+            self._img, self._huella = img, huella
+            self._seq += 1
+            self._cond.notify_all()
+            return True
+
+    def esperar(self, desde: int, timeout_s: float) -> int:
+        """Espera a que haya una foto más nueva que `desde`. Devuelve el número que hay.
+
+        `timeout_s=0` no espera (es el comportamiento de siempre: decime qué hay ahora).
+        Cerrar la pantalla despierta a todos, para que nadie quede colgado hasta que venza."""
+        fin = time.monotonic() + max(0.0, timeout_s)
+        with self._cond:
+            while self._seq <= desde and not self._cerrada:
+                restante = fin - time.monotonic()
+                if restante <= 0:
+                    break
+                self._cond.wait(restante)
+            return self._seq
+
+    def cerrar(self) -> None:
+        with self._cond:
+            self._cerrada = True
+            self._cond.notify_all()
 
 
 class _SesionAgente:
@@ -119,9 +202,7 @@ class _SesionAgente:
         self._blobs: list[bytes] = []
         self.capturas: list[dict] = []
 
-        self._frame = b""
-        self._huella = ""
-        self.seq = 0
+        self.pantalla = Pantalla()
         self._lock = threading.Lock()
         self._cmds: queue.Queue = queue.Queue()
         self._pedido_humano = threading.Event()
@@ -138,8 +219,16 @@ class _SesionAgente:
     # --- lo que usa la API -----------------------------------------------------
     @property
     def frame(self) -> bytes:
-        with self._lock:
-            return self._frame
+        return self.pantalla.img
+
+    @property
+    def seq(self) -> int:
+        return self.pantalla.seq
+
+    def esperar_frame(self, desde: int, timeout_s: float) -> int:
+        """Espera a que haya una foto mas nueva que `desde`. Lo usa la espera larga de
+        /frame: bloquea un hilo, nunca el bucle de eventos de la API."""
+        return self.pantalla.esperar(desde, timeout_s)
 
     def blob(self, i: int) -> bytes:
         return self._blobs[i]
@@ -165,6 +254,7 @@ class _SesionAgente:
 
     def cerrar(self) -> None:
         self._cerrar.set()
+        self.pantalla.cerrar()   # el que este esperando una foto vuelve ya, no en 5 s
         self._devuelto.set()
         self._ok_evento.set()
 
@@ -235,11 +325,7 @@ class _SesionAgente:
             return
         try:
             img = page.screenshot(timeout=8_000, type="jpeg", quality=_CALIDAD_JPEG)
-            huella = hashlib.blake2b(img, digest_size=16).hexdigest()
-            with self._lock:
-                if huella != self._huella:
-                    self._frame, self._huella = img, huella
-                    self.seq += 1
+            self.pantalla.poner(img)   # decide si cambio y despierta a los que esperan
             self.url_actual = self._limpiar(page.url)
         except Exception:  # noqa: BLE001 — navegando: la próxima sale
             pass
@@ -552,8 +638,8 @@ class _SesionAgente:
             except _Cerrada:
                 raise
             except _DijoQueNo:
-                self._anotar({**entrada, "ok": False, "error": "Diego dijo que no"})
-                self.resumen_texto = "No lo hice: Diego dijo que no."
+                self._anotar({**entrada, "ok": False, "error": "lo negaron desde la sesión"})
+                self.resumen_texto = "No lo hice: quien maneja la sesión dijo que no."
                 return True
             except Exception as e:  # noqa: BLE001
                 entrada.update(ok=False, error=self._limpiar(str(e).splitlines()[0][:160]))
