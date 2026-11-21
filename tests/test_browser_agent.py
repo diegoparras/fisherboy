@@ -332,7 +332,7 @@ def test_con_no_no_toca_y_termina_diciendolo(portal_maqueta):
     assert _esperar(ses, {"esperando_ok", "terminado", "error"}) == "esperando_ok", ses.error
     ses.no()
     assert _esperar(ses, {"terminado", "error"}) == "terminado", ses.error
-    assert ses.resumen()["resumen"] == "No lo hice: Diego dijo que no."
+    assert ses.resumen()["resumen"] == "No lo hice: quien maneja la sesión dijo que no."
 
 
 def test_ok_fuera_de_esperando_ok_es_error(portal_maqueta):

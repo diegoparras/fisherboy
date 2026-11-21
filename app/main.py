@@ -54,6 +54,11 @@ class ProxyTestRequest(BaseModel):
     proxy: str
 
 
+# Tope de la espera larga de /api/agent/{t}/frame. Un cliente no puede hacer que el servidor
+# le retenga un pedido indefinidamente (ni ocupar un hilo del pool para siempre).
+MAX_FRAME_ESPERA_MS = 5000
+
+
 class DownloadZipRequest(BaseModel):
     urls: list[str]
     name: str | None = None
@@ -869,8 +874,25 @@ def create_app(
         return _agente(token, request).resumen()
 
     @app.get("/api/agent/{token}/frame")
-    async def agent_frame(token: str, request: Request, desde: int = 0):
+    async def agent_frame(token: str, request: Request, desde: int = 0, esperar_ms: int = 0):
+        """La última foto de la sesión. `desde` es el número que ya tiene el cliente.
+
+        `esperar_ms` (0–5000) pide ESPERA LARGA: si no hay nada más nuevo que `desde`, el pedido
+        se queda esperando y vuelve en el instante en que la foto cambia, o con 204 al
+        cumplirse el tiempo. Sin el parámetro, contesta lo que hay y listo (el cliente vuelve a
+        preguntar en unos milisegundos, que es lo que agrega el medio segundo de demora cuando
+        una persona está manejando el navegador).
+
+        La espera corre en un hilo aparte: es una espera de `threading`, y dejarla en el bucle
+        de eventos colgaría toda la API, no solo este pedido.
+        """
+        import anyio
+
         ses = _agente(token, request)
+        espera_s = min(max(int(esperar_ms), 0), MAX_FRAME_ESPERA_MS) / 1000
+        if espera_s and desde >= ses.seq:
+            await anyio.to_thread.run_sync(ses.esperar_frame, desde, espera_s)
+        # Las cabeceras se arman DESPUÉS de esperar: tienen que decir el seq que hay ahora.
         cab = {"Cache-Control": "no-store", "X-Agent-Estado": ses.estado,
                "X-Agent-Seq": str(ses.seq), "X-Agent-Url": ses.url_actual[:400]}
         if ses.seq and desde >= ses.seq:
