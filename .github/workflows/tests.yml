@@ -1,0 +1,81 @@
+name: Tests
+
+# Corre la suite en cada pull request y en cada push a main.
+#
+# Antes de esto NADA verificaba un merge: el único workflow (docker-publish) corre *después*
+# del merge y solo buildea la imagen, así que un cambio que rompía los tests llegaba a main
+# sin que nadie se enterara — y la imagen roto se publicaba igual.
+#
+# La suite es hermética (fakeredis, maqueta local, sin red real), con una excepción: los
+# tests marcados `browser` levantan un Chromium de verdad. Por eso acá se instala Chromium.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Si a un PR le llegan varios pushes seguidos, solo importa el último: las corridas viejas
+# se cancelan en vez de hacer cola.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # La versión de Python sale del Dockerfile, no de un número escrito acá: si Dependabot
+      # sube la imagen base, el CI sube con ella. Probar en una versión distinta de la que
+      # corre en producción deja pasar justo lo que rompe en el contenedor.
+      - name: Versión de Python (la misma que el Dockerfile)
+        id: py
+        run: |
+          V="$(grep -oP 'FROM python:\K[0-9]+\.[0-9]+' Dockerfile | head -1)"
+          test -n "$V" || { echo "::error::No pude leer la versión de Python del Dockerfile"; exit 1; }
+          echo "Python $V (del Dockerfile)"
+          echo "v=$V" >> "$GITHUB_OUTPUT"
+
+      - name: Preparar Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ steps.py.outputs.v }}
+          cache: pip
+          cache-dependency-path: requirements*.txt
+
+      - name: Dependencias
+        run: |
+          python -m pip install -U pip
+          pip install -r requirements-dev.txt
+
+      # yt-dlp no está en requirements.txt a propósito: el Dockerfile lo instala del canal
+      # nightly porque YouTube rompe la extracción cada pocas semanas. Sin él, tres tests de
+      # test_media fallan (el endpoint de video contesta 503 "no instalado" antes de llegar a
+      # validar el host, y /api/me reporta la capacidad en false). Instalarlo acá es lo que
+      # hace que "suite en verde" signifique algo.
+      - name: yt-dlp (nightly, como el Dockerfile)
+        run: pip install -U --pre "yt-dlp[default]"
+
+      - name: Cache de Chromium
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: chromium-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
+
+      # patchright = Chromium con stealth (tier 2); playwright = Chromium común (tier 3).
+      # Los dos, como en el Dockerfile.
+      - name: Chromium
+        run: |
+          playwright install --with-deps chromium
+          patchright install chromium
+
+      - name: pytest
+        run: pytest
