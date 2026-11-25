@@ -12,6 +12,7 @@ from __future__ import annotations
 import io
 import json
 import threading
+import time
 import zipfile
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -45,6 +46,12 @@ class _Handler(SimpleHTTPRequestHandler):
 
     def do_GET(self):  # noqa: N802
         ruta = self.path.split("?", 1)[0]
+        if ruta == "/colgado.do":   # una consulta que tarda más que lo que el paso espera
+            time.sleep(4)
+            try:
+                return self._responder(b"{}", "application/json")
+            except OSError:   # el navegador ya cerró: nadie la estaba esperando
+                return None
         if ruta == "/ajax.do":
             filas = [] if self.modo.get("vacio") else [
                 ["02/11/2026", "Factura C", "1", "125", "150000,00"],

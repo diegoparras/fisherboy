@@ -45,6 +45,8 @@ TTL_S = 20 * 60
 MAX_BYTES_ARCHIVO = 20 * 1024 * 1024
 MAX_CAPTURAS = 50
 MAX_BYTES_CAPTURA = 512 * 1024
+# Consultas en vuelo que se anotan en el log de un paso fallido (las más viejas primero).
+MAX_PENDIENTES = 5
 _CALIDAD_JPEG = 70
 # Cada cuanto se mira la pantalla. NO se baja cuando maneja una persona, y vale explicar por
 # que, porque la intuicion dice lo contrario:
@@ -196,6 +198,9 @@ class _SesionAgente:
         self.motivo_humano = ""
         self.alerta = ""
         self.url_actual = url
+        # XHR/fetch que salieron y no volvieron: si un paso falla esperando algo, lo primero
+        # que hay que saber es si la página quedó colgada de una consulta.
+        self._en_vuelo: dict = {}
         self.creada = time.monotonic()
         self.log: list[dict] = []
         self.archivos: list[dict] = []
@@ -429,6 +434,30 @@ class _SesionAgente:
             self.capturas.append({"url": resp.url[:500], "json": json.loads(cuerpo)})
         except Exception:  # noqa: BLE001
             pass
+
+    def _salio(self, req) -> None:
+        try:
+            if req.resource_type in ("xhr", "fetch"):
+                if len(self._en_vuelo) >= 200:   # una página que nunca cierra las suyas
+                    self._en_vuelo.pop(next(iter(self._en_vuelo)))
+                self._en_vuelo[req] = time.monotonic()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _volvio(self, req) -> None:
+        self._en_vuelo.pop(req, None)
+
+    def _pendientes(self) -> list[str]:
+        """Las consultas colgadas, como `GET host/ruta (3.2 s)`. Sin la query: puede traer
+        datos de la persona, y para diagnosticar alcanza con saber a dónde fue."""
+        ahora, out = time.monotonic(), []
+        for req, desde in sorted(self._en_vuelo.items(), key=lambda kv: kv[1])[:MAX_PENDIENTES]:
+            try:
+                u = urlsplit(req.url)
+                out.append(self._limpiar(f"{req.method} {u.netloc}{u.path} ({ahora - desde:.1f} s)"))
+            except Exception:  # noqa: BLE001
+                pass
+        return out
 
     def _adoptar_pestana_nueva(self) -> bool:
         paginas = [p for p in self._ctx.pages if not p.is_closed()]
@@ -719,7 +748,11 @@ class _SesionAgente:
                 raise
             except Exception as e:  # noqa: BLE001
                 motivo = self._limpiar(str(e).splitlines()[0][:200] if str(e) else type(e).__name__)
-                entrada.update(ok=False, error=motivo)
+                # La foto del momento del fallo, antes de que la IA toque nada o la sesión
+                # cierre: sin esto, la última imagen es la del paso anterior, que salió bien.
+                self._foto()
+                entrada.update(ok=False, error=motivo, url=self.url_actual,
+                               pendientes=self._pendientes())
                 self._anotar(entrada)
                 if paso.get("optional"):
                     continue
@@ -749,6 +782,9 @@ class _SesionAgente:
                     self._ctx = browser.new_context(**opts)
                     self._ctx.route("**/*", self._guardia)
                     self._ctx.on("response", self._al_responder)
+                    self._ctx.on("request", self._salio)
+                    self._ctx.on("requestfinished", self._volvio)
+                    self._ctx.on("requestfailed", self._volvio)
                     self._page = self._ctx.new_page()
                     self._page.goto(self.url, timeout=45_000, wait_until="domcontentloaded")
                     self.estado = "corriendo"

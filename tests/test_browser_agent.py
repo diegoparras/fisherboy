@@ -369,3 +369,67 @@ def test_la_pagina_principal_sigue_sin_poder_ir_a_otro_dominio(portal_maqueta):
     ses = _abrir(portal_maqueta, url="con_iframe.html", receta=receta, ia=False)
     assert _esperar(ses, {"terminado", "error"}) == "error"
     assert "dominio no permitido" in ses.error and "localhost" in ses.error
+
+
+# --- la foto del fallo ------------------------------------------------------------------
+# Cuando un paso falla, quien diagnostica necesita ver la pantalla de ESE momento. Antes, la
+# última foto era la del paso anterior (la que salió bien), y el fallo quedaba invisible.
+_RECETA_QUE_FALLA = [
+    {"do": "click", "sel": "#buscar"},
+    {"do": "wait_for", "sel": "#tabla", "timeout_s": 1.5},
+]
+
+
+def _color_al_centro(jpeg: bytes) -> tuple[int, int, int]:
+    """Decodifica la foto con el propio Chromium: así no hace falta sumar Pillow."""
+    import base64
+
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            pagina = browser.new_page()
+            rgb = pagina.evaluate("""async (src) => {
+                const img = new Image(); img.src = src; await img.decode();
+                const c = document.createElement('canvas');
+                c.width = img.width; c.height = img.height;
+                const g = c.getContext('2d'); g.drawImage(img, 0, 0);
+                const d = g.getImageData(img.width >> 1, img.height >> 1, 1, 1).data;
+                return [d[0], d[1], d[2]];
+            }""", "data:image/jpeg;base64," + base64.b64encode(jpeg).decode())
+        finally:
+            browser.close()
+    return tuple(rgb)
+
+
+def test_paso_fallido_deja_la_foto_del_momento_del_fallo(portal_maqueta):
+    ses = _abrir(portal_maqueta, url="falla.html", receta=_RECETA_QUE_FALLA, ia=False)
+    assert _esperar(ses, {"terminado", "error"}) == "error"
+    # El rojo aparece 300 ms después del clic: la foto del clic (paso ok) todavía es blanca.
+    r, g, b = _color_al_centro(ses.frame)
+    assert r > 200 and g < 80 and b < 80, (r, g, b)
+
+
+def test_paso_fallido_anota_la_url_y_las_consultas_colgadas(portal_maqueta):
+    ses = _abrir(portal_maqueta, url="falla.html", receta=_RECETA_QUE_FALLA, ia=False)
+    assert _esperar(ses, {"terminado", "error"}) == "error"
+    fallido = ses.log[-1]
+    assert fallido["do"] == "wait_for" and fallido["ok"] is False
+    assert "falla.html" in fallido["url"]
+    assert any("colgado.do" in p for p in fallido["pendientes"]), fallido
+    # Sin la query: puede traer datos de la persona (acá, un CUIT).
+    assert "20111111112" not in json.dumps(fallido)
+
+
+def test_la_foto_del_fallo_se_puede_bajar_hasta_cerrar_la_sesion(portal_maqueta, client_factory):
+    _, ses = ba.abrir(portal_maqueta.base + "falla.html", dueno="dios", receta=_RECETA_QUE_FALLA,
+                      dominios=["127.0.0.1"], allow_private=True, ia=False)
+    assert _esperar(ses, {"terminado", "error"}) == "error"
+    token = next(t for t, s in ba._SESIONES.items() if s is ses)
+    c = client_factory()
+    fr = c.get(f"/api/agent/{token}/frame?desde=0")
+    assert fr.status_code == 200 and fr.headers["x-agent-estado"] == "error"
+    assert fr.content == ses.frame
+    assert c.delete(f"/api/agent/{token}").json() == {"ok": True}
+    assert c.get(f"/api/agent/{token}/frame?desde=0").status_code == 404

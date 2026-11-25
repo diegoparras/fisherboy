@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>Búsqueda que no termina</title>
+<style>
+  body { margin: 0; background: #fff; }
+  #aviso { display: none; position: fixed; inset: 0; background: rgb(255, 0, 0); }
+</style></head>
+<body>
+  <!-- El botón lanza una consulta que no vuelve y, un rato después, la página cambia (el
+       rojo). El paso siguiente espera una tabla que nunca llega: la foto del fallo tiene que
+       mostrar el rojo, no la pantalla de antes, y el log tiene que nombrar la consulta colgada. -->
+  <button id="buscar">Buscar</button>
+  <div id="aviso"></div>
+  <script>
+    document.getElementById('buscar').onclick = () => {
+      fetch('colgado.do?cuit=20111111112').catch(() => {});
+      setTimeout(() => { document.getElementById('aviso').style.display = 'block'; }, 300);
+    };
+  </script>
+</body></html>
