@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>Portal con video</title></head>
+<body>
+  <!-- Como el carrusel de Novedades del portal real: un video incrustado de otro dominio.
+       En la maqueta, "otro dominio" es localhost (la sesión solo permite 127.0.0.1). -->
+  <iframe id="video" title="video" width="320" height="180"></iframe>
+  <button id="boton" onclick="document.body.dataset.ok='1'">Buscar</button>
+  <a id="salir" href="#">Ver el video en su sitio</a>
+  <script>
+    const ajeno = location.href.replace('127.0.0.1', 'localhost');
+    document.getElementById('video').src = ajeno.replace('con_iframe.html', 'portal.html');
+    document.getElementById('salir').href = ajeno.replace('con_iframe.html', 'portal.html');
+  </script>
+</body></html>

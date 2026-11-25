@@ -382,6 +382,23 @@ class _SesionAgente:
         if not url.startswith("about:"):
             resolve_and_validate(url, allow_private=self.allow_private)
 
+    @staticmethod
+    def _es_subframe(request) -> bool:
+        """¿La navegación es de un iframe incrustado y no de la pestaña?
+
+        Playwright marca la carga de un iframe como navegación, igual que la de la pestaña.
+        Pero un iframe ajeno no lo pidió la receta: lo trae la página (un video incrustado,
+        un mapa, un widget de chat). Tratarlo como un intento de salir del dominio tumbaba
+        la sesión por algo que la persona ni pidió ni ve.
+
+        Si no se puede saber de qué frame viene —`request.frame` puede tirar, p. ej. con
+        service workers— se lo trata como la pestaña, que es lo conservador: se bloquea.
+        """
+        try:
+            return request.frame.parent_frame is not None
+        except Exception:  # noqa: BLE001
+            return False
+
     def _guardia(self, route, request) -> None:
         """Toda navegación pasa por acá: allowlist de dominios + SSRF."""
         try:
@@ -389,7 +406,10 @@ class _SesionAgente:
                 self._chequear_destino(request.url)
             route.continue_()
         except Exception:  # noqa: BLE001
-            self._bloqueado = request.url
+            # El iframe ajeno se corta igual, pero en silencio: sin `_bloqueado` no hay paso
+            # que falle. La pestaña yéndose a otro dominio sí tiene que frenar la sesión.
+            if not self._es_subframe(request):
+                self._bloqueado = request.url
             try:
                 route.abort()
             except Exception:  # noqa: BLE001
