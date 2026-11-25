@@ -3,6 +3,20 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semántico. Cada versión publicada tiene su sección: sin ella, el CI no publica.
 
+## [1.11.1] - 2026-11-25
+
+### Corregido
+- **Un video incrustado en la página ya no tumba la sesión de agente.** Si la página traía un
+  iframe de otro dominio (un video, un mapa, un widget de chat), la sesión cortaba con
+  «dominio no permitido» y el paso que estuviera corriendo en ese momento fallaba — un paso
+  que ni siquiera navegaba a ningún lado, como escribir en un campo. El iframe ajeno se sigue
+  bloqueando, pero en silencio: no carga y la sesión sigue.
+  - Pasaba porque el guardia de dominios trata toda «navegación» igual, y cargar un iframe es
+    una navegación para el navegador. Ahora distingue la pestaña del iframe incrustado: lo que
+    pide la receta frena la sesión, lo que trae la página sola no.
+  - La pestaña yéndose a otro dominio **sigue frenando** la sesión, como antes. Si no se puede
+    determinar de qué frame viene el pedido, se lo trata como la pestaña (lo conservador).
+
 ## [1.11.0] - 2026-11-20
 
 ### Nuevo

@@ -352,3 +352,20 @@ def test_punto(portal_maqueta):
     a = ses.punto(activo=True)
     assert a["tag"] == "input" and a["enFormulario"] is True
     ses.cerrar()
+
+
+def test_iframe_de_otro_dominio_se_bloquea_sin_tumbar_la_sesion(portal_maqueta):
+    # El portal real incrusta un video de YouTube en un iframe. Cargar ese iframe es una
+    # "navegación" para Playwright, pero no la decide la receta: se aborta en silencio y el
+    # paso siguiente no falla por eso.
+    receta = [{"do": "wait", "s": 1.5}, {"do": "click", "sel": "#boton"}]
+    ses = _abrir(portal_maqueta, url="con_iframe.html", receta=receta, ia=False)
+    assert _esperar(ses, {"terminado", "error"}) == "terminado", ses.error
+    assert all(paso.get("ok") for paso in ses.log), ses.log
+
+
+def test_la_pagina_principal_sigue_sin_poder_ir_a_otro_dominio(portal_maqueta):
+    receta = [{"do": "click", "sel": "#salir"}, {"do": "wait", "s": 1}]
+    ses = _abrir(portal_maqueta, url="con_iframe.html", receta=receta, ia=False)
+    assert _esperar(ses, {"terminado", "error"}) == "error"
+    assert "dominio no permitido" in ses.error and "localhost" in ses.error
