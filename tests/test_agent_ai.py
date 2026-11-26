@@ -48,3 +48,9 @@ def test_rechaza_click_sin_ref():
         agent_ai.parsear_accion('{"accion": "type", "ref": 2}')
     with pytest.raises(LLMError):
         agent_ai.parsear_accion('no es json')
+
+
+def test_la_ia_no_puede_pedir_fetch():
+    # `fetch` es solo de receta: la IA no elige a qué URL pedirle datos con la sesión puesta.
+    with pytest.raises(LLMError):
+        agent_ai.parsear_accion('{"accion": "fetch", "url": "https://otro.example/"}')

@@ -104,10 +104,49 @@ Todos los de [ACTIONS.md](ACTIONS.md) salvo `eval`, más:
 | `capture` | `pattern` | Desde ese paso, guarda las respuestas JSON cuyo URL matchea la regex |
 | `human_if` | `sel`, `motivo?` | Si el selector está visible, pausa y pide una persona |
 | `goal` | `objetivo` | Sub-objetivo en lenguaje natural para la IA |
+| `fetch` | `url`, `guardar?`, `name?` | GET desde la página, con su sesión; la respuesta tiene que ser JSON (ver abajo) |
 
 Cualquier paso acepta `objetivo` (lo que la IA intenta si el paso falla), `optional`,
 `timeout_s`. Tope: 60 pasos de receta y 30 acciones de IA por objetivo. 2 sesiones vivas a la
 vez, TTL 20 minutos.
+
+### `fetch`: pedirle los datos al portal en vez de leer la pantalla
+
+Muchos portales arman sus tablas con consultas AJAX que devuelven JSON. Una vez logueado, es
+más rápido y más estable pedir ese JSON que manejar calendarios, botones y paginadores:
+
+```json
+[
+  {"do": "goto", "url": "https://portal.example.com/consultas/emitidos.do"},
+  {"do": "fetch", "url": "ajax.do?f=generar&desde={{var:desde}}", "guardar": "consulta"},
+  {"do": "fetch", "url": "ajax.do?f=resultados&id={{res:consulta.datos.id}}", "name": "emitidos.json"}
+]
+```
+
+- **Corre adentro de la página** (`fetch` del navegador, `credentials: "include"`, con
+  `X-Requested-With: XMLHttpRequest`): sale con las cookies, el `Origin` y el `Referer` de la
+  sesión, igual que las consultas del propio portal. Solo `GET`.
+- `url` puede ser relativa: se resuelve contra la URL actual de la página. El destino pasa por
+  la allowlist de la sesión y el chequeo SSRF, y **las redirecciones no se siguen**: una podría
+  llevar el pedido, con la sesión puesta, a un host que nadie chequeó.
+- La respuesta tiene que ser 2xx y JSON. Si no, el paso falla diciendo qué vino, por ejemplo
+  `la respuesta no es JSON (HTTP 200, HTML: "Sesión expirada")` — así se nota una sesión vencida
+  que el portal contesta con una página de login y status 200.
+- `guardar` deja el JSON en la sesión. Los pasos que siguen lo usan con
+  `{{res:nombre.ruta.con.puntos}}` (un tramo numérico es un índice de lista). En una `url` el
+  valor va codificado. Una ruta que no existe hace fallar el paso, nombrándola.
+- `name` guarda el cuerpo como archivo de la sesión (`/files/{n}`, tope 20 MB), como `download`.
+- `timeout_s` por defecto es 30.
+- El log lleva la `url` de la receta (con sus placeholders), el status y los bytes: **nunca el
+  cuerpo**. La IA no puede pedir un `fetch`, y el job declarativo (ACTIONS.md) tampoco lo tiene:
+  ahí no hay allowlist de sesión, y sería un SSRF.
+
+### Cuando un paso falla
+
+En el momento del fallo se saca una foto, antes de que la IA intente nada o la sesión cierre:
+`GET /frame` devuelve **esa** pantalla (también con la sesión en `error`, hasta el `DELETE`).
+La entrada del paso en el log suma `pagina` (la URL en la que estaba) y `pendientes`: las
+consultas XHR/fetch que salieron y no volvieron, como `GET host/ruta (12.3 s)`, sin la query.
 
 ## Seguridad
 
@@ -121,8 +160,9 @@ vez, TTL 20 minutos.
   log guarda el placeholder; los secretos viven solo en memoria y se borran al terminar. Nunca
   van a Redis ni vuelven por la API, y cualquier mensaje de error se limpia por si un valor se
   colara.
-- **Dominios.** Toda navegación (receta, IA, humano, pestañas nuevas) pasa por la allowlist de
-  la sesión y por el chequeo SSRF; fuera de la lista, el pedido se aborta. La lista sale de
+- **Dominios.** Toda navegación (receta, IA, humano, pestañas nuevas) y todo `fetch` de receta
+  pasa por la allowlist de la sesión y por el chequeo SSRF; fuera de la lista, el pedido se
+  aborta. Un iframe de otro dominio que trae la página sola no carga, pero no corta la sesión. La lista sale de
   `AGENT_ALLOWED_DOMAINS`, que tiene tres modos:
 
   | Valor | Qué pasa |
