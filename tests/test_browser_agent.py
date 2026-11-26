@@ -496,3 +496,33 @@ def test_res_con_ruta_inexistente_falla_nombrandola(portal_maqueta):
     ses = _abrir(portal_maqueta, url="menu.html", receta=receta, ia=False)
     assert _esperar(ses, {"terminado", "error"}) == "error"
     assert "consulta.datos.noHay" in ses.error
+
+
+# --- redirecciones (auditoria externa 2026-11-26, P-02) ------------------------------------
+# El guardia de `context.route` no ve los saltos de un 301/302: el navegador seguia la
+# redireccion y quedaba en un host fuera de la lista, con la sesion del portal abierta.
+
+def test_una_redireccion_a_otro_dominio_corta_la_receta(portal_maqueta):
+    receta = [{"do": "goto", "url": portal_maqueta.base + "redirige"}, {"do": "wait", "s": 0.5}]
+    ses = _abrir(portal_maqueta, receta=receta, ia=False)
+    assert _esperar(ses, {"terminado", "error"}) == "error"
+    assert "dominio no permitido" in ses.error and "localhost" in ses.error
+
+
+def test_si_la_url_inicial_redirige_afuera_la_sesion_no_arranca(portal_maqueta):
+    ses = _abrir(portal_maqueta, url="redirige", receta=[{"do": "wait", "s": 0.5}], ia=False)
+    assert _esperar(ses, {"terminado", "error"}) == "error"
+    assert "dominio no permitido" in ses.error and "localhost" in ses.error
+
+
+def test_en_modo_humano_una_redireccion_afuera_no_deja_la_pagina_ajena(portal_maqueta):
+    ses = _abrir(portal_maqueta, receta=[{"do": "wait", "s": 1}] + _receta(), ia=False)
+    ses.tomar_control()
+    assert _esperar(ses, {"humano", "error"}) == "humano"
+    ses.enviar({"tipo": "navegar", "url": portal_maqueta.base + "redirige"})
+    fin = time.monotonic() + 10
+    while time.monotonic() < fin and "localhost" not in (ses.alerta or ""):
+        time.sleep(0.1)
+    assert "localhost" not in (ses.url_actual or ""), ses.url_actual
+    assert "dominio no permitido" in (ses.alerta or ""), ses.alerta
+    ses.cerrar()
