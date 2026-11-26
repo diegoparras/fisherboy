@@ -90,6 +90,15 @@ class _Handler(SimpleHTTPRequestHandler):
                 ["10/11/2026", "Factura B", "2", "48", "1.210,00"],
             ]
             return self._responder(json.dumps({"data": filas}).encode(), "application/json")
+        if ruta == "/redirige":
+            # 302 desde el host permitido (127.0.0.1) hacia otro host del mismo servidor
+            # (localhost), que la sesion no permite: lo que haria una redireccion abierta.
+            puerto = self.server.server_address[1]
+            self.send_response(302)
+            self.send_header("Location", f"http://localhost:{puerto}/portal.html")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return None
         if ruta == "/export.csv":
             datos = _csv(bool(self.modo.get("vacio")))
             if self.modo.get("zip"):

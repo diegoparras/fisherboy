@@ -3,6 +3,20 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semántico. Cada versión publicada tiene su sección: sin ella, el CI no publica.
 
+## [1.12.1] - 2026-11-26
+
+### Seguridad
+- **Una redirección ya no saca la sesión de agente de los dominios permitidos.** El guardia de
+  dominios revisaba cada navegación que se pedía, pero no los saltos de una redirección HTTP
+  (301/302): si un host permitido redirigía a otro, el navegador lo seguía y la sesión, ya
+  logueada en el portal, quedaba en un dominio ajeno. Hallazgo P-02 de la auditoría de Arcanum.
+  - Ahora se vigila cada navegación de la pestaña (también la que llega por una redirección y la
+    de pestañas nuevas), y la URL se revisa otra vez al terminar cada paso.
+  - En una receta o con la IA, la sesión corta con «dominio no permitido».
+  - Si la URL inicial redirige afuera, la sesión no arranca.
+  - En modo humano, la pestaña vuelve a una página en blanco y queda el aviso; la sesión sigue
+    en manos de la persona.
+
 ## [1.12.0] - 2026-11-25
 
 ### Nuevo

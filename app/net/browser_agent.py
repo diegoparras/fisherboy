@@ -376,6 +376,20 @@ class _SesionAgente:
         except Exception:  # noqa: BLE001 — navegando: la próxima sale
             pass
 
+    def _salir_si_quedo_afuera(self) -> None:
+        """Modo humano: si un click o una redirección dejó la pestaña fuera de los dominios, se la
+        lleva a about:blank y se avisa. La sesión sigue en manos de la persona."""
+        self._revisar_url_actual()
+        if not self._bloqueado:
+            return
+        host = urlsplit(self._bloqueado).hostname or self._bloqueado
+        self._bloqueado = ""
+        self.alerta = f"dominio no permitido en esta sesión: {host}"
+        try:
+            self._page.goto("about:blank", timeout=10_000)
+        except Exception:  # noqa: BLE001
+            pass
+
     def _bombear(self, segundos: float | None = None, hasta: threading.Event | None = None) -> None:
         """Procesa eventos humanos y saca fotos hasta que pase el tiempo o se dé el evento."""
         fin = time.monotonic() + segundos if segundos is not None else None
@@ -395,6 +409,7 @@ class _SesionAgente:
                     self._aplicar_humano(cmd)
                 except Exception as e:  # noqa: BLE001 — un click fallido no corta nada
                     log.info("agente: evento humano falló", extra={"error": type(e).__name__})
+                self._salir_si_quedo_afuera()
             self._foto()
 
     def _aplicar_humano(self, cmd: dict) -> None:
@@ -427,6 +442,45 @@ class _SesionAgente:
             raise _PasoFallido(f"dominio no permitido en esta sesión: {host}")
         if not url.startswith("about:"):
             resolve_and_validate(url, allow_private=self.allow_private)
+
+    # Esquemas internos del navegador: no son "salir del dominio" (about:blank al abrir una
+    # pestaña, chrome-error cuando el guardia aborta una navegación).
+    _ESQUEMAS_INTERNOS = ("about:", "chrome-error:", "data:", "blob:")
+
+    def _fuera_de_dominio(self, url: str) -> bool:
+        return bool(url) and not url.startswith(self._ESQUEMAS_INTERNOS) \
+            and not recipe.dominio_permitido(url, self.dominios)
+
+    def _al_navegar(self, frame) -> None:
+        """Toda navegación del frame principal, también la que llega por una redirección HTTP.
+
+        El guardia de `context.route` no ve los saltos de un 301/302: Chromium sigue la
+        redirección sin volver a pasar por la ruta. Sin esto, una redirección abierta en un host
+        permitido dejaba a la sesión —ya logueada en el portal— en un dominio ajeno.
+        """
+        try:
+            if frame.parent_frame is not None:
+                return
+            url = frame.url
+        except Exception:  # noqa: BLE001
+            return
+        if self._fuera_de_dominio(url):
+            self._bloqueado = url
+
+    def _revisar_url_actual(self) -> None:
+        """Segunda barrera: la URL de la pestaña tiene que seguir en la lista de dominios."""
+        try:
+            url = self._page.url if self._page is not None else ""
+        except Exception:  # noqa: BLE001
+            return
+        if self._fuera_de_dominio(url):
+            self._bloqueado = self._bloqueado or url
+
+    def _vigilar(self, page) -> None:
+        try:
+            page.on("framenavigated", self._al_navegar)
+        except Exception:  # noqa: BLE001
+            pass
 
     @staticmethod
     def _es_subframe(request) -> bool:
@@ -675,6 +729,7 @@ class _SesionAgente:
             if out.failed:
                 raise _PasoFallido(out.log[-1].get("error", out.failed) if out.log else out.failed)
         self._adoptar_pestana_nueva()
+        self._revisar_url_actual()
         if self._bloqueado:
             host = urlsplit(self._bloqueado).hostname or self._bloqueado
             self._bloqueado = ""
@@ -814,6 +869,7 @@ class _SesionAgente:
             self._bombear(segundos=1.5)
         self._bombear(segundos=0.3)
         self._adoptar_pestana_nueva()
+        self._revisar_url_actual()
         if self._bloqueado:
             host = urlsplit(self._bloqueado).hostname or self._bloqueado
             self._bloqueado = ""
@@ -870,8 +926,15 @@ class _SesionAgente:
                     self._ctx.on("request", self._salio)
                     self._ctx.on("requestfinished", self._volvio)
                     self._ctx.on("requestfailed", self._volvio)
+                    self._ctx.on("page", self._vigilar)  # pestañas nuevas (popups, target=_blank)
                     self._page = self._ctx.new_page()
+                    self._vigilar(self._page)
                     self._page.goto(self.url, timeout=45_000, wait_until="domcontentloaded")
+                    self._revisar_url_actual()
+                    if self._bloqueado:  # la URL inicial redirigió afuera
+                        host = urlsplit(self._bloqueado).hostname or self._bloqueado
+                        self._bloqueado = ""
+                        raise _PasoFallido(f"dominio no permitido en esta sesión: {host}")
                     self.estado = "corriendo"
                     self._foto()
                     try:
