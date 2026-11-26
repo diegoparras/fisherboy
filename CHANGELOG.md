@@ -3,6 +3,27 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semántico. Cada versión publicada tiene su sección: sin ella, el CI no publica.
 
+## [1.12.0] - 2026-11-25
+
+### Nuevo
+- **Verbo de receta `fetch`: pedirle el JSON al portal en vez de manejar la pantalla.** Una vez
+  logueada, la sesión puede hacer un GET desde adentro de la página, con sus cookies, y recibir
+  los datos que el portal usa para armar sus tablas. Un recorrido de calendario, botón, tabla y
+  exportación pasa a ser una o dos consultas de menos de un segundo.
+  - `guardar` deja la respuesta para los pasos que siguen, que la usan con
+    `{{res:nombre.ruta}}` (por ejemplo, el id de una consulta que hay que pedir después).
+    `name` la guarda como archivo de la sesión.
+  - Si la respuesta no es JSON, el paso falla diciendo qué vino: una sesión vencida que el
+    portal contesta con su página de login y status 200 se ve como tal, no como datos vacíos.
+  - Pasa por la misma allowlist de dominios y el mismo chequeo SSRF que la navegación, y no
+    sigue redirecciones. El cuerpo no va al log. Es solo de receta: la IA no puede pedirlo.
+- **Cuando un paso falla, la foto es la del fallo.** Antes, la última imagen de la sesión era la
+  del paso anterior —el que salió bien— y el momento del error no se veía. Ahora se saca una
+  foto apenas falla, y se puede bajar también con la sesión en `error`, hasta cerrarla.
+  - La entrada del paso en el log suma `pagina` (en qué URL estaba) y `pendientes`: las
+    consultas que salieron y no volvieron, con cuánto llevaban esperando. Un paso que espera
+    una tabla y vence porque la página quedó colgada de una consulta ahora lo dice.
+
 ## [1.11.1] - 2026-11-25
 
 ### Corregido

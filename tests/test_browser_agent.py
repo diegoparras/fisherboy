@@ -416,7 +416,7 @@ def test_paso_fallido_anota_la_url_y_las_consultas_colgadas(portal_maqueta):
     assert _esperar(ses, {"terminado", "error"}) == "error"
     fallido = ses.log[-1]
     assert fallido["do"] == "wait_for" and fallido["ok"] is False
-    assert "falla.html" in fallido["url"]
+    assert "falla.html" in fallido["pagina"]
     assert any("colgado.do" in p for p in fallido["pendientes"]), fallido
     # Sin la query: puede traer datos de la persona (acá, un CUIT).
     assert "20111111112" not in json.dumps(fallido)
@@ -433,3 +433,66 @@ def test_la_foto_del_fallo_se_puede_bajar_hasta_cerrar_la_sesion(portal_maqueta,
     assert fr.content == ses.frame
     assert c.delete(f"/api/agent/{token}").json() == {"ok": True}
     assert c.get(f"/api/agent/{token}/frame?desde=0").status_code == 404
+
+
+# --- fetch: pedirle JSON al portal con la sesión de la página -----------------------------
+def test_fetch_guarda_y_encadena_al_siguiente(portal_maqueta):
+    receta = [
+        {"do": "fetch", "url": "api/consulta.json", "guardar": "consulta"},
+        {"do": "fetch", "url": "api/resultados.json?id={{res:consulta.datos.idConsulta}}",
+         "name": "resultados.json"},
+    ]
+    ses = _abrir(portal_maqueta, url="menu.html", receta=receta, ia=False)
+    assert _esperar(ses, {"terminado", "error"}) == "terminado", (ses.error, ses.log)
+    assert all(p["ok"] for p in ses.log), ses.log
+    assert ses.log[1]["status"] == 200 and ses.log[1]["bytes"] > 0
+    archivo = ses.archivos[-1]
+    assert archivo["nombre"] == "resultados.json" and archivo["tipo"] == "application/json"
+    assert json.loads(ses.blob(archivo["n"]))["datos"]["data"][0][1] == "Factura C"
+
+
+def test_fetch_no_deja_el_cuerpo_en_el_log(portal_maqueta):
+    receta = [{"do": "fetch", "url": "api/consulta.json", "guardar": "consulta"}]
+    ses = _abrir(portal_maqueta, url="menu.html", receta=receta, ia=False)
+    assert _esperar(ses, {"terminado", "error"}) == "terminado", ses.error
+    assert "idConsulta" not in json.dumps(ses.log)
+
+
+def test_fetch_que_recibe_html_falla_diciendo_que_vino(portal_maqueta):
+    receta = [{"do": "fetch", "url": "api/expirada"}]
+    ses = _abrir(portal_maqueta, url="menu.html", receta=receta, ia=False)
+    assert _esperar(ses, {"terminado", "error"}) == "error"
+    assert "no es JSON" in ses.error and "HTTP 200" in ses.error
+    assert "Sesión expirada" in ses.error
+
+
+def test_fetch_con_error_http_falla(portal_maqueta):
+    receta = [{"do": "fetch", "url": "api/resultados.json?id=7"}]
+    ses = _abrir(portal_maqueta, url="menu.html", receta=receta, ia=False)
+    assert _esperar(ses, {"terminado", "error"}) == "error"
+    assert "HTTP 400" in ses.error
+
+
+def test_fetch_fuera_de_la_allowlist_falla(portal_maqueta):
+    ajeno = portal_maqueta.base.replace("127.0.0.1", "localhost") + "api/consulta.json"
+    ses = _abrir(portal_maqueta, url="menu.html", receta=[{"do": "fetch", "url": ajeno}], ia=False)
+    assert _esperar(ses, {"terminado", "error"}) == "error"
+    assert "dominio no permitido" in ses.error and "localhost" in ses.error
+
+
+def test_fetch_no_sigue_redirecciones(portal_maqueta):
+    # Una redirección podría llevar el pedido a un host que nadie chequeó (SSRF): se corta.
+    ses = _abrir(portal_maqueta, url="menu.html", receta=[{"do": "fetch", "url": "api/redirige"}],
+                 ia=False)
+    assert _esperar(ses, {"terminado", "error"}) == "error"
+    assert "redirig" in ses.error
+
+
+def test_res_con_ruta_inexistente_falla_nombrandola(portal_maqueta):
+    receta = [
+        {"do": "fetch", "url": "api/consulta.json", "guardar": "consulta"},
+        {"do": "fetch", "url": "api/resultados.json?id={{res:consulta.datos.noHay}}"},
+    ]
+    ses = _abrir(portal_maqueta, url="menu.html", receta=receta, ia=False)
+    assert _esperar(ses, {"terminado", "error"}) == "error"
+    assert "consulta.datos.noHay" in ses.error

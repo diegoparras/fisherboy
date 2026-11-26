@@ -30,7 +30,7 @@ import re
 import threading
 import time
 import uuid
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 
 from ..logging import get_logger
 from ..security.ssrf import resolve_and_validate
@@ -70,6 +70,44 @@ _CALIDAD_JPEG = 70
 _TICK_S = 0.15
 _TIMEOUT_DEFAULT_S = 15.0
 # `objetivo` NO va: es para la IA y se resuelve aparte, sin secretos (sustituir_variables).
+# El fetch de la receta, corriendo en la página. Devuelve un objeto plano y nunca tira: así
+# Python decide el mensaje. `redirect: "manual"` es lo que no deja seguir una redirección.
+_JS_FETCH = """async ({url, ms, max}) => {
+  const ctl = new AbortController();
+  const reloj = setTimeout(() => ctl.abort(), ms);
+  try {
+    const r = await fetch(url, {
+      method: "GET", credentials: "include", redirect: "manual", signal: ctl.signal,
+      headers: {"X-Requested-With": "XMLHttpRequest",
+                "Accept": "application/json, text/javascript, */*; q=0.01"},
+    });
+    if (r.type === "opaqueredirect" || (r.status >= 300 && r.status < 400)) {
+      return {redirigio: true, status: r.status};
+    }
+    const text = await r.text();
+    if (text.length > max) return {grande: true, status: r.status};
+    return {status: r.status, contentType: r.headers.get("content-type") || "", text};
+  } catch (e) {
+    return {error: e && e.name === "AbortError" ? "se cumplió el tiempo" : String(e)};
+  } finally {
+    clearTimeout(reloj);
+  }
+}"""
+
+
+def _asomo(texto: str, tipo: str) -> str:
+    """Qué vino en vez de JSON, en pocas palabras: el <title> si es HTML, o el primer texto."""
+    if not texto.strip():
+        return "cuerpo vacío"
+    if "html" in tipo or texto.lstrip().startswith("<"):
+        m = re.search(r"<title[^>]*>(.*?)</title>", texto, re.I | re.S)
+        visible = m.group(1) if m and m.group(1).strip() else re.sub(
+            r"<(script|style)\b.*?</\1>|<[^>]+>", " ", texto, flags=re.I | re.S)
+        visible = " ".join(visible.split())[:120]
+        return f'HTML: "{visible}"' if visible else "HTML"
+    return f'"{" ".join(texto.split())[:120]}"'
+
+
 _CAMPOS_SUSTITUIBLES = ("text", "value", "url", "sel", "contains", "key")
 
 ESTADOS_VIVOS = ("arrancando", "corriendo", "esperando_humano", "humano", "esperando_ok")
@@ -205,6 +243,8 @@ class _SesionAgente:
         self.log: list[dict] = []
         self.archivos: list[dict] = []
         self._blobs: list[bytes] = []
+        # Lo que guardó cada `fetch` con `guardar`, para los `{{res:...}}` de los pasos que siguen.
+        self._res: dict[str, object] = {}
         self.capturas: list[dict] = []
 
         self.pantalla = Pantalla()
@@ -313,7 +353,8 @@ class _SesionAgente:
         out = dict(paso)
         for k in _CAMPOS_SUSTITUIBLES:
             if isinstance(out.get(k), str):
-                out[k] = recipe.sustituir(out[k], self.variables, self._secretos)
+                v = recipe.sustituir_res(out[k], self._res, url=(k == "url"))
+                out[k] = recipe.sustituir(v, self.variables, self._secretos)
         return out
 
     def _anotar(self, entrada: dict) -> None:
@@ -583,6 +624,8 @@ class _SesionAgente:
                 self._bombear(segundos=0.2)
             self._chequear_destino(self._page.url)
             extra["url"] = self._page.url
+        elif do == "fetch":
+            extra.update(self._fetch(paso))
         elif do == "download":
             with page.expect_download(timeout=self._ms(paso, 60.0)) as info:
                 page.click(paso["sel"], timeout=self._ms(paso))
@@ -636,6 +679,48 @@ class _SesionAgente:
             host = urlsplit(self._bloqueado).hostname or self._bloqueado
             self._bloqueado = ""
             raise _PasoFallido(f"dominio no permitido en esta sesión: {host}")
+        return extra
+
+    def _fetch(self, paso: dict) -> dict:
+        """GET a `url` desde ADENTRO de la página: sale con las cookies, el Origin y el Referer
+        de la sesión, como las consultas AJAX del propio portal.
+
+        El guardia de dominios solo mira navegaciones, y esto no lo es: por eso el destino se
+        chequea acá (allowlist + SSRF) y las redirecciones no se siguen — una podría llevar el
+        pedido, con la sesión puesta, a un host que nadie chequeó."""
+        url = urljoin(self._page.url, paso["url"])
+        if urlsplit(url).scheme not in ("http", "https"):
+            raise _PasoFallido("fetch solo pide http(s)")
+        self._chequear_destino(url)
+        r = self._page.evaluate(_JS_FETCH, {"url": url, "ms": self._ms(paso, 30.0),
+                                            "max": MAX_BYTES_ARCHIVO})
+        if r.get("error"):
+            raise _PasoFallido(f"el fetch no salió: {r['error'][:150]}")
+        if r.get("redirigio"):
+            raise _PasoFallido("la respuesta redirigió a otro lado y un fetch no sigue "
+                               "redirecciones (puede ser la sesión vencida)")
+        if r.get("grande"):
+            raise _PasoFallido(f"la respuesta pesa más de {MAX_BYTES_ARCHIVO} bytes")
+        texto, status = r.get("text") or "", int(r.get("status") or 0)
+        cuerpo = texto.encode("utf-8")
+        datos = None
+        try:
+            datos = json.loads(texto)
+        except ValueError:
+            pass
+        if not 200 <= status < 300 or datos is None:
+            que = "la respuesta no es JSON" if datos is None else "el pedido falló"
+            asoma = _asomo(texto, r.get("contentType") or "")
+            raise _PasoFallido(f"{que} (HTTP {status}{', ' + asoma if asoma else ''})")
+        if paso.get("guardar"):
+            self._res[str(paso["guardar"])] = datos
+        extra = {"status": status, "bytes": len(cuerpo)}
+        if paso.get("name"):
+            nombre = str(paso["name"])
+            self._blobs.append(cuerpo)
+            self.archivos.append({"n": len(self._blobs) - 1, "nombre": nombre,
+                                  "tipo": "application/json", "bytes": len(cuerpo)})
+            extra["nombre"] = nombre
         return extra
 
     # --- la IA -----------------------------------------------------------------
@@ -751,7 +836,7 @@ class _SesionAgente:
                 # La foto del momento del fallo, antes de que la IA toque nada o la sesión
                 # cierre: sin esto, la última imagen es la del paso anterior, que salió bien.
                 self._foto()
-                entrada.update(ok=False, error=motivo, url=self.url_actual,
+                entrada.update(ok=False, error=motivo, pagina=self.url_actual,
                                pendientes=self._pendientes())
                 self._anotar(entrada)
                 if paso.get("optional"):

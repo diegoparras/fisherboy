@@ -44,6 +44,35 @@ class _Handler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(cuerpo)
 
+    def _api(self, ruta: str):
+        """Lo que contesta un portal a sus propias consultas AJAX (para el verbo `fetch`)."""
+        from urllib.parse import parse_qs, urlsplit
+
+        q = parse_qs(urlsplit(self.path).query)
+        if ruta == "/api/consulta.json":
+            cuerpo = {"estado": "ok", "datos": {"idConsulta": "42", "estado": "PE"}}
+            return self._responder(json.dumps(cuerpo).encode(), "application/json")
+        if ruta == "/api/resultados.json":
+            # Como el portal real: sin el header de AJAX, o con otro id, no hay datos.
+            if self.headers.get("X-Requested-With") != "XMLHttpRequest" or q.get("id") != ["42"]:
+                self.send_response(400)
+                self.end_headers()
+                return None
+            cuerpo = {"estado": "ok", "datos": {"data": [["02/11/2026", "Factura C", "150000,00"]]}}
+            return self._responder(json.dumps(cuerpo).encode(), "application/json")
+        if ruta == "/api/expirada":
+            html = ("<html><head><title>Sesión expirada</title></head>"
+                    "<body><p>Vuelva a ingresar.</p></body></html>")
+            return self._responder(html.encode(), "text/html; charset=utf-8")
+        if ruta == "/api/redirige":
+            self.send_response(302)
+            self.send_header("Location", "/api/consulta.json")
+            self.end_headers()
+            return None
+        self.send_response(404)
+        self.end_headers()
+        return None
+
     def do_GET(self):  # noqa: N802
         ruta = self.path.split("?", 1)[0]
         if ruta == "/colgado.do":   # una consulta que tarda más que lo que el paso espera
@@ -52,6 +81,8 @@ class _Handler(SimpleHTTPRequestHandler):
                 return self._responder(b"{}", "application/json")
             except OSError:   # el navegador ya cerró: nadie la estaba esperando
                 return None
+        if ruta.startswith("/api/"):
+            return self._api(ruta)
         if ruta == "/ajax.do":
             filas = [] if self.modo.get("vacio") else [
                 ["02/11/2026", "Factura C", "1", "125", "150000,00"],
