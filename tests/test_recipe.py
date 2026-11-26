@@ -55,3 +55,35 @@ def test_dominio_permitido():
     assert not recipe.dominio_permitido("https://example.com", ["portal.example.com"])
     assert recipe.dominio_permitido("about:blank", ["portal.example.com"])
     assert recipe.dominio_permitido("https://example.com", [])
+
+
+def test_fetch_es_verbo_de_receta_y_pide_url():
+    pasos = recipe.validar_receta([{"do": "fetch", "url": "ajax.do?f=x", "guardar": "consulta"}])
+    assert pasos[0]["do"] == "fetch"
+    with pytest.raises(ValueError, match="url"):
+        recipe.validar_receta([{"do": "fetch"}])
+
+
+def test_fetch_valida_el_nombre_de_guardar():
+    with pytest.raises(ValueError, match="guardar"):
+        recipe.validar_receta([{"do": "fetch", "url": "a", "guardar": "no vale.esto"}])
+
+
+def test_fetch_no_es_del_job_declarativo():
+    # El job declarativo no tiene la allowlist de la sesión: ahí un fetch sería un SSRF.
+    from app.fetchers import actions
+    with pytest.raises(ValueError):
+        actions.validate([{"do": "fetch", "url": "http://10.0.0.1/"}])
+
+
+def test_res_resuelve_rutas_con_puntos_e_indices():
+    guardados = {"consulta": {"datos": {"idConsulta": "42", "filas": [["a", "b"]]}}}
+    assert recipe.sustituir_res("id={{res:consulta.datos.idConsulta}}", guardados) == "id=42"
+    assert recipe.sustituir_res("{{res:consulta.datos.filas.0.1}}", guardados) == "b"
+    with pytest.raises(ValueError, match="consulta.datos.noHay"):
+        recipe.sustituir_res("{{res:consulta.datos.noHay}}", guardados)
+
+
+def test_res_en_una_url_va_codificado():
+    guardados = {"c": {"v": "a b&c=d"}}
+    assert recipe.sustituir_res("x?id={{res:c.v}}", guardados, url=True) == "x?id=a%20b%26c%3Dd"
