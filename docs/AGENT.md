@@ -31,6 +31,7 @@ que la abrió: la de otro devuelve 404.
 | GET | `/api/agent/{t}/punto?x=&y=` | Qué elemento hay en ese punto; con `activo=1`, el que tiene el foco. Sólo lee |
 | GET | `/api/agent/{t}/files/{n}` | Archivo descargado `n` |
 | GET | `/api/agent/{t}/captures` | Respuestas JSON capturadas (el estado solo trae la cantidad) |
+| GET | `/api/agent/{t}/receta-sugerida` | La receta de `fetch` que baja lo mismo que vio la sesión (ver abajo) |
 | DELETE | `/api/agent/{t}` | Cerrar |
 
 ```jsonc
@@ -142,6 +143,34 @@ más rápido y más estable pedir ese JSON que manejar calendarios, botones y pa
 - El log lleva la `url` de la receta (con sus placeholders), el status y los bytes: **nunca el
   cuerpo**. La IA no puede pedir un `fetch`, y el job declarativo (ACTIONS.md) tampoco lo tiene:
   ahí no hay allowlist de sesión, y sería un SSRF.
+
+### La receta que está detrás de la pantalla: `receta-sugerida`
+
+Una vez que una sesión recorrió la pantalla —una persona, la IA o una receta de clics—,
+`GET /api/agent/{t}/receta-sugerida` propone una receta de `fetch` con las consultas JSON que
+hizo la página. Es la forma rápida de pasar de "manejar el portal" a "pedirle los datos":
+
+```json
+{"receta": [
+   {"do": "goto", "url": "https://portal.example.com/consultas/emitidos.do?cuit={{var:cuit}}"},
+   {"do": "fetch", "url": "ajax.do?f=generar&cuit={{var:cuit}}", "name": "respuesta-1.json", "guardar": "paso_1"},
+   {"do": "fetch", "url": "ajax.do?f=lista&id={{res:paso_1.datos.idConsulta}}", "name": "respuesta-2.json"}
+ ],
+ "omitidos": [{"url": "https://portal.example.com/consultas/ajax.do?f=borrar", "motivo": "fetch solo hace GET"}],
+ "notas": []}
+```
+
+- Arranca con un `goto` a la página desde donde salieron las consultas: el `fetch` corre
+  adentro de ella, con su sesión.
+- Un valor que es una variable de la sesión va como `{{var:nombre}}`, **nunca literal**. Si dos
+  variables valen lo mismo, gana la que se llama como el parámetro. Si el valor iba codificado
+  en la URL, `notas` avisa que hay que mandarla codificada.
+- Un valor que salió de una respuesta anterior (el id de una consulta) va como
+  `{{res:paso_N.ruta}}`, y ese paso lleva `guardar`. Los valores de menos de 4 caracteres no
+  se encadenan: "1" o "E" aparecen en cualquier JSON.
+- Un secreto que viajó en una URL queda como `{{secret:nombre}}`.
+- Solo se aprende de los dominios de la sesión, de hasta 50 respuestas (5 MB en total), y solo
+  en memoria. Es una **propuesta para revisar**: corrérsela a ciegas puede pedir de más.
 
 ### Cuando un paso falla
 

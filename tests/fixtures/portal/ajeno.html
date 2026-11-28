@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>Consultas de dos dominios</title></head>
+<body>
+  <!-- La página consulta su propio dominio y uno ajeno (localhost; la sesión solo permite
+       127.0.0.1). La receta sugerida solo puede aprender de la propia. -->
+  <p id="listo"></p>
+  <script>
+    const ajeno = location.origin.replace('127.0.0.1', 'localhost');
+    Promise.allSettled([fetch('api/consulta.json'), fetch(ajeno + '/api/consulta.json')])
+      .then(() => { document.getElementById('listo').textContent = 'listo'; });
+  </script>
+</body></html>

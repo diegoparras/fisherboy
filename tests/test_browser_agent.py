@@ -594,3 +594,30 @@ def test_terminado_llega_con_la_traza_ya_guardada(portal_maqueta):
     assert _esperar(ses, {"terminado", "error"}) == "terminado", ses.error
     assert ses.log[0]["ok"] is False   # falló de verdad, y la sesión siguió
     assert [a for a in ses.archivos if a["nombre"] == "traza.zip"]
+
+
+# --- la receta que está detrás de la pantalla ---------------------------------------------
+def test_la_receta_sugerida_baja_lo_mismo_sin_manejar_la_pantalla(portal_maqueta):
+    # 1) El recorrido de siempre: login, servicio, representado, fechas, Buscar, tabla.
+    s1 = _abrir(portal_maqueta, ia=False)
+    assert _esperar(s1, {"terminado", "error"}) == "terminado", (s1.error, s1.log[-3:])
+    sugerida = s1.receta_sugerida()
+    fetches = [p for p in sugerida["receta"] if p["do"] == "fetch"]
+    assert sugerida["receta"][0]["do"] == "goto" and fetches, sugerida
+    # El CUIT de la sesión va como variable, nunca escrito en la receta.
+    assert "{{var:cuit}}" in json.dumps(sugerida)
+    assert "20111111112" not in json.dumps(sugerida)
+    # 2) Esa receta, en una sesión nueva, trae los mismos datos sin un solo clic.
+    s2 = _abrir(portal_maqueta, url="login.html", receta=sugerida["receta"], ia=False)
+    assert _esperar(s2, {"terminado", "error"}) == "terminado", (s2.error, s2.log)
+    bajado = json.loads(s2.blob(s2.archivos[-1]["n"]))
+    assert bajado["data"] == s1.intercambios[-1]["json"]["data"]
+
+
+def test_no_guarda_consultas_de_dominios_que_la_sesion_no_permite(portal_maqueta):
+    ses = _abrir(portal_maqueta, url="ajeno.html", ia=False,
+                 receta=[{"do": "wait_for", "sel": "#listo:has-text('listo')", "timeout_s": 5}])
+    assert _esperar(ses, {"terminado", "error"}) == "terminado", ses.error
+    urls = [x["url"] for x in ses.intercambios]
+    assert any("127.0.0.1" in u for u in urls), urls
+    assert not any("localhost" in u for u in urls), urls
