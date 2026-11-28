@@ -415,6 +415,11 @@ class _SesionAgente:
             except queue.Empty:
                 cmd = None
             self._atender_consultas()
+            # Pedir el control se atiende acá y no solo entre pasos: si no, durante un `wait`
+            # largo la persona miraba una pantalla que no podía tocar hasta que el paso
+            # terminara. Al devolverlo, el paso sigue donde estaba.
+            if self._pedido_humano.is_set() and self.estado == "corriendo":
+                self._modo_humano("humano", "Control tomado por una persona")
             if cmd is not None and self.estado in ("humano", "esperando_humano"):
                 try:
                     self._aplicar_humano(cmd)
