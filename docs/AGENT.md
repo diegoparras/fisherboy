@@ -211,8 +211,12 @@ quien abrió la sesión y solo lo baja ella.
   | vacío (default) | La sesión de agente está **apagada**: `/api/agent/start` devuelve 403. Se enciende a mano, porque el agente opera sitios de terceros con credenciales de quien lo instala. |
   | `dominio.com,otro.org` | Lista fija del servidor, subdominios incluidos. El pedido puede **acotarla** con su propio `dominios`, nunca ampliarla. |
   | `*` | Cada sesión **tiene que** traer su `dominios` (sin eso, 400). No es sin límite: mueve la decisión del servidor a quien abre la sesión. |
-- **La IA** ve la página como lista de elementos (no capturas), con los CUIT, emails,
-  tarjetas, teléfonos e IP reemplazados por marcadores (`«CUIT_1»`). Solo puede devolver una
+- **La IA** ve la página como árbol de accesibilidad (no capturas): roles y nombres, como la lee
+  un lector de pantalla (`button "Buscar" [ref=e12]`), con los CUIT, emails, tarjetas,
+  teléfonos e IP reemplazados por marcadores (`«CUIT_1»`). El árbol muestra el valor de cada
+  campo, así que el de un campo de clave se tapa antes de mandarlo, aunque nadie lo haya
+  declarado secreto (una clave que tipeó una persona). El `ref` que devuelve solo puede ser uno
+  del árbol (`eN`); si el elemento ya no está, la acción falla en el momento y la IA mira de nuevo. Solo puede devolver una
   acción de una lista cerrada (`click`, `type`, `select`, `press`, `goto`, `wait`, `done`,
   `human`): sin JavaScript, sin descargas, sin abrir pestañas. El prompt declara que el
   contenido de la página es dato y no instrucción. Las claves las escribe por su marcador

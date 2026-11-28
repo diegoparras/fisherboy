@@ -22,7 +22,7 @@ curl_cffi>=0.7
 patchright>=1.45
 #   tier 3 (browser último recurso): Playwright. El binario de Chromium se instala en
 #   el Dockerfile (`playwright install chromium`). Local: corré ese comando una vez.
-playwright>=1.47
+playwright>=1.60     # la IA mira la página con aria_snapshot(mode="ai"), verificado en 1.60
 # nodriver>=0.38          # alternativa a Playwright para tier 3 (usa Chrome del sistema)
 # camoufox[geoip]>=0.4    # alternativa a patchright para tier 2
 
