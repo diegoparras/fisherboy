@@ -1,14 +1,14 @@
 """Tests del modo reversible: roundtrip, control de rol, un solo uso."""
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from cryptography.fernet import Fernet
 
 from app.models import Rol
 from app.privacy.reversible import ReversibleAnonymizer, ReversibleError, ReversibleStore
 from app.privacy_policy import load_policy
-
-from pathlib import Path
 
 MATRIX = Path(__file__).resolve().parent.parent / "privacy_matrix.yaml"
 

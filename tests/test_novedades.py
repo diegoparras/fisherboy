@@ -6,7 +6,8 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
-from app import __version__, novedades as nov
+from app import __version__
+from app import novedades as nov
 from app.security import auth
 
 REPO = Path(__file__).resolve().parent.parent

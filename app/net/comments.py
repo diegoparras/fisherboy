@@ -10,7 +10,7 @@ Devuelve registros uniformes [{author, text, ...}] para tabla/JSON/CSV.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from urllib.parse import urlsplit
 
 _UA = "Fisherboy/1.0 (+comentarios; uso personal)"
@@ -71,7 +71,7 @@ def is_experimental(url: str) -> bool:
 
 def _iso(ts) -> str:
     try:
-        return datetime.fromtimestamp(float(ts), tz=timezone.utc).isoformat() if ts else ""
+        return datetime.fromtimestamp(float(ts), tz=UTC).isoformat() if ts else ""
     except (TypeError, ValueError, OSError):
         return ""
 

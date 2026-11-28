@@ -29,7 +29,7 @@ nada. Ver docs/SOCIAL.md.
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from urllib.parse import urlsplit
 
 # Host raíz → plataforma. Las que tienen extractor propio acá; el resto cae al scraping normal.
@@ -139,13 +139,13 @@ def _iso(v) -> str:
             ts = float(v)
             if ts > 1e11:      # venía en milisegundos
                 ts /= 1000.0
-            return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+            return datetime.fromtimestamp(ts, tz=UTC).isoformat()
         except (ValueError, OSError, OverflowError):
             return str(v)
     s = str(v)
     for fmt in ("%a %b %d %H:%M:%S %z %Y", "%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%SZ"):
         try:
-            return datetime.strptime(s, fmt).astimezone(timezone.utc).isoformat()
+            return datetime.strptime(s, fmt).astimezone(UTC).isoformat()
         except ValueError:
             continue
     return s

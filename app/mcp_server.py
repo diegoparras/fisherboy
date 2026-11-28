@@ -8,9 +8,8 @@ Correr: `python -m app.mcp_server` (requiere fastmcp instalado).
 """
 from __future__ import annotations
 
-import uuid
-
 import os
+import uuid
 
 from .config import get_settings
 from .logging import get_logger, setup_logging
