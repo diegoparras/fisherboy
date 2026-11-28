@@ -526,3 +526,71 @@ def test_en_modo_humano_una_redireccion_afuera_no_deja_la_pagina_ajena(portal_ma
     assert "localhost" not in (ses.url_actual or ""), ses.url_actual
     assert "dominio no permitido" in (ses.alerta or ""), ses.alerta
     ses.cerrar()
+
+
+# --- traza de Playwright ----------------------------------------------------------------
+def _miembros_zip(datos: bytes) -> dict[str, bytes]:
+    import io
+    import zipfile
+    with zipfile.ZipFile(io.BytesIO(datos)) as z:
+        return {n: z.read(n) for n in z.namelist()}
+
+
+def test_traza_se_guarda_al_fallar_y_sin_la_clave(portal_maqueta):
+    receta = [
+        {"do": "type", "sel": "[id='F1:username']", "text": "{{var:cuit_login}}"},
+        {"do": "click", "sel": "[id='F1:btnSiguiente']"},
+        {"do": "type", "sel": "[id='F1:password']", "text": "{{secret:clave_portal}}"},
+        {"do": "wait_for", "sel": "#no-existe", "timeout_s": 1},
+    ]
+    ses = _abrir(portal_maqueta, receta=receta, ia=False, traza=True)
+    assert _esperar(ses, {"terminado", "error"}) == "error"
+    trazas = [a for a in ses.archivos if a["nombre"] == "traza.zip"]
+    assert len(trazas) == 1 and trazas[0]["tipo"] == "application/zip"
+    miembros = _miembros_zip(ses.blob(trazas[0]["n"]))
+    assert "trace.trace" in miembros
+    # La clave se tipeó adentro de la traza (fill) y no puede quedar en ningún lado.
+    for nombre, datos in miembros.items():
+        assert CLAVE.encode() not in datos, nombre
+    assert b"F1:password" in miembros["trace.trace"]   # la acción sí quedó registrada
+
+
+def test_traza_no_se_guarda_si_todo_sale_bien(portal_maqueta):
+    ses = _abrir(portal_maqueta, url="con_iframe.html", receta=[{"do": "click", "sel": "#boton"}],
+                 ia=False, traza=True)
+    assert _esperar(ses, {"terminado", "error"}) == "terminado", ses.error
+    assert not [a for a in ses.archivos if a["nombre"] == "traza.zip"]
+
+
+def test_sin_pedirla_no_hay_traza(portal_maqueta):
+    ses = _abrir(portal_maqueta, url="falla.html", receta=_RECETA_QUE_FALLA, ia=False)
+    assert _esperar(ses, {"terminado", "error"}) == "error"
+    assert not [a for a in ses.archivos if a["nombre"] == "traza.zip"]
+
+
+# --- "terminado" quiere decir que ya está todo -------------------------------------------
+class _StoreLento(_StoreEnMemoria):
+    """Guarda tarde, como un Redis lejos. Hace visible la carrera sin depender del azar."""
+
+    def save(self, dueno, nombre, estado):
+        time.sleep(0.8)
+        return super().save(dueno, nombre, estado)
+
+
+def test_terminado_llega_con_el_login_ya_guardado(portal_maqueta):
+    # Antes, la sesión decía "terminado" y DESPUÉS guardaba el login: quien abría la próxima
+    # sesión apenas la veía terminar, arrancaba sin él (y el test de arriba fallaba 1 de 3).
+    store = _StoreLento()
+    ses = _abrir(portal_maqueta, url="galleta.html?poner=1", receta=[{"do": "wait", "s": 0.3}],
+                 ia=False, session="sesion-guardada", store=store)
+    assert _esperar(ses, {"terminado", "error"}) == "terminado", ses.error
+    assert store.load("t", "sesion-guardada") is not None
+
+
+def test_terminado_llega_con_la_traza_ya_guardada(portal_maqueta):
+    # Un paso opcional que falla también deja traza; tiene que estar al decir "terminado".
+    receta = [{"do": "wait_url", "contains": "nunca", "timeout_s": 0.5, "optional": True}]
+    ses = _abrir(portal_maqueta, url="con_iframe.html", receta=receta, ia=False, traza=True)
+    assert _esperar(ses, {"terminado", "error"}) == "terminado", ses.error
+    assert ses.log[0]["ok"] is False   # falló de verdad, y la sesión siguió
+    assert [a for a in ses.archivos if a["nombre"] == "traza.zip"]

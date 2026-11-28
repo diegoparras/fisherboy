@@ -861,7 +861,7 @@ def create_app(
                 dominios=dominios, ia=bool(llm), objetivo=str(body.get("objetivo") or ""),
                 llm_complete=llm, allow_private=settings.allow_private_targets,
                 locale=settings.browser_locale, session=session, mantener=bool(body.get("mantener")),
-                store=_login_store() if session else None)
+                store=_login_store() if session else None, traza=bool(body.get("traza")))
         except browser_agent.AgentError as e:
             raise HTTPException(status_code=429 if "sesiones" in str(e) else 400,
                                 detail=str(e)) from e

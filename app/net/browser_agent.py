@@ -27,6 +27,7 @@ import mimetypes
 import os
 import queue
 import re
+import tempfile
 import threading
 import time
 import uuid
@@ -34,7 +35,7 @@ from urllib.parse import urljoin, urlsplit
 
 from ..logging import get_logger
 from ..security.ssrf import resolve_and_validate
-from . import agent_ai, recipe
+from . import agent_ai, recipe, traza
 from .irreversible import irreversible
 
 log = get_logger("fisherboy.browser_agent")
@@ -209,8 +210,12 @@ class _SesionAgente:
     def __init__(self, url: str, *, dueno: str, receta: list, variables: dict, secretos: dict,
                  dominios: list[str], ia: bool, objetivo: str = "", llm_complete=None,
                  allow_private: bool = False, locale: str = "es-AR", session: str = "",
-                 mantener: bool = False, store=None) -> None:
+                 mantener: bool = False, store=None, traza: bool = False) -> None:
         self.url, self.dueno = url, dueno
+        # Traza de Playwright (docs/AGENT.md): se graba si la piden y se guarda solo si algo
+        # falló. Es lo que más ayuda a diagnosticar, y también lo más pesado.
+        self.traza = bool(traza)
+        self._trazando = False
         self.receta = recipe.validar_receta(receta)
         self.variables = {str(k): str(v) for k, v in (variables or {}).items()}
         self._secretos = {str(k): str(v) for k, v in (secretos or {}).items()}
@@ -904,6 +909,51 @@ class _SesionAgente:
                 raise _PasoFallido(f"paso #{i + 1} ({paso['do']}): {motivo}") from None
             self._foto()
 
+    def _algo_fallo(self) -> bool:
+        return any(e.get("ok") is False for e in self.log)
+
+    def _empezar_traza(self) -> None:
+        if not self.traza:
+            return
+        try:
+            self._ctx.tracing.start(screenshots=True, snapshots=True)
+            self._trazando = True
+        except Exception as e:  # noqa: BLE001 — sin traza la sesión anda igual
+            log.info("agente: no se pudo grabar la traza", extra={"error": type(e).__name__})
+
+    def _cerrar_traza(self, *, guardar: bool) -> None:
+        """Para la grabación. Con `guardar`, deja `traza.zip` LIMPIA entre los archivos."""
+        if not self._trazando:
+            return
+        self._trazando = False
+        if not guardar:
+            try:
+                self._ctx.tracing.stop()
+            except Exception:  # noqa: BLE001
+                pass
+            return
+        fd, ruta = tempfile.mkstemp(suffix=".zip")
+        os.close(fd)
+        try:
+            self._ctx.tracing.stop(path=ruta)
+            with open(ruta, "rb") as f:
+                crudo = f.read()
+            limpio = traza.limpiar_zip(crudo, list(self._secretos.values()))
+            if len(limpio) > MAX_BYTES_ARCHIVO:
+                self.alerta = (f"La traza pesa {len(limpio)} bytes (tope {MAX_BYTES_ARCHIVO}) "
+                               "y no se guardó.")
+                return
+            self._blobs.append(limpio)
+            self.archivos.append({"n": len(self._blobs) - 1, "nombre": "traza.zip",
+                                  "tipo": "application/zip", "bytes": len(limpio)})
+        except Exception as e:  # noqa: BLE001 — la traza no puede tapar el error real
+            log.info("agente: no se pudo guardar la traza", extra={"error": type(e).__name__})
+        finally:
+            try:
+                os.remove(ruta)
+            except OSError:
+                pass
+
     def _correr(self) -> None:
         try:
             from playwright.sync_api import sync_playwright
@@ -921,6 +971,7 @@ class _SesionAgente:
                     if previo:
                         opts["storage_state"] = previo
                     self._ctx = browser.new_context(**opts)
+                    self._empezar_traza()   # después del storage_state: sus cookies no entran
                     self._ctx.route("**/*", self._guardia)
                     self._ctx.on("response", self._al_responder)
                     self._ctx.on("request", self._salio)
@@ -954,12 +1005,24 @@ class _SesionAgente:
                             motivo = self._limpiar(str(e).splitlines()[0][:200] if str(e) else "")
                             self._modo_humano("esperando_humano", "La IA no pudo: " + motivo)
                         self._foto()
-                        self.estado = "terminado"
+                        # Primero se guarda todo y DESPUÉS se avisa: quien ve "terminado" va a
+                        # buscar los archivos o a abrir la próxima sesión con este login, y
+                        # tiene que encontrarlos.
+                        self._cerrar_traza(guardar=self._algo_fallo())
                         self._guardar_sesion()
+                        self.estado = "terminado"
                     except _Cerrada:
                         self._guardar_sesion()
                         raise
+                except _Cerrada:
+                    raise
+                except Exception:
+                    self._cerrar_traza(guardar=True)
+                    raise
                 finally:
+                    # Un paso que falló y la IA reparó también vale la traza: es lo que muestra
+                    # qué cambió en el portal.
+                    self._cerrar_traza(guardar=self._algo_fallo())
                     browser.close()
         except _Cerrada:
             self.estado = "cerrado"
@@ -995,7 +1058,7 @@ def abrir(url: str, *, dueno: str, receta: list, variables: dict | None = None,
           secretos: dict | None = None, dominios: list[str] | None = None, ia: bool = False,
           objetivo: str = "", llm_complete=None, allow_private: bool = False,
           locale: str = "es-AR", session: str = "", mantener: bool = False,
-          store=None) -> tuple[str, _SesionAgente]:
+          store=None, traza: bool = False) -> tuple[str, _SesionAgente]:
     with _REG_LOCK:
         _limpiar_registro()
         vivas = [s for s in _SESIONES.values() if s.estado in ESTADOS_VIVOS]
@@ -1007,7 +1070,7 @@ def abrir(url: str, *, dueno: str, receta: list, variables: dict | None = None,
                                 secretos=secretos or {}, dominios=list(dominios or []), ia=ia,
                                 objetivo=objetivo, llm_complete=llm_complete,
                                 allow_private=allow_private, locale=locale, session=session,
-                                mantener=mantener, store=store)
+                                mantener=mantener, store=store, traza=traza)
         except ValueError as e:
             raise AgentError(str(e)) from e
         token = uuid.uuid4().hex

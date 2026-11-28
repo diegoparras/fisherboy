@@ -3,6 +3,29 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semántico. Cada versión publicada tiene su sección: sin ella, el CI no publica.
 
+## [1.13.0] - 2026-11-27
+
+### Nuevo
+- **Traza de Playwright cuando algo falla.** Con `"traza": true` en `/api/agent/start`, la
+  sesión graba todo lo que pasa y, si un paso falla (aunque la IA lo repare) o la sesión
+  termina con error, deja `traza.zip` entre sus archivos. Se abre en
+  https://trace.playwright.dev: cada acción con una foto del antes y el después, el DOM de cada
+  momento, la red con sus tiempos y la consola. Si todo sale bien, no se guarda nada.
+  - **Sale limpia.** Medido contra Playwright 1.60: la clave tipeada y el valor de las cookies
+    quedan adentro de la traza, y con la cookie de sesión de un portal se entra sin clave.
+    Antes de guardarla se vacían los headers de credenciales (`Cookie`, `Set-Cookie`,
+    `Authorization`) y las cookies estén donde estén, y se tapan los secretos de la sesión
+    también escapados o codificados en una URL. Nuevo módulo `app/net/traza.py`.
+  - Las cookies de un login guardado (`session`) no entran: la grabación arranca después de
+    cargarlas.
+
+### Corregido
+- **"Terminado" ahora quiere decir que ya está todo guardado.** La sesión avisaba que había
+  terminado y recién después guardaba el login: quien abría la próxima sesión con ese mismo
+  login apenas veía terminar la anterior podía arrancar sin él y tener que volver a ingresar.
+  Ahora primero guarda (el login y la traza) y después avisa. Era también la causa de un test
+  que fallaba una de cada tres veces.
+
 ## [1.12.1] - 2026-11-26
 
 ### Seguridad
