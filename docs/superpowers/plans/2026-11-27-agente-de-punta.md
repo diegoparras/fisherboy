@@ -68,7 +68,11 @@
 - [ ] Navegador: corrida "de pantalla" de la maqueta → la receta sugerida, corrida en una sesión nueva, baja los mismos datos.
 - [ ] Endpoint con ownership (404 a otro dueño). Docs, CHANGELOG, 1.14.0. Commit.
 
-## Fase 4 — Vista en vivo por screencast (1.15.0, sujeta a medición)
+## Fase 4 — Vista en vivo por screencast — MEDIDA Y DESCARTADA (1.14.1)
+
+> Resultado: no mejora (capturas 49–52 ms de mediana, screencast 51–64 ms). Se publicó en su
+> lugar el arreglo que destapó la medición: tomar el control durante un `wait` largo.
+
 
 **Archivos:** `browser_agent.py` (`_foto`, `_bombear`), nuevo `tests/test_agent_screencast.py`.
 
@@ -78,7 +82,7 @@
 - [ ] Test: en modo humano, un cambio de pantalla hecho por la página sola llega a `/frame` con `esperar_ms` sin acción del cliente.
 - [ ] Docs, CHANGELOG, 1.15.0. Commit.
 
-## Fase 5 — La IA ve el árbol de accesibilidad (1.16.0)
+## Fase 5 — La IA ve el árbol de accesibilidad (1.15.0)
 
 **Archivos:** `app/net/agent_ai.py` (lista de elementos → snapshot), `browser_agent.py` (`_accion_ia`, resolución de `ref`), tests `tests/test_agent_ai.py`, `tests/test_browser_agent.py`.
 
@@ -87,4 +91,4 @@
 - El chequeo de lo irreversible (`irreversible.py`) sigue mirando el elemento real (atributos vía el locator), no lo que diga la IA.
 - [ ] Tests: snapshot enmascarado (sin CUIT literal); ref inválido rechazado; ref vencido → falla clara y foto nueva; los tests de IA existentes siguen verdes con el formato nuevo.
 - [ ] Comparar tokens del prompt (viejo vs. nuevo) en las páginas de la maqueta y anotarlo en el CHANGELOG.
-- [ ] Docs, CHANGELOG, 1.16.0. Commit.
+- [ ] Docs, CHANGELOG, 1.15.0. Commit.

@@ -3,6 +3,20 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semántico. Cada versión publicada tiene su sección: sin ella, el CI no publica.
 
+## [1.14.1] - 2026-11-27
+
+### Corregido
+- **Tomar el control ya no espera a que termine el paso.** El pedido se miraba solo entre un
+  paso y el siguiente: durante un `wait` largo, quien pedía el control miraba una pantalla que
+  no podía tocar hasta que el paso terminaba. Ahora se atiende enseguida, y al devolverlo el
+  paso sigue donde estaba.
+
+### Medido y descartado
+- **Vista en vivo por screencast de Chromium (CDP) en vez de capturas.** Medido contra Chromium
+  real, 4 rondas de 25 clics, del clic a la imagen nueva: capturas 49–52 ms de mediana (p95
+  55–83); screencast 51–64 ms (p95 67–86). No mejora: el piso de ~45 ms es lo que tarda Chromium
+  en dibujar y codificar el cuadro después del clic, no el costo de pedirle la captura.
+
 ## [1.14.0] - 2026-11-27
 
 ### Nuevo

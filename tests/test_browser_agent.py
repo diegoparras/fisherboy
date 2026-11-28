@@ -621,3 +621,18 @@ def test_no_guarda_consultas_de_dominios_que_la_sesion_no_permite(portal_maqueta
     urls = [x["url"] for x in ses.intercambios]
     assert any("127.0.0.1" in u for u in urls), urls
     assert not any("localhost" in u for u in urls), urls
+
+
+def test_tomar_control_no_espera_a_que_termine_un_wait_largo(portal_maqueta):
+    # El pedido se miraba solo ENTRE pasos: durante un `wait` de 30 s, la persona que pedía el
+    # control esperaba 30 s mirando una pantalla que no podía tocar.
+    ses = _abrir(portal_maqueta, url="con_iframe.html",
+                 receta=[{"do": "wait", "s": 30}, {"do": "click", "sel": "#boton"}], ia=False)
+    _esperar(ses, {"corriendo"})
+    time.sleep(1.0)   # ya adentro del wait
+    t0 = time.monotonic()
+    ses.tomar_control()
+    assert _esperar(ses, {"humano"}, timeout=3) == "humano"
+    assert time.monotonic() - t0 < 2
+    ses.devolver()
+    ses.cerrar()
