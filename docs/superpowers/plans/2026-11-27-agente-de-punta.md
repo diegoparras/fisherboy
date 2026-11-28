@@ -82,7 +82,7 @@
 - [ ] Test: en modo humano, un cambio de pantalla hecho por la página sola llega a `/frame` con `esperar_ms` sin acción del cliente.
 - [ ] Docs, CHANGELOG, 1.15.0. Commit.
 
-## Fase 5 — La IA ve el árbol de accesibilidad (1.15.0)
+## Fase 5 — La IA ve el árbol de accesibilidad (1.15.0) ✅
 
 **Archivos:** `app/net/agent_ai.py` (lista de elementos → snapshot), `browser_agent.py` (`_accion_ia`, resolución de `ref`), tests `tests/test_agent_ai.py`, `tests/test_browser_agent.py`.
 

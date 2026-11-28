@@ -845,18 +845,18 @@ class _SesionAgente:
             self._vivo()
             self._si_piden_control()
             try:
-                elementos = self._page.evaluate(agent_ai.OBSERVAR_JS)
+                pagina = self._page.locator("body").aria_snapshot(mode="ai", timeout=10_000)
+                claves = self._page.evaluate(agent_ai.CLAVES_JS)
             except Exception:  # noqa: BLE001 — navegando
                 self._bombear(segundos=0.5)
                 continue
-            # Todo lo que va al modelo pasa por _limpiar ANTES de enmascarar: si un secreto
-            # quedo en un campo de texto o en la URL, el modelo ve «***» y no el valor.
-            for el in elementos:
-                for k in ("texto", "valor", "placeholder", "id", "nombre"):
-                    if el.get(k):
-                        el[k], self._mapeo = agent_ai.enmascarar(self._limpiar(str(el[k])), self._mapeo)
+            # Tres capas, en este orden: el valor de un campo de clave (aunque nadie lo haya
+            # declarado secreto), los secretos de la sesión donde aparezcan, y los datos
+            # personales que reconocen los detectores (CUIT, email...) como marcadores.
+            pagina = agent_ai.tapar_claves(pagina, claves)
+            pagina, self._mapeo = agent_ai.enmascarar(self._limpiar(pagina), self._mapeo)
             url_m, self._mapeo = agent_ai.enmascarar(self._limpiar(self._page.url), self._mapeo)
-            system, user = agent_ai.armar_prompt(objetivo_m, url_m, elementos, historial,
+            system, user = agent_ai.armar_prompt(objetivo_m, url_m, pagina, historial,
                                                  sorted(self._secretos))
             try:
                 accion = agent_ai.parsear_accion(self._llm(system, user))
@@ -896,7 +896,13 @@ class _SesionAgente:
 
     def _accion_ia(self, a: dict) -> None:
         page, acc = self._page, a["accion"]
-        sel = f'[data-fb-ref="{a["ref"]}"]' if "ref" in a else ""
+        # `ref` ya viene validado (eN / fNeM) por `parsear_accion`: es del árbol, no un selector.
+        sel = f"aria-ref={a['ref']}" if "ref" in a else ""
+        if sel and page.locator(sel).count() == 0:
+            # Sin esto, el clic esperaría 8 s a un elemento que no va a volver; con esto, la IA
+            # lo ve en el historial y mira la página de nuevo.
+            raise _PasoFallido(f"el elemento {a['ref']} ya no está en la página: cambió desde "
+                               "la última vez que se miró")
         motivo = agent_ai.restaurar(str(a.get("motivo") or ""), self._mapeo)[:300]
         if acc == "click":
             self._frenar_si_no_se_deshace(page.eval_on_selector(sel, _INFO_JS), "click", motivo)

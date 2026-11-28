@@ -141,9 +141,7 @@ def test_ia_repara_paso_roto(portal_maqueta):
         llamadas.append(user)
         assert CLAVE not in system + user
         if len(llamadas) == 1:
-            ref = next(json.loads(linea)["ref"] for linea in user.splitlines()
-                       if linea.startswith("{") and '"buscarComprobantes"' in linea)
-            return json.dumps({"accion": "click", "ref": ref})
+            return json.dumps({"accion": "click", "ref": _ref_de(user, "Buscar", rol="button")})
         return '{"accion": "done", "motivo": "busque"}'
 
     receta = _receta(buscar_sel="#botonQueNoExiste", objetivo_buscar="Apretar el boton Buscar")
@@ -205,8 +203,7 @@ def test_ia_no_puede_tipear_el_secreto_fuera_de_un_campo_de_clave(portal_maqueta
     def falso(system, user):
         vistos.append(system + user)
         if len(vistos) == 1:
-            ref = next(json.loads(linea)["ref"] for linea in user.splitlines()
-                       if linea.startswith("{") and '"F1:username"' in linea)
+            ref = _ref_de(user, "CUIT/CUIL", rol="textbox")
             return json.dumps({"accion": "type", "ref": ref, "texto": "{{secret:clave_portal}}"})
         return '{"accion": "done"}'
 
@@ -294,9 +291,11 @@ def test_done_trae_resumen_con_los_datos_restaurados(portal_maqueta):
     assert ses.resumen()["resumen"] == "Está el representado 20111111112"
 
 
-def _ref_de(user, texto):
-    return next(json.loads(linea)["ref"] for linea in user.splitlines()
-                if linea.startswith("{") and f'"{texto}"' in linea)
+def _ref_de(user, nombre, rol=r"[\w-]+"):
+    """El ref de un elemento en el árbol de accesibilidad que ve la IA: `rol "nombre" [ref=eN]`."""
+    m = re.search(rf'{rol} "{re.escape(nombre)}"[^\n]*?\[ref=((?:f\d+)?e\d+)\]', user)
+    assert m, f"no está {nombre!r} en lo que vio la IA:\n{user}"
+    return m.group(1)
 
 
 def _clics(ses):
@@ -636,3 +635,47 @@ def test_tomar_control_no_espera_a_que_termine_un_wait_largo(portal_maqueta):
     assert time.monotonic() - t0 < 2
     ses.devolver()
     ses.cerrar()
+
+
+# --- la IA ve el árbol de accesibilidad ----------------------------------------------------
+def test_la_ia_no_ve_la_clave_que_tipeo_una_persona(portal_maqueta):
+    # El árbol muestra el valor de cada campo, también el de clave (medido en Playwright 1.60).
+    # Una clave tipeada a mano no es un `{{secret:}}` que la sesión conozca: hay que taparla
+    # mirando el campo, no el valor.
+    vistos = []
+
+    def falso(system, user):
+        vistos.append(system + user)
+        return '{"accion": "done"}'
+
+    receta = [
+        {"do": "type", "sel": "[id='F1:username']", "text": "{{var:cuit_login}}"},
+        {"do": "click", "sel": "[id='F1:btnSiguiente']"},
+        {"do": "type", "sel": "[id='F1:password']", "text": "tipeada-a-mano-77"},
+        {"do": "goal", "objetivo": "Ingresar"},
+    ]
+    ses = _abrir(portal_maqueta, receta=receta, ia=True, llm_complete=falso)
+    assert _esperar(ses, {"terminado", "error"}) == "terminado", ses.error
+    assert vistos and all("tipeada-a-mano-77" not in v for v in vistos)
+    assert 'textbox "Clave"' in vistos[0]
+
+
+def test_un_ref_que_ya_no_esta_falla_claro_y_la_ia_vuelve_a_mirar(portal_maqueta):
+    vistos = []
+
+    def falso(system, user):
+        vistos.append(user)
+        if len(vistos) == 1:
+            return '{"accion": "click", "ref": "e999"}'
+        return '{"accion": "done"}'
+
+    receta = [{"do": "goal", "objetivo": "Apretar algo"}]
+    ses = _abrir(portal_maqueta, url="confirmar.html", receta=receta, ia=True, llm_complete=falso)
+    t0 = time.monotonic()
+    assert _esperar(ses, {"terminado", "error"}) == "terminado", ses.error
+    assert time.monotonic() - t0 < 8   # sin esperar el timeout de 8 s del clic
+    fallido = next(p for p in ses.log if p.get("do") == "ia:click")
+    assert fallido["ok"] is False and "e999" in fallido["error"] and "ya no está" in fallido["error"]
+    assert len(vistos) == 2 and "ya no está" in vistos[1]   # la IA lo ve en el historial
+    # Y no se clickeó otra cosa en su lugar.
+    assert [p for p in ses.log if p.get("do") == "ia:click" and p.get("ok")] == []

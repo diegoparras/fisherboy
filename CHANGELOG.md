@@ -3,6 +3,26 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semántico. Cada versión publicada tiene su sección: sin ella, el CI no publica.
 
+## [1.15.0] - 2026-11-28
+
+### Cambiado
+- **La IA mira la página como árbol de accesibilidad.** En vez de una lista de elementos
+  armada a mano, recibe la página como la lee un lector de pantalla: roles y nombres
+  (`button "Buscar" [ref=e12]`), con el texto alrededor. No depende de ids ni clases del portal,
+  y pesa menos: **37 % menos** en las páginas de la maqueta (2288 → 1433 caracteres).
+  - El `ref` que devuelve la IA pasa de número a `eN`, y solo puede ser uno del árbol: va
+    directo a un selector, y cualquier otra cosa sería un selector elegido por el modelo.
+  - Si el elemento ya no está (la página cambió), la acción falla enseguida diciéndolo, en
+    vez de esperar 8 s; la IA lo ve y mira la página de nuevo.
+  - Requiere Playwright 1.60 o más nuevo.
+
+### Seguridad
+- **Una clave tipeada a mano no llega a la IA.** El árbol de accesibilidad muestra el valor de
+  cada campo, también el de un campo de clave (medido antes de cambiar nada). Las claves de la
+  sesión (`{{secret:}}`) ya se tapaban; una que tipeó una persona en modo humano no era
+  conocida. Ahora se tapa el valor de todo campo de clave, mirando el campo y no el valor.
+- Los tests de enmascarado usan los datos de prueba de la maqueta, como el resto.
+
 ## [1.14.1] - 2026-11-27
 
 ### Corregido
