@@ -22,7 +22,7 @@ from pydantic import BaseModel
 from . import __version__, novedades
 from .config import Settings, get_settings
 from .logging import get_logger, setup_logging
-from .models import JobRequest, JobStatus, Rol, RevertRequest, Sobre
+from .models import JobRequest, JobStatus, RevertRequest, Rol, Sobre
 from .privacy_policy import PolicyDenied, PrivacyPolicy, get_policy
 from .queue import JobQueue, get_queue
 from .security import auth, ratelimit
@@ -495,7 +495,7 @@ def create_app(
                         headers={"Content-Disposition": f'inline; filename="{name}"'})
 
     @app.post("/api/revert")
-    async def revert(req: "RevertRequest", request: Request):
+    async def revert(req: RevertRequest, request: Request):
         """Rehidrata contenido pseudonimizado con un mapping_ref (modo reversible).
 
         El rol sale de la SESIÓN (no del body, sin downgrade): valida contra el dueño del
@@ -951,6 +951,7 @@ def create_app(
     async def agent_punto(token: str, request: Request, x: float = 0, y: float = 0, activo: int = 0):
         """Qué elemento hay en ese punto (o el que tiene el foco). Sólo lee la página."""
         import asyncio
+
         from .net import browser_agent
         ses = _agente(token, request)
         try:
@@ -1064,6 +1065,7 @@ def create_app(
         x11vnc escucha solo en 127.0.0.1, así que este puente es la ÚNICA puerta, y exige
         sesión + rol antes de tender el túnel."""
         import anyio
+
         from .net import browser_vnc
 
         # Auth: el WebSocket no pasa por las dependencias HTTP, hay que validarlo a mano.
@@ -1130,8 +1132,9 @@ def create_app(
             raise HTTPException(status_code=401, detail="Necesitás iniciar sesión.")
         if not auth.caps_for(role).get("capture"):
             raise HTTPException(status_code=403, detail="Sin permiso.")
-        from .net import media
         import anyio
+
+        from .net import media
         # pot_probe hace una llamada HTTP bloqueante: al threadpool, para no frenar el loop.
         return await anyio.to_thread.run_sync(media.pot_probe, settings.yt_pot_url)
 
@@ -1556,6 +1559,7 @@ def create_app(
         if role != "dios":
             raise HTTPException(status_code=403, detail="Solo el rol dios configura el browser en la nube.")
         import json
+
         from .fetchers.cloudflare import REDIS_KEY
         cfg = {}
         try:
@@ -1576,6 +1580,7 @@ def create_app(
         if role != "dios":
             raise HTTPException(status_code=403, detail="Solo el rol dios configura el browser en la nube.")
         import json
+
         from .fetchers.cloudflare import REDIS_KEY
         try:
             body = await request.json()
@@ -1610,7 +1615,9 @@ def create_app(
             raise HTTPException(status_code=429, detail="Demasiadas pruebas; probá en un minuto.")
         import json
         import time as _time
+
         from starlette.concurrency import run_in_threadpool
+
         from .fetchers.base import FetchContext
         from .fetchers.cloudflare import REDIS_KEY, CloudflareBrowserFetcher
         try:

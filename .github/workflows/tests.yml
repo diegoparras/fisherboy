@@ -56,6 +56,11 @@ jobs:
           python -m pip install -U pip
           pip install -r requirements-dev.txt
 
+      # Antes que los tests: tarda segundos y un import sin usar o un nombre mal escrito
+      # no necesita levantar Chromium para aparecer. Las reglas están en pyproject.toml.
+      - name: ruff
+        run: ruff check app tests
+
       # yt-dlp no está en requirements.txt a propósito: el Dockerfile lo instala del canal
       # nightly porque YouTube rompe la extracción cada pocas semanas. Sin él, tres tests de
       # test_media fallan (el endpoint de video contesta 503 "no instalado" antes de llegar a
@@ -77,5 +82,7 @@ jobs:
           playwright install --with-deps chromium
           patchright install chromium
 
+      # El piso de cobertura es la medida al agregarlo (66 %) menos uno: no pide más de lo que
+      # hay, pero un cambio grande sin tests ya no pasa callado. Subirlo cuando suba la cuenta.
       - name: pytest
-        run: pytest
+        run: pytest --cov=app --cov-report=term-missing:skip-covered --cov-fail-under=65

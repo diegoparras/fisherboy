@@ -23,13 +23,13 @@ si no están inyectadas, esa capacidad simplemente no se usa.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Callable
+from datetime import UTC, datetime
 
 from .extractors.documents import filename_from_url, is_document
 from .extractors.llm_extract import LLMError, extract_structured
-from .extractors.text_main import ExtractError, html_to_markdown
+from .extractors.text_main import ExtractError
 from .fetchers.base import FetchError, FetchResult
 from .logging import get_logger
 from .models import FetchTier, JobStatus, OutputFormat, PrivacyMode, Sobre
@@ -63,7 +63,7 @@ class PipelineDeps:
     file_download_mode: str = "both"                            # both|direct|proxy|off (FILE_DOWNLOAD_MODE)
 
 
-def _report(deps: "PipelineDeps", sobre: Sobre, msg: str) -> None:
+def _report(deps: PipelineDeps, sobre: Sobre, msg: str) -> None:
     """Agrega un paso al progreso del job y lo persiste para que la UI lo vea en vivo."""
     steps = sobre.meta.setdefault("progress", [])
     steps.append(msg)
@@ -187,7 +187,7 @@ def build_default_deps(settings, *, redis_client=None) -> PipelineDeps:
         if redis_client is None or not blob:
             return False
         try:
-            from .queue import _SOBRE_TTL_S      # mismo TTL que el Sobre: mueren juntos
+            from .queue import _SOBRE_TTL_S  # mismo TTL que el Sobre: mueren juntos
             redis_client.set(f"fisherboy:artifact:{job_id}:{name}", blob, ex=_SOBRE_TTL_S)
             return True
         except Exception:  # noqa: BLE001 — best-effort: el job no falla por un screenshot
@@ -298,6 +298,7 @@ def _job_overrides(sobre: Sobre) -> dict:
     browser = sobre.meta.get("cookies_browser")
     if browser:   # leer del navegador local (reemplaza a la extensión); solo dios
         from urllib.parse import urlsplit
+
         from .security.browser_cookies import read_cookies
         host = urlsplit(str(sobre.source_url)).hostname or ""
         jar.update(read_cookies(host, browser))
@@ -503,7 +504,7 @@ def _mask_files(deps: PipelineDeps, manifest: dict) -> None:
         for k in _FILE_KINDS:
             manifest[k] = []
         return
-    for it, u, nm in zip(items, urls, names):
+    for it, u, nm in zip(items, urls, names, strict=True):   # _anon_block garantiza el largo
         it["url"] = u
         it["name"] = nm or it.get("name", "")
 
@@ -630,7 +631,7 @@ def _social_branch(sobre: Sobre, deps: PipelineDeps) -> Sobre:
     _report(deps, sobre, f"{len(posts)} publicaciones extraidas de {len(endpoints)} endpoints")
 
     sobre.tier_usado = FetchTier.BROWSER
-    sobre.fetched_at = datetime.now(timezone.utc)
+    sobre.fetched_at = datetime.now(UTC)
     sobre.meta["social_platform"] = plat
     sobre.meta["api_endpoints"] = len(endpoints)
     # Depuracion: si no salio nada, guardar una MUESTRA de lo que devolvio la plataforma. Sin
@@ -675,7 +676,7 @@ def _capture_branch(sobre: Sobre, deps: PipelineDeps) -> Sobre:
     endpoints = deps.capture(url, tier_hint, **overrides)
     _report(deps, sobre, f"{len(endpoints)} endpoints de datos capturados")
     sobre.tier_usado = FetchTier.BROWSER
-    sobre.fetched_at = datetime.now(timezone.utc)
+    sobre.fetched_at = datetime.now(UTC)
     sobre.meta["api_endpoints"] = len(endpoints)
     api_urls = [e.get("url") for e in endpoints[:20]]
     # Aplana el endpoint más jugoso (el primero, ya rankeado) a registros limpios.
@@ -800,7 +801,7 @@ def _tarantula_branch(sobre: Sobre, deps: PipelineDeps) -> Sobre:
                 "children": [_strip(c) for c in n.get("children", [])]}
 
     sobre.tier_usado = FetchTier.BROWSER
-    sobre.fetched_at = datetime.now(timezone.utc)
+    sobre.fetched_at = datetime.now(UTC)
     total_md = sum(len(n.get("markdown", "") or "") for n in nodes.values())
     sobre.meta.update({"nodos": len(order), "api_endpoints": total_endpoints,
                        "markdown_total_chars": total_md, "tree": _strip(tree)})
@@ -857,7 +858,7 @@ def process_job(sobre: Sobre, deps: PipelineDeps) -> Sobre:
         _harvest_actions(sobre, deps, pages)
         first = pages[0]
         sobre.tier_usado = FetchTier(first.tier) if first.tier is not None else FetchTier.ESTATICO
-        sobre.fetched_at = datetime.now(timezone.utc)
+        sobre.fetched_at = datetime.now(UTC)
         _kb = sum(len(p.content) for p in pages) / 1024
         _report(deps, sobre, f"Traído: tier {int(sobre.tier_usado)} · {len(pages)} pág · {_kb:.0f} KB")
 

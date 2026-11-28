@@ -201,7 +201,7 @@ def test_save_guarda_y_cierra(client_factory, monkeypatch):
 # ---------------------------------------------------------------------------
 # Modo VNC (el pesado): registro, ownership y que sea de a una
 # ---------------------------------------------------------------------------
-from app.net import browser_vnc as bv   # noqa: E402
+from app.net import browser_vnc as bv  # noqa: E402
 
 
 @pytest.fixture(autouse=True)

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from cryptography.fernet import Fernet
 
@@ -10,8 +11,6 @@ from app.models import OutputFormat, PrivacyMode, Rol, Sobre
 from app.pipeline import PipelineDeps, process_job
 from app.privacy.reversible import ReversibleAnonymizer, ReversibleStore
 from app.privacy_policy import load_policy
-
-from pathlib import Path
 
 MATRIX = Path(__file__).resolve().parent.parent / "privacy_matrix.yaml"
 

@@ -31,7 +31,7 @@ if not _chromium_ok():  # pragma: no cover
 @pytest.fixture(autouse=True)
 def _limpiar():
     yield
-    for tok, s in list(ba._SESIONES.items()):
+    for s in list(ba._SESIONES.values()):
         s.cerrar()
     ba._SESIONES.clear()
 

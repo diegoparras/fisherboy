@@ -11,7 +11,7 @@ from . import novedades
 from .callbacks import post_callback
 from .config import get_settings
 from .logging import get_logger, setup_logging
-from .models import JobStatus, Sobre
+from .models import Sobre
 from .pipeline import PipelineDeps, build_default_deps, process_job
 from .queue import JobQueue, get_queue
 

@@ -6,7 +6,6 @@ cubren el grueso del descubrimiento.
 """
 from __future__ import annotations
 
-import importlib.util
 import re
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlsplit

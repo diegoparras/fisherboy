@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Callable
+from collections.abc import Callable
 
 # Máximo de markdown que mandamos al LLM (corta costos y context overflow).
 _MAX_CHARS = 60_000

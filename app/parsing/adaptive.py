@@ -32,7 +32,7 @@ class Fingerprint:
                 "text": self.text, "attrs": self.attrs}
 
     @classmethod
-    def from_dict(cls, d: dict) -> "Fingerprint":
+    def from_dict(cls, d: dict) -> Fingerprint:
         return cls(tag=d.get("tag", ""), el_id=d.get("el_id", ""),
                    classes=list(d.get("classes") or []), text=d.get("text", ""),
                    attrs=dict(d.get("attrs") or {}))
@@ -67,7 +67,7 @@ def _similarity(fp: Fingerprint, el) -> float:
 
 def _common_prefix(a: str, b: str) -> str:
     out = []
-    for x, y in zip(a, b):
+    for x, y in zip(a, b, strict=False):   # largos distintos a propósito: el prefijo común
         if x != y:
             break
         out.append(x)
