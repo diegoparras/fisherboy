@@ -166,3 +166,12 @@ def test_con_asterisco_hace_falta_decir_los_dominios(client_factory, monkeypatch
     r = c.post("/api/agent/start", json={"url": "https://otro.com/", "objetivo": "x",
                                           "dominios": ["ejemplo.com"]})
     assert r.status_code == 400
+
+
+def test_start_pasa_traza(client_factory, monkeypatch):
+    capturado = _abrir_falso(monkeypatch)
+    c = client_factory(AGENT_ALLOWED_DOMAINS="portal.example.com")
+    r = c.post("/api/agent/start", json={"url": "https://portal.example.com/",
+                                         "receta": [{"do": "wait", "s": 1}], "traza": True})
+    assert r.status_code == 200, r.text
+    assert capturado["traza"] is True

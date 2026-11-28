@@ -60,6 +60,8 @@ Campos opcionales del `start`:
 - `mantener: true`: si la IA no puede, la sesión no termina en `error`: pasa a `esperando_humano`
   con un `motivo_humano` que empieza con `La IA no pudo: `, para que una persona (o quien la maneje
   desde afuera) tome el control. Cuando lo devuelve, la sesión termina.
+- `traza: true`: graba una traza de Playwright y la deja como `traza.zip` si algo falla (ver
+  [Cuando un paso falla](#cuando-un-paso-falla)).
 
 El estado trae `resumen`: lo que la IA dijo al terminar (`done`), con los datos de verdad.
 
@@ -147,6 +149,16 @@ En el momento del fallo se saca una foto, antes de que la IA intente nada o la s
 `GET /frame` devuelve **esa** pantalla (también con la sesión en `error`, hasta el `DELETE`).
 La entrada del paso en el log suma `pagina` (la URL en la que estaba) y `pendientes`: las
 consultas XHR/fetch que salieron y no volvieron, como `GET host/ruta (12.3 s)`, sin la query.
+
+Para ver todo lo que pasó, y no solo el último momento, abrí la sesión con `"traza": true`. Si
+un paso falla (aunque la IA lo repare) o la sesión termina en `error`, queda `traza.zip` entre
+los archivos (`/files/{n}`, tope 20 MB): se abre en https://trace.playwright.dev y muestra cada
+acción con el DOM antes y después, la red y la consola. Si todo sale bien, no se guarda.
+
+La traza sale **limpia**: sin valores en `Cookie`, `Set-Cookie`, `Authorization` ni en las
+listas de cookies, y con los secretos tapados (también escapados o codificados en una URL). Lo
+que sí trae es el contenido de las páginas y las variables tipeadas (`{{var:...}}`): es de
+quien abrió la sesión y solo lo baja ella.
 
 ## Seguridad
 
