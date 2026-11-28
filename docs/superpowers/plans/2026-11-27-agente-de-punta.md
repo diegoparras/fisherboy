@@ -53,7 +53,7 @@
 - [x] `pytest --cov=app --cov-fail-under=65` (medida: 66 %).
 - [ ] Commit.
 
-## Fase 3 — La receta que está detrás de la pantalla (1.14.0)
+## Fase 3 — La receta que está detrás de la pantalla (1.14.0) ✅
 
 **Archivos:** crear `app/net/sugerir.py`; modificar `browser_agent.py` (registrar intercambios JSON), `app/main.py` (`GET /api/agent/{t}/receta-sugerida`); tests `tests/test_sugerir.py` y uno de navegador.
 

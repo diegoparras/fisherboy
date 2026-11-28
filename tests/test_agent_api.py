@@ -175,3 +175,15 @@ def test_start_pasa_traza(client_factory, monkeypatch):
                                          "receta": [{"do": "wait", "s": 1}], "traza": True})
     assert r.status_code == 200, r.text
     assert capturado["traza"] is True
+
+
+def test_receta_sugerida_es_del_dueno(client_factory):
+    ses = _Falsa()
+    ses.receta_sugerida = lambda: {"receta": [{"do": "goto", "url": "https://portal.example.com/"}],
+                                   "omitidos": [], "notas": []}
+    ba._SESIONES["tok"] = ses
+    ba._SESIONES["ajena"] = _Falsa(dueno="otro")
+    c = client_factory()
+    r = c.get("/api/agent/tok/receta-sugerida")
+    assert r.status_code == 200 and r.json()["receta"][0]["do"] == "goto"
+    assert c.get("/api/agent/ajena/receta-sugerida").status_code == 404

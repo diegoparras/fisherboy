@@ -3,6 +3,21 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semántico. Cada versión publicada tiene su sección: sin ella, el CI no publica.
 
+## [1.14.0] - 2026-11-27
+
+### Nuevo
+- **La receta que está detrás de la pantalla.** Después de que una sesión recorre un portal
+  —manejada por una persona, por la IA o con una receta de clics—, `GET
+  /api/agent/{t}/receta-sugerida` propone una receta de `fetch` con las consultas JSON que hizo
+  la página: lo que se hacía con calendario, botón, tabla y exportación pasa a ser una o dos
+  consultas, y deja de romperse cuando el portal mueve un botón. Probado de punta a punta: la
+  receta sugerida, corrida en una sesión nueva, baja los mismos datos sin un clic.
+  - Las variables de la sesión van como `{{var:...}}`, nunca literales: la receta sugerida no
+    se lleva un CUIT ni un rango de fechas escritos a mano. Un id que sale de una respuesta y
+    se usa en la siguiente queda encadenado con `{{res:...}}`.
+  - Solo aprende de los dominios que la sesión permite y lo guarda en memoria. Los POST
+    quedan aparte (`fetch` solo hace GET). Nuevo módulo `app/net/sugerir.py`.
+
 ## [1.13.1] - 2026-11-27
 
 ### Interno

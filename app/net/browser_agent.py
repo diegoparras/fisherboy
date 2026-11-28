@@ -35,7 +35,7 @@ from urllib.parse import urljoin, urlsplit
 
 from ..logging import get_logger
 from ..security.ssrf import resolve_and_validate
-from . import agent_ai, recipe, traza
+from . import agent_ai, recipe, sugerir, traza
 from .irreversible import irreversible
 
 log = get_logger("fisherboy.browser_agent")
@@ -46,6 +46,9 @@ TTL_S = 20 * 60
 MAX_BYTES_ARCHIVO = 20 * 1024 * 1024
 MAX_CAPTURAS = 50
 MAX_BYTES_CAPTURA = 512 * 1024
+# Consultas JSON que la sesión recuerda para proponer la receta de `fetch` (solo en memoria).
+MAX_INTERCAMBIOS = 50
+MAX_BYTES_INTERCAMBIOS = 5 * 1024 * 1024
 # Consultas en vuelo que se anotan en el log de un paso fallido (las más viejas primero).
 MAX_PENDIENTES = 5
 _CALIDAD_JPEG = 70
@@ -250,6 +253,9 @@ class _SesionAgente:
         self._blobs: list[bytes] = []
         # Lo que guardó cada `fetch` con `guardar`, para los `{{res:...}}` de los pasos que siguen.
         self._res: dict[str, object] = {}
+        # Las respuestas JSON que pidió la página, para `receta_sugerida()`.
+        self.intercambios: list[dict] = []
+        self._bytes_intercambios = 0
         self.capturas: list[dict] = []
 
         self.pantalla = Pantalla()
@@ -520,7 +526,48 @@ class _SesionAgente:
             except Exception:  # noqa: BLE001
                 pass
 
+    def _url_sin_secretos(self, url: str) -> str:
+        """Un secreto en una URL queda como su placeholder: la receta sugerida lo nombra sin
+        conocerlo, y el valor no sobrevive a la sesión."""
+        from urllib.parse import quote, quote_plus
+        for nombre, v in self._secretos.items():
+            if v:
+                for forma in {quote_plus(v), quote(v, safe=""), v}:
+                    url = url.replace(forma, f"{{{{secret:{nombre}}}}}")
+        return url
+
+    def _registrar(self, resp) -> None:
+        if len(self.intercambios) >= MAX_INTERCAMBIOS:
+            return
+        try:
+            req = resp.request
+            if req.resource_type not in ("xhr", "fetch"):
+                return
+            if "json" not in (resp.headers.get("content-type") or ""):
+                return
+            if not recipe.dominio_permitido(resp.url, self.dominios):
+                return   # lo que la página le pide a otro dominio no se aprende
+            cuerpo = resp.body()
+            if len(cuerpo) > MAX_BYTES_CAPTURA                     or self._bytes_intercambios + len(cuerpo) > MAX_BYTES_INTERCAMBIOS:
+                return
+            try:
+                pagina = resp.frame.url
+            except Exception:  # noqa: BLE001
+                pagina = self._page.url if self._page is not None else ""
+            self.intercambios.append({
+                "metodo": req.method, "url": self._url_sin_secretos(resp.url[:2000]),
+                "status": resp.status, "json": json.loads(cuerpo),
+                "pagina": self._url_sin_secretos(pagina[:2000])})
+            self._bytes_intercambios += len(cuerpo)
+        except Exception:  # noqa: BLE001
+            pass
+
+    def receta_sugerida(self) -> dict:
+        """La receta de `fetch` que baja lo mismo que vio esta sesión (ver `sugerir.py`)."""
+        return sugerir.sugerir_receta(list(self.intercambios), dict(self.variables))
+
     def _al_responder(self, resp) -> None:
+        self._registrar(resp)
         if self._patron is None or len(self.capturas) >= MAX_CAPTURAS:
             return
         try:
