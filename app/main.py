@@ -970,6 +970,14 @@ def create_app(
         """Respuestas JSON capturadas (paso `capture`). Aparte del resumen: pueden pesar."""
         return {"capturas": list(_agente(token, request).capturas)}
 
+    @app.get("/api/agent/{token}/receta-sugerida")
+    async def agent_receta_sugerida(token: str, request: Request):
+        """La receta de `fetch` que baja lo mismo que vio la sesión, sin manejar la pantalla.
+
+        Es una propuesta para revisar: las variables van como `{{var:...}}`, los ids que salen
+        de una respuesta como `{{res:...}}`, y los POST quedan en `omitidos`."""
+        return _agente(token, request).receta_sugerida()
+
     @app.get("/api/agent/{token}/files/{n}")
     async def agent_file(token: str, n: int, request: Request):
         ses = _agente(token, request)
