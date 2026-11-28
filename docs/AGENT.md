@@ -24,7 +24,7 @@ que la abrió: la de otro devuelve 404.
 | GET | `/api/agent/{t}` | Estado, log, archivos y capturas (sin secretos) |
 | GET | `/api/agent/{t}/frame?desde=N` | Última foto JPEG. 204 si no cambió desde `N`, 202 si todavía no hay. Con `esperar_ms`, espera la próxima (ver abajo) |
 | POST | `/api/agent/{t}/event` | Evento humano. 409 si la sesión no está en modo humano |
-| POST | `/api/agent/{t}/takeover` | Tomar el control |
+| POST | `/api/agent/{t}/takeover` | Tomar el control (se atiende enseguida, aunque haya un paso corriendo; al devolverlo, el paso sigue) |
 | POST | `/api/agent/{t}/resume` | Devolver el control a la receta / IA |
 | POST | `/api/agent/{t}/ok` | Dar el OK a lo que no se deshace (409 si no está en `esperando_ok`) |
 | POST | `/api/agent/{t}/no` | Negarlo: la IA no lo toca y la sesión termina con «No lo hice: quien maneja la sesión dijo que no.» |
