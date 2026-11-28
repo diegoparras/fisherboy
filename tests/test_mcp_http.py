@@ -11,13 +11,12 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+from conftest import make_settings
 from fastapi.testclient import TestClient
 
 from app.main import create_app
 from app.privacy_policy import get_policy
 from app.security import auth
-
-from conftest import make_settings
 
 TOKEN = "token-mcp-de-prueba-0123456789"
 

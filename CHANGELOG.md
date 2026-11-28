@@ -3,6 +3,16 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 Versionado semántico. Cada versión publicada tiene su sección: sin ella, el CI no publica.
 
+## [1.13.1] - 2026-11-27
+
+### Interno
+- **El CI revisa el código además de correr los tests.** `ruff` (pyflakes, bugbear, imports y
+  sintaxis moderna; reglas y excepciones en `pyproject.toml`) corre antes que pytest, y la
+  cobertura tiene piso: 65 %, uno menos que lo medido al agregarlo.
+- De lo que encontró: imports sin usar, y `zip()` sin `strict` en la máscara de archivos — ahí
+  las tres listas tienen que medir lo mismo, y ahora si no miden lo mismo falla en vez de
+  dejar archivos sin enmascarar.
+
 ## [1.13.0] - 2026-11-27
 
 ### Nuevo

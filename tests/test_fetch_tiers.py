@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.fetchers.base import BlockedError, CaptchaError, FetchContext, FetchError, FetchResult
+from app.fetchers.base import BlockedError, CaptchaError, FetchError, FetchResult
 from app.fetchers.router import InMemoryTierCache, TierRouter
 from app.net import captcha
 from app.net.proxies import ProxyPool, load_proxies

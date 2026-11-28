@@ -1,8 +1,6 @@
 """Tests del pipeline: happy path y fail-closed."""
 from __future__ import annotations
 
-import pytest
-
 from app.fetchers.static import FetchResult
 from app.models import JobStatus, PrivacyMode, Rol, Sobre
 from app.pipeline import PipelineDeps, process_job

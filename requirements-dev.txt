@@ -1,3 +1,5 @@
 -r requirements.txt
 pytest>=8.0
 fakeredis>=2.20
+pytest-cov>=5.0
+ruff>=0.15,<0.16   # fijada en la minor: una regla nueva no puede poner el CI en rojo sola

@@ -7,7 +7,7 @@ testea con texto fijo. Si no hay robots o no se pudo traer, el default es PERMIT
 """
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 from urllib.parse import urlsplit
 from urllib.robotparser import RobotFileParser
 

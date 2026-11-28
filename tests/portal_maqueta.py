@@ -120,7 +120,7 @@ class Maqueta:
         self.base = f"http://127.0.0.1:{self._srv.server_address[1]}/"
         self._hilo = threading.Thread(target=self._srv.serve_forever, daemon=True)
 
-    def __enter__(self) -> "Maqueta":
+    def __enter__(self) -> Maqueta:
         self._hilo.start()
         return self
 

@@ -464,7 +464,6 @@ def _formato_nuevo(tid="999", texto="X cambio todo"):
 def test_cascada_ia_repara_y_aprende(fake_redis):
     """El escenario que importa: la plataforma cambia, el extractor de siempre no saca nada,
     la IA descubre donde quedaron los campos, y eso QUEDA APRENDIDO para la proxima."""
-    from app.net import social_ai
     from app.pipeline import _social_branch
 
     llamadas = {"n": 0}

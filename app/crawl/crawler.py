@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import hashlib
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 from ..fetchers.base import FetchResult
 from ..logging import get_logger

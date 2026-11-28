@@ -85,7 +85,7 @@ def test_crawl_respects_robots():
 
 
 def test_build_tree_hierarchy():
-    from app.crawl.crawler import build_tree, CrawlPage
+    from app.crawl.crawler import CrawlPage, build_tree
     def fr(u, txt="x"):
         return FetchResult(url=u, status_code=200, content=txt.encode(), text=txt,
                            content_type="text/html", tier=0)

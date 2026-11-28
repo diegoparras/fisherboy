@@ -6,14 +6,14 @@ sin dependencias de las demás capas. Ver FISHERBOY-build.md §3 y ADR-001.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum, IntEnum
 
 from pydantic import BaseModel, Field, HttpUrl
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class PrivacyMode(str, Enum):

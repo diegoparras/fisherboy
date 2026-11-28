@@ -49,8 +49,8 @@
 **Archivos:** `pyproject.toml` (`[tool.ruff]`), `requirements-dev.txt` (`ruff`, `pytest-cov`), `.github/workflows/tests.yml`, `tests/test_browser_agent.py::test_sesion_guardada_se_usa_y_se_guarda`.
 
 - [x] ~~Arreglar el test inestable~~ — hecho en la 1.13.0: era una carrera real (la sesión decía "terminado" antes de guardar el login). Test determinístico con un store lento.
-- [ ] `ruff check` con un set chico (`E`, `F`, `I`, `B`, `UP`) y los arreglos que pida; paso de CI antes de pytest.
-- [ ] `pytest --cov=app --cov-fail-under=<cobertura medida − 1>`.
+- [x] `ruff check` con un set chico (`E`, `F`, `I`, `B`, `UP`) y los arreglos que pida; paso de CI antes de pytest.
+- [x] `pytest --cov=app --cov-fail-under=65` (medida: 66 %).
 - [ ] Commit.
 
 ## Fase 3 — La receta que está detrás de la pantalla (1.14.0)
